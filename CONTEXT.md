@@ -24,11 +24,11 @@
 ### Backend
 - **Linguagem:** Python 3.13.13
 - **IDE:** Cursor
-- **Validação de dados:** Pydantic (v2)
-- **API Framework:** FastAPI
-- **Banco de dados (início):** SQLite
+- **Validação de dados:** Pydantic (v2) — *a ser introduzido na Camada 2*
+- **API Framework:** FastAPI — *a ser introduzido na Camada 5*
+- **Banco de dados (início):** SQLite ✅
 - **Banco de dados (futuro):** PostgreSQL (via Supabase)
-- **Testes:** pytest
+- **Testes:** pytest ✅
 
 ### Frontend (futuro)
 - **Framework:** Next.js (com suporte nativo a PWA)
@@ -36,8 +36,9 @@
 - **Auth + DB cloud:** Supabase
 
 ### Versionamento
-- **Git** desde a primeira linha
-- Commits descritivos em português ou inglês (escolher um padrão e manter)
+- **Git** desde a primeira linha ✅
+- **Repositório:** https://github.com/CaioOlivieri/AlertaVida (privado)
+- Convenção de commits: `tipo(escopo): descrição` em português (ex: `feat(camada-1): integra monitor com database`)
 
 ---
 
@@ -46,16 +47,22 @@
 Abordagem **camada por camada**, sem pular etapas. Cada camada deve estar funcional e testada antes de avançar.
 
 ### Camada 1 — Ingestão Resiliente de Dados ⚙️ EM PROGRESSO
-**Status atual:** script `monitor.py` faz uma requisição única à API CEMADEN e imprime no terminal.
 
-**Falta implementar:**
+**O que já está pronto:**
+- [x] Consumo da API CEMADEN (`monitor.py`)
+- [x] Persistência em SQLite (`database.py`)
+- [x] Sistema de deduplicação por `cod_alerta`
+- [x] Função pura `montar_alerta()` para mapeamento de campos
+- [x] Tratamento de erros por alerta (não derruba o loop)
+- [x] Testes unitários (`tests/test_monitor.py` — 6 testes passando)
+
+**O que falta:**
 - [ ] Loop de execução agendado (a cada 5–10 minutos)
-- [ ] Persistência em SQLite
-- [ ] Sistema de deduplicação (não reprocessar o mesmo alerta)
 - [ ] Retry com backoff exponencial em falhas de API
 - [ ] Logs estruturados (JSON, com timestamp, nível, contexto)
+- [ ] Contador de erros no relatório final
 
-**Endpoint principal já validado:**
+**Endpoint principal validado:**
 `https://painelalertas.cemaden.gov.br/wsAlertas2`
 
 Campos relevantes do JSON: `codigoalerta`, `datahoracriacao`, `tipoevento`, `nivel`, `estado`, `municipio`, coordenadas geográficas.
@@ -83,7 +90,7 @@ Comparar snapshot atual com anterior, emitir evento correspondente, desacoplar i
 **Padrão arquitetural:** Adapter.
 
 Interface comum `DataSource` com implementações:
-- `CemadenSource` (já temos protótipo)
+- `CemadenSource` (já temos protótipo em `monitor.py`)
 - `NasaEonetSource`
 - `InmetSource`
 - `InpeSource`
@@ -109,11 +116,24 @@ PWA com mapa interativo, lista de alertas, filtros, instalável como app no celu
 
 ---
 
-## 4. Estrutura de Pastas (alvo)
+## 4. Estrutura de Pastas
 
+### Estado atual
 ```
 alertavida/
-├── CONTEXT.md                  ← este arquivo
+├── .gitignore
+├── CONTEXT.md
+├── alertavida.db          ← gerado em runtime (gitignored)
+├── database.py
+├── monitor.py
+└── tests/
+    └── test_monitor.py
+```
+
+### Estrutura alvo (após refatorações futuras)
+```
+alertavida/
+├── CONTEXT.md
 ├── README.md
 ├── .gitignore
 ├── .env.example
@@ -152,6 +172,8 @@ alertavida/
 └── data/                       ← SQLite local (gitignored)
 ```
 
+A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 2 — não antes.
+
 ---
 
 ## 5. Princípios Técnicos (não negociáveis)
@@ -184,6 +206,12 @@ alertavida/
 - Sempre logar o erro com contexto
 - Decidir explicitamente: re-raise, retry, ou fallback?
 
+### Commits
+- Formato: `tipo(escopo): descrição`
+- Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- Escopo: nome da camada quando aplicável (`camada-1`, `camada-2`, etc.)
+- Exemplo: `feat(camada-1): integra monitor com database, dedup e testes unitários`
+
 ---
 
 ## 7. Decisões Arquiteturais Já Tomadas
@@ -197,6 +225,8 @@ alertavida/
 | Next.js + Leaflet | Familiaridade + Leaflet é gratuito e robusto |
 | Event-Driven na Camada 3 | Desacopla ingestão de consumidores |
 | Adapter pattern na Camada 4 | Permite adicionar fontes sem mexer no resto |
+| Função pura `montar_alerta()` | Separa mapeamento (testável) de I/O (rede + banco) |
+| Dedup por `cod_alerta` (PK) | Garantia de integridade no nível do banco |
 
 ---
 
@@ -215,6 +245,13 @@ Em vez de pedir função por função, especifique **comportamento esperado comp
 3. Definir o resultado esperado (não os passos)
 4. Deixar o agente executar e voltar com o resultado
 
+### Estrutura de prompt recomendada
+1. **Contexto:** "Leia o CONTEXT.md antes de qualquer coisa."
+2. **Objetivo:** o que se quer alcançar (não como)
+3. **Requisitos funcionais:** comportamento esperado, casos de borda
+4. **Requisitos não funcionais:** robustez, testes, convenções
+5. **Critério de sucesso:** como saber que está pronto (ex: "rodar `python monitor.py` duas vezes e ver `[NOVO]` na primeira e `[JÁ VISTO]` na segunda")
+
 ---
 
 ## 9. Histórico de Mudanças
@@ -222,5 +259,6 @@ Em vez de pedir função por função, especifique **comportamento esperado comp
 | Data | Mudança |
 |---|---|
 | 2026-04-27 | Criação inicial do CONTEXT.md |
+| 2026-04-27 | Camada 1 parcial: integração monitor + database, deduplicação por cod_alerta, função pura montar_alerta, testes unitários (6 passando), repositório no GitHub |
 
 > Adicione novas linhas aqui sempre que houver mudança arquitetural ou conclusão de camada.
