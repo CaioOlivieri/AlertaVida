@@ -3,6 +3,8 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from database import alerta_existe, criar_banco, salvar_alerta
+
 
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
 
@@ -13,6 +15,57 @@ def pick_value(item, possible_keys, default="N/A"):
         if value is not None and value != "":
             return value
     return default
+
+
+def montar_alerta(item: dict) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+
+    raw_cod = pick_value(
+        item, ("codigoalerta", "cod_alerta", "id", "codigo"), default=None
+    )
+    if raw_cod is None or raw_cod == "":
+        return None
+    try:
+        cod_alerta = int(raw_cod)
+    except (TypeError, ValueError):
+        return None
+
+    return {
+        "cod_alerta": cod_alerta,
+        "municipio": str(
+            pick_value(item, ("municipio", "nome_municipio", "cidade"), default="N/A")
+        ),
+        "uf": str(pick_value(item, ("uf", "estado", "state"), default="N/A")),
+        "evento": str(
+            pick_value(
+                item,
+                (
+                    "tipo_evento",
+                    "evento",
+                    "tipo",
+                    "desastre",
+                    "tipoevento",
+                ),
+                default="N/A",
+            )
+        ),
+        "nivel": str(
+            pick_value(item, ("nivel", "nivel_alerta", "severity", "grau"), default="N/A")
+        ),
+        "datahoracriacao": str(
+            pick_value(
+                item,
+                (
+                    "datahoracriacao",
+                    "data_criacao",
+                    "dataCriacao",
+                    "dt_criacao",
+                ),
+                default="N/A",
+            )
+        ),
+    }
 
 
 def normalize_alert_list(payload):
@@ -29,6 +82,7 @@ def normalize_alert_list(payload):
 
 
 def main():
+    criar_banco()
     request = Request(URL, headers={"User-Agent": "monitor-alertas/1.0"})
 
     try:
@@ -48,43 +102,43 @@ def main():
         sys.exit(1)
 
     alertas = normalize_alert_list(payload)
+    total_recebido = len(alertas)
+    novos = 0
+    ja_existentes = 0
+    descartados = 0
+
     if not alertas:
         print("Nenhum alerta encontrado.")
-        return
+    else:
+        for alerta in alertas:
+            mapeado = montar_alerta(alerta)
+            if mapeado is None:
+                descartados += 1
+                continue
 
-    primeiro_alerta = next((a for a in alertas if isinstance(a, dict)), None)
-    if primeiro_alerta:
-        print("Chaves do primeiro alerta:")
-        print(", ".join(sorted(primeiro_alerta.keys())))
-        print("-" * 80)
+            cod = mapeado["cod_alerta"]
+            mun = mapeado["municipio"]
+            uf = mapeado["uf"]
+            ev = mapeado["evento"]
+            try:
+                if alerta_existe(cod):
+                    ja_existentes += 1
+                    print(f"[JÁ VISTO] {mun} | {uf} | {ev}")
+                else:
+                    salvar_alerta(mapeado)
+                    novos += 1
+                    print(f"[NOVO] {mun} | {uf} | {ev}")
+            except Exception as exc:  # noqa: BLE001 — captura por item, segue o loop
+                print(f"[ERRO] cod_alerta={cod} — {exc}")
 
-    for alerta in alertas:
-        if not isinstance(alerta, dict):
-            continue
-
-        municipio = pick_value(alerta, ("municipio", "nome_municipio", "city", "cidade"))
-        estado = pick_value(alerta, ("uf", "estado", "state"))
-        tipo_evento = pick_value(
-            alerta,
-            ("tipo_evento", "evento", "tipo", "desastre", "event_type"),
-        )
-        nivel = pick_value(alerta, ("nivel", "nivel_alerta", "severity", "grau"))
-        data_criacao = pick_value(
-            alerta,
-            (
-                "data_criacao",
-                "dataCriacao",
-                "datahoracriacao",
-                "created_at",
-                "dt_criacao",
-            ),
-        )
-
-        print(
-            f"Municipio: {municipio} | Estado: {estado} | "
-            f"Evento: {tipo_evento} | Nivel: {nivel} | Criacao: {data_criacao}"
-        )
+    print()
+    print("=== Resumo ===")
+    print(f"Total recebido: {total_recebido}")
+    print(f"Novos salvos: {novos}")
+    print(f"Já existentes: {ja_existentes}")
+    print(f"Descartados: {descartados}")
 
 
 if __name__ == "__main__":
     main()
+
