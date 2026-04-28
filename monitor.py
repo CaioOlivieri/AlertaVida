@@ -116,7 +116,7 @@ def fetch_alertas_com_retry(
     raise ultima_excecao
 
 
-def main():
+def executar_ingestao():
     criar_banco()
     try:
         raw = fetch_alertas_com_retry(URL)
@@ -175,6 +175,9 @@ def main():
     )
 
 
+main = executar_ingestao
+
+
 if __name__ == "__main__":
-    main()
+    executar_ingestao()
 
