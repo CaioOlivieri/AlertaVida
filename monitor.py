@@ -1,5 +1,7 @@
 import json
+import socket
 import sys
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -84,18 +86,42 @@ def normalize_alert_list(payload):
     return []
 
 
+def fetch_alertas_com_retry(
+    url: str,
+    max_tentativas: int = 4,
+    backoff_inicial: float = 2.0,
+) -> bytes:
+    ultima_excecao = None
+    request = Request(url, headers={"User-Agent": "monitor-alertas/1.0"})
+
+    for tentativa in range(max_tentativas):
+        tentativa_humana = tentativa + 1
+        print(f"[Tentativa {tentativa_humana}/{max_tentativas}]")
+        try:
+            with urlopen(request, timeout=30) as response:
+                return response.read()
+        except HTTPError as exc:
+            ultima_excecao = exc
+            if 400 <= exc.code < 500 and exc.code not in (408, 429):
+                raise
+        except (URLError, socket.timeout) as exc:
+            ultima_excecao = exc
+
+        if tentativa_humana < max_tentativas:
+            espera = backoff_inicial * (2**tentativa)
+            print(f"Aguardando {espera:g}s antes da próxima tentativa...")
+            time.sleep(espera)
+
+    assert ultima_excecao is not None
+    raise ultima_excecao
+
+
 def main():
     criar_banco()
-    request = Request(URL, headers={"User-Agent": "monitor-alertas/1.0"})
-
     try:
-        with urlopen(request, timeout=30) as response:
-            raw = response.read()
-    except HTTPError as exc:
-        print(f"Erro HTTP ao consultar a API: {exc.code} {exc.reason}")
-        sys.exit(1)
-    except URLError as exc:
-        print(f"Erro de conexao ao consultar a API: {exc.reason}")
+        raw = fetch_alertas_com_retry(URL)
+    except (HTTPError, URLError, socket.timeout) as exc:
+        print(f"Erro ao consultar a API após múltiplas tentativas: {exc}")
         sys.exit(1)
 
     try:
