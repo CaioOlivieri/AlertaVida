@@ -26,6 +26,7 @@
 - **IDE:** Cursor
 - **Validação de dados:** Pydantic (v2) — *a ser introduzido na Camada 2*
 - **API Framework:** FastAPI — *a ser introduzido na Camada 5*
+- **Agendador:** APScheduler (BackgroundScheduler) ✅
 - **Banco de dados (início):** SQLite ✅
 - **Banco de dados (futuro):** PostgreSQL (via Supabase)
 - **Testes:** pytest ✅
@@ -46,21 +47,26 @@
 
 Abordagem **camada por camada**, sem pular etapas. Cada camada deve estar funcional e testada antes de avançar.
 
-### Camada 1 — Ingestão Resiliente de Dados ⚙️ EM PROGRESSO
+### Camada 1 — Ingestão Resiliente de Dados ✅ CONCLUÍDA
 
-**O que já está pronto:**
+**Implementado:**
 - [x] Consumo da API CEMADEN (`monitor.py`)
 - [x] Persistência em SQLite (`database.py`)
 - [x] Sistema de deduplicação por `cod_alerta`
 - [x] Função pura `montar_alerta()` para mapeamento de campos
 - [x] Tratamento de erros por alerta (não derruba o loop)
-- [x] Testes unitários (`tests/test_monitor.py` — 6 testes passando)
+- [x] Contador de erros + asserção sanitária no relatório final
+- [x] Encoding UTF-8 forçado no terminal (acentos exibidos corretamente)
+- [x] Retry com backoff exponencial em falhas de API (4 tentativas: imediata, 2s, 4s, 8s)
+- [x] Distinção entre erros 4xx (sem retry) e 5xx/timeout (com retry)
+- [x] Loop de execução agendado a cada 5 minutos (`scheduler.py`)
+- [x] Shutdown gracioso via `Ctrl+C` (BackgroundScheduler + `time.sleep(1)`)
+- [x] Proteção contra acúmulo: `max_instances=1`, `coalesce=True`, `misfire_grace_time=60`
+- [x] Listener `EVENT_JOB_ERROR` mantém serviço vivo se uma rodada falhar
+- [x] Suíte de testes (`tests/test_monitor.py` + `tests/test_scheduler.py` — 15 testes passando)
 
-**O que falta:**
-- [ ] Loop de execução agendado (a cada 5–10 minutos)
-- [ ] Retry com backoff exponencial em falhas de API
-- [ ] Logs estruturados (JSON, com timestamp, nível, contexto)
-- [ ] Contador de erros no relatório final
+**Adiado para camadas futuras:**
+- [ ] Logs estruturados em JSON com timestamp/nível/contexto — virá junto com Pydantic na Camada 2
 
 **Endpoint principal validado:**
 `https://painelalertas.cemaden.gov.br/wsAlertas2`
@@ -75,6 +81,8 @@ Campos relevantes do JSON: `codigoalerta`, `datahoracriacao`, `tipoevento`, `niv
 - `Municipio` — código IBGE, nome, estado, coordenadas
 - `NivelRisco` — enum (BAIXO, MODERADO, ALTO, MUITO_ALTO)
 - `TipoEvento` — enum (HIDROLOGICO, GEOLOGICO, METEOROLOGICO, etc.)
+
+Esta também é a camada onde a refatoração da estrutura de pastas deve acontecer (migrar para `src/`).
 
 ### Camada 3 — Detecção de Mudanças e Eventos 🔒 BLOQUEADA (depende de 1 e 2)
 **Padrão arquitetural:** Event-Driven Architecture.
@@ -106,6 +114,8 @@ Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implemen
 
 Documentação automática via OpenAPI/Swagger (built-in do FastAPI).
 
+Quando integrarmos com FastAPI, o `BackgroundScheduler` já existente continua funcionando — não é necessário trocar.
+
 ### Camada 6 — Interface Visual (Next.js + Leaflet) 🔒 BLOQUEADA
 PWA com mapa interativo, lista de alertas, filtros, instalável como app no celular.
 
@@ -126,11 +136,14 @@ alertavida/
 ├── alertavida.db          ← gerado em runtime (gitignored)
 ├── database.py
 ├── monitor.py
+├── scheduler.py
+├── requirements.txt
 └── tests/
-    └── test_monitor.py
+    ├── test_monitor.py
+    └── test_scheduler.py
 ```
 
-### Estrutura alvo (após refatorações futuras)
+### Estrutura alvo (após refatoração na Camada 2)
 ```
 alertavida/
 ├── CONTEXT.md
@@ -172,11 +185,38 @@ alertavida/
 └── data/                       ← SQLite local (gitignored)
 ```
 
-A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 2 — não antes.
+A migração da estrutura atual para a alvo acontece **na Camada 2** — não antes.
 
 ---
 
-## 5. Princípios Técnicos (não negociáveis)
+## 5. Como Rodar (Estado Atual)
+
+### Execução única (debug, validação)
+```bash
+python monitor.py
+```
+Faz uma rodada de ingestão, persiste alertas novos, imprime relatório, encerra.
+
+### Execução contínua (modo serviço)
+```bash
+python scheduler.py
+```
+Roda a primeira rodada imediatamente, depois repete a cada 5 minutos. Encerra com `Ctrl+C`.
+
+### Testes
+```bash
+python -m pytest -v
+```
+Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.sleep`).
+
+### Instalação de dependências (após clonar o repo)
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 6. Princípios Técnicos (não negociáveis)
 
 1. **TDD sempre que possível.** Antes de escrever código de uma nova função, escrever o teste que ela precisa passar. Especialmente importante porque o código gerado por IA pode parecer correto mas ter erros lógicos.
 2. **Testes unitários em cada camada.** Sem testes, não há escala.
@@ -186,10 +226,11 @@ A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 
 6. **Pydantic para qualquer entrada/saída de dados externos.** Validação no limite do sistema.
 7. **Commits frequentes e descritivos.** Cada mudança significativa = um commit.
 8. **README mínimo mas presente.** Como rodar, arquitetura básica, decisões importantes.
+9. **Mocks em testes que envolvem rede ou tempo.** Suíte deve rodar em < 1 segundo.
 
 ---
 
-## 6. Convenções do Projeto
+## 7. Convenções do Projeto
 
 ### Nomenclatura
 - Variáveis e funções: `snake_case`
@@ -205,6 +246,7 @@ A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 
 - Nunca usar `except:` genérico
 - Sempre logar o erro com contexto
 - Decidir explicitamente: re-raise, retry, ou fallback?
+- Erros 4xx (cliente) NÃO devem ter retry; erros 5xx, timeouts e conexão SIM
 
 ### Commits
 - Formato: `tipo(escopo): descrição`
@@ -214,7 +256,7 @@ A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 
 
 ---
 
-## 7. Decisões Arquiteturais Já Tomadas
+## 8. Decisões Arquiteturais Já Tomadas
 
 | Decisão | Motivo |
 |---|---|
@@ -227,10 +269,16 @@ A migração da estrutura atual para a alvo acontece quando entrarmos na Camada 
 | Adapter pattern na Camada 4 | Permite adicionar fontes sem mexer no resto |
 | Função pura `montar_alerta()` | Separa mapeamento (testável) de I/O (rede + banco) |
 | Dedup por `cod_alerta` (PK) | Garantia de integridade no nível do banco |
+| Retry só em 5xx/timeout/conexão | Erros 4xx não se resolvem com retry; 408/429 são exceções |
+| Backoff exponencial (2s, 4s, 8s) | Padrão da indústria — respeita API caída sem hostilizar |
+| BackgroundScheduler em vez de Blocking | Permite shutdown gracioso via Ctrl+C no Windows; prepara integração futura com FastAPI |
+| `time.sleep(1)` no thread principal | Funciona em qualquer SO, respeita Ctrl+C nativamente |
+| `max_instances=1` + `coalesce=True` | Evita acúmulo de execuções se uma rodada demorar mais que o intervalo |
+| Mock de `time.sleep` nos testes | Suíte completa em < 1 segundo |
 
 ---
 
-## 8. Como Trabalhar com o Agente do Cursor
+## 9. Como Trabalhar com o Agente do Cursor
 
 ### Modo pipeline (preferido)
 Em vez de pedir função por função, especifique **comportamento esperado completo**:
@@ -252,13 +300,25 @@ Em vez de pedir função por função, especifique **comportamento esperado comp
 4. **Requisitos não funcionais:** robustez, testes, convenções
 5. **Critério de sucesso:** como saber que está pronto (ex: "rodar `python monitor.py` duas vezes e ver `[NOVO]` na primeira e `[JÁ VISTO]` na segunda")
 
+### Estratégia de commits
+Quebrar trabalho grande em **commits pequenos e independentes**. Exemplo da Camada 1:
+- Commit 1: correções pequenas (encoding, contador de erros)
+- Commit 2: retry com backoff
+- Commit 3: scheduler
+
+Cada commit deve ser revisável em isolamento e revertível sem perder os outros.
+
 ---
 
-## 9. Histórico de Mudanças
+## 10. Histórico de Mudanças
 
 | Data | Mudança |
 |---|---|
 | 2026-04-27 | Criação inicial do CONTEXT.md |
 | 2026-04-27 | Camada 1 parcial: integração monitor + database, deduplicação por cod_alerta, função pura montar_alerta, testes unitários (6 passando), repositório no GitHub |
+| 2026-04-28 | Correções na Camada 1: contador de erros, encoding UTF-8, asserção sanitária dos contadores (7 testes passando) |
+| 2026-04-28 | Retry com backoff exponencial na requisição CEMADEN, distinção entre erros 4xx e 5xx (11 testes passando) |
+| 2026-04-28 | Agendamento automático com APScheduler (BackgroundScheduler), shutdown gracioso via Ctrl+C, requirements.txt criado (15 testes passando) |
+| 2026-04-28 | **Camada 1 concluída** — sistema roda continuamente como serviço, resiste a falhas de rede, encerra limpo |
 
 > Adicione novas linhas aqui sempre que houver mudança arquitetural ou conclusão de camada.
