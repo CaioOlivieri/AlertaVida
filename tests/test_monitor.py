@@ -69,3 +69,7 @@ def test_montar_alerta_preenche_na_quando_campos_opcionais_ausentes():
 def test_montar_alerta_retorna_none_se_item_nao_e_dict():
     assert montar_alerta([]) is None
     assert montar_alerta("x") is None
+
+
+def test_montar_alerta_retorna_none_quando_item_e_none():
+    assert montar_alerta(None) is None

@@ -5,6 +5,9 @@ from urllib.request import Request, urlopen
 
 from database import alerta_existe, criar_banco, salvar_alerta
 
+if (sys.stdout.encoding or "").lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
 
@@ -106,6 +109,7 @@ def main():
     novos = 0
     ja_existentes = 0
     descartados = 0
+    erros = 0
 
     if not alertas:
         print("Nenhum alerta encontrado.")
@@ -129,6 +133,7 @@ def main():
                     novos += 1
                     print(f"[NOVO] {mun} | {uf} | {ev}")
             except Exception as exc:  # noqa: BLE001 — captura por item, segue o loop
+                erros += 1
                 print(f"[ERRO] cod_alerta={cod} — {exc}")
 
     print()
@@ -137,6 +142,11 @@ def main():
     print(f"Novos salvos: {novos}")
     print(f"Já existentes: {ja_existentes}")
     print(f"Descartados: {descartados}")
+    print(f"Erros: {erros}")
+
+    assert novos + ja_existentes + descartados + erros == total_recebido, (
+        f"Contadores inconsistentes: {novos}+{ja_existentes}+{descartados}+{erros} != {total_recebido}"
+    )
 
 
 if __name__ == "__main__":
