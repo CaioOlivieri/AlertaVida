@@ -2,15 +2,15 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import scheduler
+import alertavida.scheduler as scheduler
 
 
 def test_agendamento_executa_imediatamente():
     scheduler_mock = Mock()
-    with patch("scheduler.BackgroundScheduler", return_value=scheduler_mock):
-        with patch("scheduler.datetime") as mock_datetime:
-            with patch("scheduler.time.sleep", side_effect=KeyboardInterrupt):
-                with patch("scheduler.sys.exit"):
+    with patch("alertavida.scheduler.BackgroundScheduler", return_value=scheduler_mock):
+        with patch("alertavida.scheduler.datetime") as mock_datetime:
+            with patch("alertavida.scheduler.time.sleep", side_effect=KeyboardInterrupt):
+                with patch("alertavida.scheduler.sys.exit"):
                     now = datetime(2026, 4, 28, 18, 0, 0)
                     mock_datetime.now.return_value = now
                     scheduler.agendar_ingestao()
@@ -21,10 +21,10 @@ def test_agendamento_executa_imediatamente():
 
 def test_intervalo_correto():
     scheduler_mock = Mock()
-    with patch("scheduler.BackgroundScheduler", return_value=scheduler_mock):
-        with patch("scheduler.datetime") as mock_datetime:
-            with patch("scheduler.time.sleep", side_effect=KeyboardInterrupt):
-                with patch("scheduler.sys.exit"):
+    with patch("alertavida.scheduler.BackgroundScheduler", return_value=scheduler_mock):
+        with patch("alertavida.scheduler.datetime") as mock_datetime:
+            with patch("alertavida.scheduler.time.sleep", side_effect=KeyboardInterrupt):
+                with patch("alertavida.scheduler.sys.exit"):
                     mock_datetime.now.return_value = datetime.now()
                     scheduler.agendar_ingestao()
 
@@ -36,10 +36,10 @@ def test_intervalo_correto():
 
 def test_listener_continua_apos_erro():
     scheduler_mock = Mock()
-    with patch("scheduler.BackgroundScheduler", return_value=scheduler_mock):
-        with patch("scheduler.datetime") as mock_datetime:
-            with patch("scheduler.time.sleep", side_effect=KeyboardInterrupt):
-                with patch("scheduler.sys.exit"):
+    with patch("alertavida.scheduler.BackgroundScheduler", return_value=scheduler_mock):
+        with patch("alertavida.scheduler.datetime") as mock_datetime:
+            with patch("alertavida.scheduler.time.sleep", side_effect=KeyboardInterrupt):
+                with patch("alertavida.scheduler.sys.exit"):
                     mock_datetime.now.return_value = datetime.now()
                     scheduler.agendar_ingestao()
 
@@ -55,9 +55,9 @@ def test_listener_continua_apos_erro():
 
 def test_keyboard_interrupt_encerra_limpo():
     scheduler_mock = Mock()
-    with patch("scheduler.BackgroundScheduler", return_value=scheduler_mock):
-        with patch("scheduler.time.sleep", side_effect=KeyboardInterrupt):
-            with patch("scheduler.sys.exit") as mock_exit:
+    with patch("alertavida.scheduler.BackgroundScheduler", return_value=scheduler_mock):
+        with patch("alertavida.scheduler.time.sleep", side_effect=KeyboardInterrupt):
+            with patch("alertavida.scheduler.sys.exit") as mock_exit:
                 scheduler.agendar_ingestao()
 
     scheduler_mock.shutdown.assert_called_once_with(wait=False)

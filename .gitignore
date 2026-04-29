@@ -27,6 +27,7 @@ coverage.xml
 # ==========================================
 # Banco de dados local (SQLite)
 # ==========================================
+data/
 *.db
 *.sqlite
 *.sqlite3

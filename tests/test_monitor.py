@@ -3,7 +3,7 @@
 from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
-from monitor import fetch_alertas_com_retry, montar_alerta
+from alertavida.monitor import fetch_alertas_com_retry, montar_alerta
 
 
 def test_montar_alerta_mapeia_nomes_padrao_cemaden():
@@ -86,8 +86,8 @@ def test_fetch_sucesso_primeira_tentativa():
     context.__enter__ = Mock(return_value=response)
     context.__exit__ = Mock(return_value=False)
 
-    with patch("monitor.urlopen", return_value=context) as mock_urlopen:
-        with patch("monitor.time.sleep") as mock_sleep:
+    with patch("alertavida.monitor.urlopen", return_value=context) as mock_urlopen:
+        with patch("alertavida.monitor.time.sleep") as mock_sleep:
             out = fetch_alertas_com_retry("https://exemplo")
 
     assert out == payload
@@ -104,10 +104,10 @@ def test_fetch_sucesso_apos_falhas_temporarias():
     context.__exit__ = Mock(return_value=False)
 
     with patch(
-        "monitor.urlopen",
+        "alertavida.monitor.urlopen",
         side_effect=[URLError("timeout"), URLError("conexao"), context],
     ) as mock_urlopen:
-        with patch("monitor.time.sleep") as mock_sleep:
+        with patch("alertavida.monitor.time.sleep") as mock_sleep:
             out = fetch_alertas_com_retry("https://exemplo")
 
     assert out == payload
@@ -123,8 +123,8 @@ def test_fetch_falha_4xx_nao_faz_retry():
         hdrs=None,
         fp=None,
     )
-    with patch("monitor.urlopen", side_effect=err) as mock_urlopen:
-        with patch("monitor.time.sleep") as mock_sleep:
+    with patch("alertavida.monitor.urlopen", side_effect=err) as mock_urlopen:
+        with patch("alertavida.monitor.time.sleep") as mock_sleep:
             try:
                 fetch_alertas_com_retry("https://exemplo")
                 assert False, "Era esperado HTTPError(404)"
@@ -136,8 +136,8 @@ def test_fetch_falha_4xx_nao_faz_retry():
 
 
 def test_fetch_esgota_tentativas_e_propaga():
-    with patch("monitor.urlopen", side_effect=URLError("falha")) as mock_urlopen:
-        with patch("monitor.time.sleep") as mock_sleep:
+    with patch("alertavida.monitor.urlopen", side_effect=URLError("falha")) as mock_urlopen:
+        with patch("alertavida.monitor.time.sleep") as mock_sleep:
             try:
                 fetch_alertas_com_retry("https://exemplo")
                 assert False, "Era esperado URLError após esgotar tentativas"

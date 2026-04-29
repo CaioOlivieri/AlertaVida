@@ -5,7 +5,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from database import alerta_existe, criar_banco, salvar_alerta
+from alertavida.database import alerta_existe, criar_banco, salvar_alerta
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -180,4 +180,3 @@ main = executar_ingestao
 
 if __name__ == "__main__":
     executar_ingestao()
-

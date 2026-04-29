@@ -5,7 +5,7 @@ import time
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from monitor import executar_ingestao
+from alertavida.monitor import executar_ingestao
 
 INTERVALO_MINUTOS = 5
 
