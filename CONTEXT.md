@@ -24,12 +24,13 @@
 ### Backend
 - **Linguagem:** Python 3.13.13
 - **IDE:** Cursor
-- **Validação de dados:** Pydantic (v2) — *a ser introduzido na Camada 2*
+- **Validação de dados:** Pydantic (v2) — *Parte 2 da Camada 2 (em breve)*
 - **API Framework:** FastAPI — *a ser introduzido na Camada 5*
 - **Agendador:** APScheduler (BackgroundScheduler) ✅
 - **Banco de dados (início):** SQLite ✅
 - **Banco de dados (futuro):** PostgreSQL (via Supabase)
 - **Testes:** pytest ✅
+- **Empacotamento:** pyproject.toml + setuptools (src layout) ✅
 
 ### Frontend (futuro)
 - **Framework:** Next.js (com suporte nativo a PWA)
@@ -73,7 +74,7 @@ Abordagem **camada por camada**, sem pular etapas. Cada camada deve estar funcio
 
 Campos relevantes do JSON: `codigoalerta`, `datahoracriacao`, `tipoevento`, `nivel`, `estado`, `municipio`, coordenadas geográficas.
 
-### Camada 2 — Modelagem de Domínio 🔜 PRÓXIMA
+### Camada 2 — Modelagem de Domínio ⚙️ EM PROGRESSO
 **Objetivo:** parar de trabalhar com dicionários soltos.
 
 **Entidades a criar (Pydantic):**
@@ -82,7 +83,12 @@ Campos relevantes do JSON: `codigoalerta`, `datahoracriacao`, `tipoevento`, `niv
 - `NivelRisco` — enum (BAIXO, MODERADO, ALTO, MUITO_ALTO)
 - `TipoEvento` — enum (HIDROLOGICO, GEOLOGICO, METEOROLOGICO, etc.)
 
-Esta também é a camada onde a refatoração da estrutura de pastas deve acontecer (migrar para `src/`).
+Esta também é a camada onde a refatoração da estrutura de pastas acontece (migrar para `src/`).
+
+**Plano de execução em 3 partes:**
+- [x] **Parte 1** — Refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 ✅
+- [ ] **Parte 2** — Modelos Pydantic (`Alerta`, `Municipio`, `NivelRisco`, `TipoEvento`) sem integração
+- [ ] **Parte 3** — Integração: `montar_alerta()` retorna `Alerta`, `database.py` recebe `Alerta`
 
 ### Camada 3 — Detecção de Mudanças e Eventos 🔒 BLOQUEADA (depende de 1 e 2)
 **Padrão arquitetural:** Event-Driven Architecture.
@@ -133,17 +139,23 @@ PWA com mapa interativo, lista de alertas, filtros, instalável como app no celu
 alertavida/
 ├── .gitignore
 ├── CONTEXT.md
-├── alertavida.db          ← gerado em runtime (gitignored)
-├── database.py
-├── monitor.py
-├── scheduler.py
-├── requirements.txt
+├── README.md
+├── pyproject.toml
+├── data/
+│   └── alertavida.db          ← gerado em runtime (gitignored)
+├── src/
+│   └── alertavida/
+│       ├── __init__.py
+│       ├── monitor.py
+│       ├── database.py
+│       └── scheduler.py
 └── tests/
+    ├── __init__.py
     ├── test_monitor.py
     └── test_scheduler.py
 ```
 
-### Estrutura alvo (após refatoração na Camada 2)
+### Estrutura alvo (após refatorações futuras)
 ```
 alertavida/
 ├── CONTEXT.md
@@ -152,31 +164,33 @@ alertavida/
 ├── .env.example
 ├── pyproject.toml              ← dependências e config
 ├── src/
-│   ├── ingestion/              ← Camada 1
-│   │   ├── __init__.py
-│   │   ├── scheduler.py
-│   │   ├── persistence.py
-│   │   └── retry.py
-│   ├── domain/                 ← Camada 2
-│   │   ├── __init__.py
-│   │   ├── alerta.py
-│   │   ├── municipio.py
-│   │   └── enums.py
-│   ├── events/                 ← Camada 3
-│   │   ├── __init__.py
-│   │   └── change_detector.py
-│   ├── sources/                ← Camada 4
-│   │   ├── __init__.py
-│   │   ├── base.py             ← interface DataSource
-│   │   ├── cemaden.py
-│   │   ├── nasa_eonet.py
-│   │   └── inmet.py
-│   ├── api/                    ← Camada 5
-│   │   ├── __init__.py
-│   │   ├── main.py
-│   │   └── routes/
-│   └── notifications/          ← Camada 7
-│       └── __init__.py
+│   └── alertavida/
+│       ├── __init__.py
+│       ├── ingestion/              ← Camada 1
+│       │   ├── __init__.py
+│       │   ├── scheduler.py
+│       │   ├── persistence.py
+│       │   └── retry.py
+│       ├── domain/                 ← Camada 2
+│       │   ├── __init__.py
+│       │   ├── alerta.py
+│       │   ├── municipio.py
+│       │   └── enums.py
+│       ├── events/                 ← Camada 3
+│       │   ├── __init__.py
+│       │   └── change_detector.py
+│       ├── sources/                ← Camada 4
+│       │   ├── __init__.py
+│       │   ├── base.py             ← interface DataSource
+│       │   ├── cemaden.py
+│       │   ├── nasa_eonet.py
+│       │   └── inmet.py
+│       ├── api/                    ← Camada 5
+│       │   ├── __init__.py
+│       │   ├── main.py
+│       │   └── routes/
+│       └── notifications/          ← Camada 7
+│           └── __init__.py
 ├── tests/
 │   ├── ingestion/
 │   ├── domain/
@@ -185,21 +199,27 @@ alertavida/
 └── data/                       ← SQLite local (gitignored)
 ```
 
-A migração da estrutura atual para a alvo acontece **na Camada 2** — não antes.
+A migração para sub-módulos por camada (ingestion/, domain/, etc.) acontece **gradualmente** conforme cada camada é trabalhada.
 
 ---
 
 ## 5. Como Rodar (Estado Atual)
 
+### Instalação (após clonar o repo)
+```bash
+pip install -e ".[dev]"
+```
+Modo editável: mudanças no código aparecem imediatamente, sem reinstalar.
+
 ### Execução única (debug, validação)
 ```bash
-python monitor.py
+python -m alertavida.monitor
 ```
 Faz uma rodada de ingestão, persiste alertas novos, imprime relatório, encerra.
 
 ### Execução contínua (modo serviço)
 ```bash
-python scheduler.py
+python -m alertavida.scheduler
 ```
 Roda a primeira rodada imediatamente, depois repete a cada 5 minutos. Encerra com `Ctrl+C`.
 
@@ -208,11 +228,6 @@ Roda a primeira rodada imediatamente, depois repete a cada 5 minutos. Encerra co
 python -m pytest -v
 ```
 Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.sleep`).
-
-### Instalação de dependências (após clonar o repo)
-```bash
-pip install -r requirements.txt
-```
 
 ---
 
@@ -241,6 +256,7 @@ pip install -r requirements.txt
 ### Imports
 - Ordem: stdlib → terceiros → locais
 - Imports absolutos sempre que possível
+- Imports internos do projeto começam com `alertavida.` (ex: `from alertavida.database import ...`)
 
 ### Tratamento de erros
 - Nunca usar `except:` genérico
@@ -275,6 +291,10 @@ pip install -r requirements.txt
 | `time.sleep(1)` no thread principal | Funciona em qualquer SO, respeita Ctrl+C nativamente |
 | `max_instances=1` + `coalesce=True` | Evita acúmulo de execuções se uma rodada demorar mais que o intervalo |
 | Mock de `time.sleep` nos testes | Suíte completa em < 1 segundo |
+| src layout (`src/alertavida/`) | Padrão recomendado pela Python Packaging Authority — força import correto, evita armadilhas com imports relativos |
+| `pyproject.toml` em vez de `requirements.txt` | Padrão moderno (PEP 517/518); centraliza deps, build, config de ferramentas |
+| Banco em `data/` | Separa dados gerados em runtime do código fonte |
+| `pip install -e` (modo editável) | Mudanças no código aparecem instantaneamente sem reinstalar |
 
 ---
 
@@ -285,7 +305,7 @@ Em vez de pedir função por função, especifique **comportamento esperado comp
 
 > ❌ "Me escreve uma função pra buscar dados do CEMADEN"
 >
-> ✅ "Implemente o módulo `src/sources/cemaden.py` que segue a interface `DataSource` (em `src/sources/base.py`). A função `fetch()` deve buscar dados do endpoint CEMADEN, validar com os modelos Pydantic em `src/domain/`, retornar uma lista de `Alerta`, e fazer retry com backoff exponencial em caso de falha. Escreva os testes em `tests/sources/test_cemaden.py` antes da implementação."
+> ✅ "Implemente o módulo `src/alertavida/sources/cemaden.py` que segue a interface `DataSource` (em `src/alertavida/sources/base.py`). A função `fetch()` deve buscar dados do endpoint CEMADEN, validar com os modelos Pydantic em `src/alertavida/domain/`, retornar uma lista de `Alerta`, e fazer retry com backoff exponencial em caso de falha. Escreva os testes em `tests/sources/test_cemaden.py` antes da implementação."
 
 ### Sempre que iniciar uma sessão
 1. Garantir que o agente leu este `CONTEXT.md`
@@ -298,7 +318,7 @@ Em vez de pedir função por função, especifique **comportamento esperado comp
 2. **Objetivo:** o que se quer alcançar (não como)
 3. **Requisitos funcionais:** comportamento esperado, casos de borda
 4. **Requisitos não funcionais:** robustez, testes, convenções
-5. **Critério de sucesso:** como saber que está pronto (ex: "rodar `python monitor.py` duas vezes e ver `[NOVO]` na primeira e `[JÁ VISTO]` na segunda")
+5. **Critério de sucesso:** como saber que está pronto (ex: "rodar `python -m alertavida.monitor` duas vezes e ver `[NOVO]` na primeira e `[JÁ VISTO]` na segunda")
 
 ### Estratégia de commits
 Quebrar trabalho grande em **commits pequenos e independentes**. Exemplo da Camada 1:
@@ -320,5 +340,4 @@ Cada commit deve ser revisável em isolamento e revertível sem perder os outros
 | 2026-04-28 | Retry com backoff exponencial na requisição CEMADEN, distinção entre erros 4xx e 5xx (11 testes passando) |
 | 2026-04-28 | Agendamento automático com APScheduler (BackgroundScheduler), shutdown gracioso via Ctrl+C, requirements.txt criado (15 testes passando) |
 | 2026-04-28 | **Camada 1 concluída** — sistema roda continuamente como serviço, resiste a falhas de rede, encerra limpo |
-
-> Adicione novas linhas aqui sempre que houver mudança arquitetural ou conclusão de camada.
+| 2026-04-29 | Camada 2 — Parte 1 concluída: refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 (15 testes passando) |
