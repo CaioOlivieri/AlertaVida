@@ -74,7 +74,7 @@ Abordagem **camada por camada**, sem pular etapas. Cada camada deve estar funcio
 
 Campos relevantes do JSON: `codigoalerta`, `datahoracriacao`, `tipoevento`, `nivel`, `estado`, `municipio`, coordenadas geográficas.
 
-### Camada 2 — Modelagem de Domínio ⚙️ EM PROGRESSO
+### Camada 2 — Modelagem de Domínio ✅ CONCLUÍDA
 **Objetivo:** parar de trabalhar com dicionários soltos.
 
 **Entidades a criar (Pydantic):**
@@ -88,7 +88,7 @@ Esta também é a camada onde a refatoração da estrutura de pastas acontece (m
 **Plano de execução em 3 partes:**
 - [x] **Parte 1** — Refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 ✅
 - [x] **Parte 2** — Modelos Pydantic implementados, 68 testes passando (revisões pendentes em issue #1)
-- [ ] **Parte 3** — Integração: `montar_alerta()` retorna `Alerta`, `database.py` recebe `Alerta`
+- [x] **Parte 3** — Integração concluída: `montar_alerta()` retorna `Alerta`, `database.py` recebe `Alerta` ✅
 
 ### Camada 3 — Detecção de Mudanças e Eventos 🔒 BLOQUEADA (depende de 1 e 2)
 **Padrão arquitetural:** Event-Driven Architecture.
@@ -346,3 +346,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-04-28 | **Camada 1 concluída** — sistema roda continuamente como serviço, resiste a falhas de rede, encerra limpo |
 | 2026-04-29 | Camada 2 — Parte 1 concluída: refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 (15 testes passando) |
 | 2026-05-01 | Camada 2 — Parte 2: 68 testes passando (revisões em issues #1 e #2). Claude Code instalado e CLAUDE.md criado. Princípio de honestidade dos dados formalizado. Fluxo de trabalho com agentes de IA documentado (§9). |
+| 2026-05-01 | **Camada 2 concluída** — Parte 3 integrada, `pick_value()` removida, 68 testes passando |

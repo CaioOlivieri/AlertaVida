@@ -15,14 +15,6 @@ if (sys.stdout.encoding or "").lower() != "utf-8":
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
 
 
-def pick_value(item, possible_keys, default="N/A"):
-    for key in possible_keys:
-        value = item.get(key)
-        if value is not None and value != "":
-            return value
-    return default
-
-
 def montar_alerta(item: dict) -> Alerta:
     """Converte item bruto do CEMADEN em Alerta de domínio.
 
