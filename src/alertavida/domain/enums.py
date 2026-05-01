@@ -65,7 +65,6 @@ class TipoEvento(str, Enum):
         meteorologico = {
             "tempestade",
             "chuva",
-            "chuva intensa",
             "meteorologico",
             "vento forte",
         }
