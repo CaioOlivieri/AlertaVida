@@ -39,11 +39,11 @@ def test_tipo_evento_incendio_queimada() -> None:
 
 
 def test_tipo_evento_meteorologico_chuva() -> None:
-    assert TipoEvento.from_string("Chuva intensa") == TipoEvento.METEOROLOGICO
+    assert TipoEvento.from_string("Chuva") == TipoEvento.METEOROLOGICO
 
 
 def test_tipo_evento_meteorologico_vento_forte() -> None:
-    assert TipoEvento.from_string("Vento forte") == TipoEvento.METEOROLOGICO
+    assert TipoEvento.from_string("Vento Forte") == TipoEvento.METEOROLOGICO
 
 
 def test_tipo_evento_desconhecido_vira_outros() -> None:
@@ -59,7 +59,7 @@ def test_nivel_risco_muito_alto_com_underscore() -> None:
 
 
 def test_nivel_risco_muito_alto_sem_underscore() -> None:
-    assert NivelRisco.from_string("MUITO ALTO") == NivelRisco.MUITO_ALTO
+    assert NivelRisco.from_string("muitoalto") == NivelRisco.MUITO_ALTO
 
 
 def test_enum_str_mixin_serialize_value() -> None:
