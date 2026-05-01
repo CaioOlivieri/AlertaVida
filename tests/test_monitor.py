@@ -1,5 +1,7 @@
 """Testes de montar_alerta (ingestão + mapeamento CEMADEN)."""
 
+import pytest
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
@@ -16,13 +18,12 @@ def test_montar_alerta_mapeia_nomes_padrao_cemaden():
         "datahoracriacao": "2025-12-20T14:30:00",
     }
     out = montar_alerta(item)
-    assert out is not None
-    assert out["cod_alerta"] == 12345
-    assert out["municipio"] == "Rio de Janeiro"
-    assert out["uf"] == "RJ"
-    assert out["evento"] == "Alagamento"
-    assert out["nivel"] == "MODERADO"
-    assert out["datahoracriacao"] == "2025-12-20T14:30:00"
+    assert out.cod_alerta == 12345
+    assert out.municipio.nome == "Rio de Janeiro"
+    assert out.municipio.uf == "RJ"
+    assert out.tipo_evento.value == "HIDROLOGICO"
+    assert out.nivel_risco.value == "MODERADO"
+    assert out.data_criacao == datetime(2025, 12, 20, 14, 30, tzinfo=timezone.utc)
 
 
 def test_montar_alerta_mapeia_nomes_alternativos_cidade_estado_tipo_evento():
@@ -35,13 +36,12 @@ def test_montar_alerta_mapeia_nomes_alternativos_cidade_estado_tipo_evento():
         "data_criacao": "2024-11-01 08:00:00",
     }
     out = montar_alerta(item)
-    assert out is not None
-    assert out["cod_alerta"] == 99
-    assert out["municipio"] == "Curitiba"
-    assert out["uf"] == "PR"
-    assert out["evento"] == "Deslizamento"
-    assert out["nivel"] == "ALTO"
-    assert out["datahoracriacao"] == "2024-11-01 08:00:00"
+    assert out.cod_alerta == 99
+    assert out.municipio.nome == "Curitiba"
+    assert out.municipio.uf == "PR"
+    assert out.tipo_evento.value == "GEOLOGICO"
+    assert out.nivel_risco.value == "ALTO"
+    assert out.data_criacao == datetime(2024, 11, 1, 8, 0, tzinfo=timezone.utc)
 
 
 def test_montar_alerta_retorna_none_sem_cod_alerta():
@@ -49,7 +49,8 @@ def test_montar_alerta_retorna_none_sem_cod_alerta():
         "municipio": "X",
         "uf": "SP",
     }
-    assert montar_alerta(item) is None
+    with pytest.raises(ValueError):
+        montar_alerta(item)
 
 
 def test_montar_alerta_retorna_none_quando_cod_nao_e_inteiro():
@@ -57,25 +58,26 @@ def test_montar_alerta_retorna_none_quando_cod_nao_e_inteiro():
         "cod_alerta": "nao_e_numero",
         "municipio": "X",
     }
-    assert montar_alerta(item) is None
+    with pytest.raises(ValueError):
+        montar_alerta(item)
 
 
 def test_montar_alerta_preenche_na_quando_campos_opcionais_ausentes():
     item = {"id": 7}
-    out = montar_alerta(item)
-    assert out is not None
-    assert out["cod_alerta"] == 7
-    for key in ("municipio", "uf", "evento", "nivel", "datahoracriacao"):
-        assert out[key] == "N/A"
+    with pytest.raises(ValueError):
+        montar_alerta(item)
 
 
 def test_montar_alerta_retorna_none_se_item_nao_e_dict():
-    assert montar_alerta([]) is None
-    assert montar_alerta("x") is None
+    with pytest.raises(ValueError):
+        montar_alerta([])
+    with pytest.raises(ValueError):
+        montar_alerta("x")
 
 
 def test_montar_alerta_retorna_none_quando_item_e_none():
-    assert montar_alerta(None) is None
+    with pytest.raises(ValueError):
+        montar_alerta(None)
 
 
 def test_fetch_sucesso_primeira_tentativa():

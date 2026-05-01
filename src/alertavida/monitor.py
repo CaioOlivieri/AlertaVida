@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from alertavida.database import alerta_existe, criar_banco, salvar_alerta
+from alertavida.domain import Alerta
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -22,55 +23,14 @@ def pick_value(item, possible_keys, default="N/A"):
     return default
 
 
-def montar_alerta(item: dict) -> dict | None:
+def montar_alerta(item: dict) -> Alerta:
+    """Converte item bruto do CEMADEN em Alerta de domínio.
+
+    Levanta ValueError se o item não tiver os campos obrigatórios.
+    """
     if not isinstance(item, dict):
-        return None
-
-    raw_cod = pick_value(
-        item, ("codigoalerta", "cod_alerta", "id", "codigo"), default=None
-    )
-    if raw_cod is None or raw_cod == "":
-        return None
-    try:
-        cod_alerta = int(raw_cod)
-    except (TypeError, ValueError):
-        return None
-
-    return {
-        "cod_alerta": cod_alerta,
-        "municipio": str(
-            pick_value(item, ("municipio", "nome_municipio", "cidade"), default="N/A")
-        ),
-        "uf": str(pick_value(item, ("uf", "estado", "state"), default="N/A")),
-        "evento": str(
-            pick_value(
-                item,
-                (
-                    "tipo_evento",
-                    "evento",
-                    "tipo",
-                    "desastre",
-                    "tipoevento",
-                ),
-                default="N/A",
-            )
-        ),
-        "nivel": str(
-            pick_value(item, ("nivel", "nivel_alerta", "severity", "grau"), default="N/A")
-        ),
-        "datahoracriacao": str(
-            pick_value(
-                item,
-                (
-                    "datahoracriacao",
-                    "data_criacao",
-                    "dataCriacao",
-                    "dt_criacao",
-                ),
-                default="N/A",
-            )
-        ),
-    }
+        raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
+    return Alerta.from_dict(item)
 
 
 def normalize_alert_list(payload):
@@ -141,15 +101,16 @@ def executar_ingestao():
         print("Nenhum alerta encontrado.")
     else:
         for alerta in alertas:
-            mapeado = montar_alerta(alerta)
-            if mapeado is None:
+            try:
+                mapeado = montar_alerta(alerta)
+            except ValueError:
                 descartados += 1
                 continue
 
-            cod = mapeado["cod_alerta"]
-            mun = mapeado["municipio"]
-            uf = mapeado["uf"]
-            ev = mapeado["evento"]
+            cod = mapeado.cod_alerta
+            mun = mapeado.municipio.nome
+            uf = mapeado.municipio.uf
+            ev = mapeado.tipo_evento.value
             try:
                 if alerta_existe(cod):
                     ja_existentes += 1

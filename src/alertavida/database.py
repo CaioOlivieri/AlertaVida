@@ -2,6 +2,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from alertavida.domain import Alerta
+
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -34,40 +36,32 @@ def criar_banco():
         conexao.commit()
 
 
-def alerta_existe(cod_alerta):
+def alerta_existe(cod_alerta: int) -> bool:
     with sqlite3.connect(DB_PATH) as conexao:
         cursor = conexao.execute(
             "SELECT 1 FROM alertas WHERE cod_alerta = ? LIMIT 1",
-            (int(cod_alerta),),
+            (cod_alerta,),
         )
         return cursor.fetchone() is not None
 
 
-def salvar_alerta(alerta_dict):
-    cod_alerta = alerta_dict.get("cod_alerta")
-    if cod_alerta is None:
-        raise ValueError("O campo 'cod_alerta' e obrigatorio para salvar o alerta.")
-
+def salvar_alerta(alerta: Alerta) -> None:
+    """Persiste um Alerta no banco. Levanta se cod_alerta já existir."""
     with sqlite3.connect(DB_PATH) as conexao:
         conexao.execute(
             """
             INSERT INTO alertas (
-                cod_alerta,
-                municipio,
-                uf,
-                evento,
-                nivel,
-                datahoracriacao,
-                detectado_em
+                cod_alerta, municipio, uf, evento, nivel,
+                datahoracriacao, detectado_em
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                int(cod_alerta),
-                alerta_dict.get("municipio"),
-                alerta_dict.get("uf"),
-                alerta_dict.get("evento"),
-                alerta_dict.get("nivel"),
-                alerta_dict.get("datahoracriacao"),
+                alerta.cod_alerta,
+                alerta.municipio.nome,
+                alerta.municipio.uf,
+                alerta.tipo_evento.value,
+                alerta.nivel_risco.value,
+                alerta.data_criacao.isoformat(),
                 datetime.now().isoformat(timespec="seconds"),
             ),
         )
