@@ -24,7 +24,7 @@
 ### Backend
 - **Linguagem:** Python 3.13.13
 - **IDE:** Cursor
-- **Validação de dados:** Pydantic (v2) — *Parte 2 da Camada 2 (em breve)*
+- **Validação de dados:** Pydantic (v2) ✅ *(Camada 2 — Parte 2 implementada)*
 - **API Framework:** FastAPI — *a ser introduzido na Camada 5*
 - **Agendador:** APScheduler (BackgroundScheduler) ✅
 - **Banco de dados (início):** SQLite ✅
@@ -87,7 +87,7 @@ Esta também é a camada onde a refatoração da estrutura de pastas acontece (m
 
 **Plano de execução em 3 partes:**
 - [x] **Parte 1** — Refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 ✅
-- [ ] **Parte 2** — Modelos Pydantic (`Alerta`, `Municipio`, `NivelRisco`, `TipoEvento`) sem integração
+- [x] **Parte 2** — Modelos Pydantic implementados, 68 testes passando (revisões pendentes em issue #1)
 - [ ] **Parte 3** — Integração: `montar_alerta()` retorna `Alerta`, `database.py` recebe `Alerta`
 
 ### Camada 3 — Detecção de Mudanças e Eventos 🔒 BLOQUEADA (depende de 1 e 2)
@@ -242,6 +242,7 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 7. **Commits frequentes e descritivos.** Cada mudança significativa = um commit.
 8. **README mínimo mas presente.** Como rodar, arquitetura básica, decisões importantes.
 9. **Mocks em testes que envolvem rede ou tempo.** Suíte deve rodar em < 1 segundo.
+10. **Honestidade dos dados.** O modelo de domínio representa fielmente o que a fonte fornece, sem inventar precisão. Campos são opcionais quando a fonte os entrega esporadicamente, obrigatórios quando garantidos. Enriquecimento de dados ausentes (lookups, fallbacks, inferências) é responsabilidade da camada de fontes (Camada 4), não da camada de domínio (Camada 2).
 
 ---
 
@@ -295,38 +296,41 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | `pyproject.toml` em vez de `requirements.txt` | Padrão moderno (PEP 517/518); centraliza deps, build, config de ferramentas |
 | Banco em `data/` | Separa dados gerados em runtime do código fonte |
 | `pip install -e` (modo editável) | Mudanças no código aparecem instantaneamente sem reinstalar |
+| Coordenadas como Value Object opcional (`Coordenadas \| None`) | Honestidade dos dados — fonte nem sempre fornece com precisão |
+| Município sempre obrigatório no Alerta | Fallback geográfico mínimo garantido |
+| Enriquecimento (IBGE, lookups) só na Camada 4 | Camada 2 representa, Camada 4 enriquece |
 
 ---
 
-## 9. Como Trabalhar com o Agente do Cursor
+## 9. Como trabalhar com agentes de IA neste projeto
 
-### Modo pipeline (preferido)
-Em vez de pedir função por função, especifique **comportamento esperado completo**:
+### 9.1 Divisão de papéis
 
-> ❌ "Me escreve uma função pra buscar dados do CEMADEN"
->
-> ✅ "Implemente o módulo `src/alertavida/sources/cemaden.py` que segue a interface `DataSource` (em `src/alertavida/sources/base.py`). A função `fetch()` deve buscar dados do endpoint CEMADEN, validar com os modelos Pydantic em `src/alertavida/domain/`, retornar uma lista de `Alerta`, e fazer retry com backoff exponencial em caso de falha. Escreva os testes em `tests/sources/test_cemaden.py` antes da implementação."
+- **Claude (chat web)** — arquiteto. Decisões de design, revisão crítica, formulação de prompts. Não toca arquivos do projeto.
+- **Claude Code (terminal)** — executor. Lê o codebase via `CLAUDE.md`, edita arquivos, roda testes, dá recap.
+- **Cursor (IDE)** — editor + revisão visual. Diff, navegação, commits.
 
-### Sempre que iniciar uma sessão
-1. Garantir que o agente leu este `CONTEXT.md`
-2. Apontar a camada/módulo onde está trabalhando
-3. Definir o resultado esperado (não os passos)
-4. Deixar o agente executar e voltar com o resultado
+### 9.2 Fluxo padrão
 
-### Estrutura de prompt recomendada
-1. **Contexto:** "Leia o CONTEXT.md antes de qualquer coisa."
+1. Discussão arquitetural no chat → prompt formulado
+2. Prompt colado no Claude Code → execução com recap
+3. Recap trazido de volta ao chat → validação contra desvios
+4. Commit no Cursor após aprovação
+
+### 9.3 Anti-padrões aprendidos
+
+- **Strings literais soltas em prompts** ⇒ agente "embeleza" (`"Chuva"` virou `"Chuva intensa"` em 2026-04-30, ver issue #1). Sempre marcar com "use estas strings exatamente".
+- **Escopo implícito** ⇒ agente toca arquivos não pedidos. Sempre listar `NÃO modificar:` no prompt.
+- **Recap ausente** ⇒ desvios passam silenciosos. Sempre pedir `git diff --stat` no fim.
+
+### 9.4 Estrutura de prompt recomendada
+
+1. **Contexto:** "Leia o CLAUDE.md antes de qualquer coisa."
 2. **Objetivo:** o que se quer alcançar (não como)
 3. **Requisitos funcionais:** comportamento esperado, casos de borda
 4. **Requisitos não funcionais:** robustez, testes, convenções
-5. **Critério de sucesso:** como saber que está pronto (ex: "rodar `python -m alertavida.monitor` duas vezes e ver `[NOVO]` na primeira e `[JÁ VISTO]` na segunda")
-
-### Estratégia de commits
-Quebrar trabalho grande em **commits pequenos e independentes**. Exemplo da Camada 1:
-- Commit 1: correções pequenas (encoding, contador de erros)
-- Commit 2: retry com backoff
-- Commit 3: scheduler
-
-Cada commit deve ser revisável em isolamento e revertível sem perder os outros.
+5. **Critério de sucesso:** como saber que está pronto
+6. **Escopo de não-modificação:** lista explícita de arquivos intocáveis
 
 ---
 
@@ -341,3 +345,4 @@ Cada commit deve ser revisável em isolamento e revertível sem perder os outros
 | 2026-04-28 | Agendamento automático com APScheduler (BackgroundScheduler), shutdown gracioso via Ctrl+C, requirements.txt criado (15 testes passando) |
 | 2026-04-28 | **Camada 1 concluída** — sistema roda continuamente como serviço, resiste a falhas de rede, encerra limpo |
 | 2026-04-29 | Camada 2 — Parte 1 concluída: refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 (15 testes passando) |
+| 2026-05-01 | Camada 2 — Parte 2: 68 testes passando (revisões em issues #1 e #2). Claude Code instalado e CLAUDE.md criado. Princípio de honestidade dos dados formalizado. Fluxo de trabalho com agentes de IA documentado (§9). |

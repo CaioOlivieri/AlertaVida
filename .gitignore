@@ -81,6 +81,8 @@ build/
 *.key
 credentials
 *.secret
+.env.example.local
+secrets/       
 
 # ==========================================
 # Arquivos temporários
