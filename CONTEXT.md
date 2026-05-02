@@ -90,15 +90,37 @@ Esta também é a camada onde a refatoração da estrutura de pastas acontece (m
 - [x] **Parte 2** — Modelos Pydantic implementados, 68 testes passando (revisões pendentes em issue #1)
 - [x] **Parte 3** — Integração concluída: `montar_alerta()` retorna `Alerta`, `database.py` recebe `Alerta` ✅
 
-### Camada 3 — Detecção de Mudanças e Eventos 🔒 BLOQUEADA (depende de 1 e 2)
-**Padrão arquitetural:** Event-Driven Architecture.
+### Camada 3 — Detecção de Mudanças e Eventos ✅ CONCLUÍDA
 
-**Eventos internos a emitir:**
-- `AlertaCriado`
-- `AlertaAtualizado`
-- `AlertaResolvido`
+**Implementado:**
+- [x] Inspeção empírica do contrato do wsAlertas2 (scripts/inspect_cemaden_payload.py)
+- [x] Campos cod_alerta, codibge, ult_atualizacao, status mapeados e documentados
+- [x] Migration do banco: colunas status_interno, visto_ultima_vez, rodadas_ausente,
+      assinatura, codibge, latitude, longitude, ult_atualizacao + _migrar_banco() para
+      bancos existentes
+- [x] Tabela eventos (outbox) com índice idx_eventos_pendentes
+- [x] ChangeDetector puro (detector.py): AlertaSnapshot, EventoDetectado,
+      ResultadoDeteccao, detectar_mudancas()
+- [x] Integração do ChangeDetector em executar_ingestao() — 3 fases:
+      parse → detecção → persistência transacional
+- [x] Outbox Pattern: INSERT em alertas e INSERT em eventos na mesma transação SQLite
+- [x] buscar_snapshots_ativos() e aplicar_resultado_deteccao() em database.py
+- [x] EventBus in-memory (subscribe/publish/handler_count)
+- [x] OutboxDispatcher (processar_pendentes, batch_size=100)
+- [x] log_handler padrão registrado para os 3 tipos de evento
+- [x] Job do dispatcher integrado no scheduler (intervalo 30s)
+- [x] Suíte de testes: 88 testes passando em < 1s
 
-Comparar snapshot atual com anterior, emitir evento correspondente, desacoplar ingestão de consumidores.
+**Eventos emitidos:**
+- AlertaCriado — alerta novo no feed, não existia no banco
+- AlertaAtualizado — ult_atualizacao mudou para alerta já existente
+- AlertaResolvido — alerta ausente por RODADAS_PARA_RESOLVER rodadas bem-sucedidas consecutivas
+
+**Decisão: AlertaResolvido por inferência de ausência**
+O campo status do CEMADEN sempre vale 1 — alertas são removidos do feed
+sem sinalização prévia. AlertaResolvido é inferido após 3 rodadas ausentes
+consecutivas (RODADAS_PARA_RESOLVER=3, configurável). Apenas rodadas
+bem-sucedidas contam — falhas de rede não incrementam o contador.
 
 ### Camada 4 — Fontes Múltiplas 🔒 BLOQUEADA
 **Padrão arquitetural:** Adapter.
@@ -138,21 +160,37 @@ PWA com mapa interativo, lista de alertas, filtros, instalável como app no celu
 ```
 alertavida/
 ├── .gitignore
+├── CLAUDE.md
 ├── CONTEXT.md
 ├── README.md
 ├── pyproject.toml
+├── scripts/
+│   └── inspect_cemaden_payload.py
 ├── data/
 │   └── alertavida.db          ← gerado em runtime (gitignored)
+│   └── samples/               ← JSONs do inspetor (gitignored)
 ├── src/
 │   └── alertavida/
 │       ├── __init__.py
 │       ├── monitor.py
 │       ├── database.py
-│       └── scheduler.py
+│       ├── scheduler.py
+│       ├── events.py
+│       └── domain/
+│           ├── __init__.py
+│           ├── alerta.py
+│           ├── municipio.py
+│           ├── coordenadas.py
+│           ├── enums.py
+│           └── detector.py
 └── tests/
     ├── __init__.py
     ├── test_monitor.py
-    └── test_scheduler.py
+    ├── test_scheduler.py
+    ├── test_events.py
+    └── domain/
+        ├── test_alerta.py
+        └── test_detector.py
 ```
 
 ### Estrutura alvo (após refatorações futuras)
@@ -299,6 +337,13 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | Coordenadas como Value Object opcional (`Coordenadas \| None`) | Honestidade dos dados — fonte nem sempre fornece com precisão |
 | Município sempre obrigatório no Alerta | Fallback geográfico mínimo garantido |
 | Enriquecimento (IBGE, lookups) só na Camada 4 | Camada 2 representa, Camada 4 enriquece |
+| AlertaResolvido por inferência (N=3 rodadas ausentes) | status do CEMADEN sempre vale 1; alertas somem do feed sem aviso; N=3 é conservador (15 min) e configurável |
+| Outbox Pattern em SQLite | INSERT de alerta e evento na mesma transação — elimina dual-write; caminho natural para Postgres LISTEN/NOTIFY e depois broker |
+| ChangeDetector função pura | Zero I/O; testável sem mock de banco; separa decisão (detector) de execução (database) |
+| EventBus in-memory sem biblioteca | ~50 linhas próprias; sem acoplamento externo; substituível por broker quando necessário |
+| ult_atualizacao como gatilho de AlertaAtualizado | Campo explícito entregue pelo CEMADEN; mais confiável que hash de campos |
+| codibge parseado em from_dict | Campo presente no payload; evita lookup externo planejado para Camada 4 |
+| OutboxDispatcher a cada 30s no scheduler | Latência aceitável para Camada 3; Camada 7 pode reduzir se notificações exigirem |
 
 ---
 
@@ -347,3 +392,8 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-04-29 | Camada 2 — Parte 1 concluída: refatoração para `src layout`, `pyproject.toml`, pacote `alertavida` 0.2.0 (15 testes passando) |
 | 2026-05-01 | Camada 2 — Parte 2: 68 testes passando (revisões em issues #1 e #2). Claude Code instalado e CLAUDE.md criado. Princípio de honestidade dos dados formalizado. Fluxo de trabalho com agentes de IA documentado (§9). |
 | 2026-05-01 | **Camada 2 concluída** — Parte 3 integrada, `pick_value()` removida, 68 testes passando |
+| 2026-05-02 | Camada 3 — inspeção empírica do wsAlertas2: campos status, ult_atualizacao e codibge mapeados |
+| 2026-05-02 | Camada 3 — migration do banco: colunas de ciclo de vida + tabela eventos (outbox) |
+| 2026-05-02 | Camada 3 — ChangeDetector puro implementado, 79 testes passando |
+| 2026-05-02 | Camada 3 — integração do detector em executar_ingestao com outbox transacional, 81 testes |
+| 2026-05-02 | **Camada 3 concluída** — EventBus, OutboxDispatcher, job no scheduler, 88 testes passando |
