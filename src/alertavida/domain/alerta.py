@@ -28,6 +28,7 @@ class Alerta(BaseModel):
     municipio: Municipio
     coordenadas: Coordenadas | None = None
     data_criacao: datetime
+    ult_atualizacao: datetime | None = None
     descricao: str | None = None
 
     model_config = ConfigDict(frozen=True)
@@ -73,6 +74,16 @@ class Alerta(BaseModel):
         if data_criacao.tzinfo is None:
             data_criacao = data_criacao.replace(tzinfo=timezone.utc)
 
+        ult_raw = _pick(data, "ult_atualizacao", "ultima_atualizacao", "dataAtualizacao")
+        ult_atualizacao = None
+        if ult_raw is not None and str(ult_raw).strip():
+            try:
+                ult_atualizacao = datetime.fromisoformat(str(ult_raw))
+                if ult_atualizacao.tzinfo is None:
+                    ult_atualizacao = ult_atualizacao.replace(tzinfo=timezone.utc)
+            except ValueError:
+                ult_atualizacao = None
+
         latitude = _pick(data, "latitude", "lat")
         longitude = _pick(data, "longitude", "lon", "lng")
         coordenadas = None
@@ -83,7 +94,18 @@ class Alerta(BaseModel):
                 coordenadas = None
 
         descricao = _pick(data, "descricao", "desc", "mensagem")
-        municipio = Municipio(nome=str(nome).strip(), uf=str(uf).strip())
+        ibge_raw = _pick(data, "codibge", "codigo_ibge", "ibge", "codigoIbge")
+        codigo_ibge = None
+        if ibge_raw is not None:
+            try:
+                codigo_ibge = int(ibge_raw)
+            except (TypeError, ValueError):
+                codigo_ibge = None
+        municipio = Municipio(
+            nome=str(nome).strip(),
+            uf=str(uf).strip(),
+            codigo_ibge=codigo_ibge,
+        )
 
         return cls(
             cod_alerta=cod_alerta,
@@ -92,5 +114,6 @@ class Alerta(BaseModel):
             municipio=municipio,
             coordenadas=coordenadas,
             data_criacao=data_criacao,
+            ult_atualizacao=ult_atualizacao,
             descricao=None if descricao is None else str(descricao),
         )
