@@ -41,6 +41,7 @@ def test_from_dict_payload_realista_cemaden() -> None:
         "estado": "sp",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
+        "ult_atualizacao": "2026-04-29T12:00:00",
         "latitude": "-23.55",
         "longitude": "-46.63",
         "descricao": "Teste",
@@ -50,6 +51,64 @@ def test_from_dict_payload_realista_cemaden() -> None:
     assert alerta.municipio.uf == "SP"
     assert alerta.tipo_evento == TipoEvento.HIDROLOGICO
     assert alerta.data_criacao.tzinfo is not None
+    assert alerta.ult_atualizacao == datetime.fromisoformat(
+        "2026-04-29T12:00:00"
+    ).replace(tzinfo=timezone.utc)
+
+
+def test_from_dict_com_codibge_popula_codigo_ibge() -> None:
+    payload = {
+        "codigoalerta": "1001",
+        "tipoevento": "Queimada",
+        "nivel": "ALTO",
+        "estado": "SP",
+        "municipio": "Sao Paulo",
+        "codibge": 3550308,
+        "datahoracriacao": "2026-04-29T10:00:00",
+    }
+    alerta = Alerta.from_dict(payload)
+    assert alerta.municipio.codigo_ibge == 3550308
+
+
+def test_from_dict_sem_codibge_codigo_ibge_none() -> None:
+    payload = {
+        "codigoalerta": "1001",
+        "tipoevento": "Queimada",
+        "nivel": "ALTO",
+        "estado": "SP",
+        "municipio": "Sao Paulo",
+        "datahoracriacao": "2026-04-29T10:00:00",
+    }
+    alerta = Alerta.from_dict(payload)
+    assert alerta.municipio.codigo_ibge is None
+
+
+def test_from_dict_com_ult_atualizacao_popula() -> None:
+    payload = {
+        "codigoalerta": 10,
+        "tipoevento": "Queimada",
+        "nivel": "ALTO",
+        "estado": "SP",
+        "municipio": "Sao Paulo",
+        "datahoracriacao": "2026-04-29T10:00:00",
+        "dataAtualizacao": "2026-05-01T08:30:00-03:00",
+    }
+    alerta = Alerta.from_dict(payload)
+    assert alerta.ult_atualizacao is not None
+    assert alerta.ult_atualizacao.utcoffset() == timedelta(hours=-3)
+
+
+def test_from_dict_sem_ult_atualizacao_none() -> None:
+    payload = {
+        "codigoalerta": 10,
+        "tipoevento": "Queimada",
+        "nivel": "ALTO",
+        "estado": "SP",
+        "municipio": "Sao Paulo",
+        "datahoracriacao": "2026-04-29T10:00:00",
+    }
+    alerta = Alerta.from_dict(payload)
+    assert alerta.ult_atualizacao is None
 
 
 def test_from_dict_com_chaves_alternativas() -> None:
@@ -60,11 +119,15 @@ def test_from_dict_com_chaves_alternativas() -> None:
         "state": "mg",
         "cidade": "Belo Horizonte",
         "dataCriacao": "2026-04-29T10:00:00",
+        "ultima_atualizacao": "2026-04-29T14:30:00+00:00",
     }
     alerta = Alerta.from_dict(payload)
     assert alerta.cod_alerta == 42
     assert alerta.municipio.nome == "Belo Horizonte"
     assert alerta.tipo_evento == TipoEvento.INCENDIO
+    assert alerta.ult_atualizacao == datetime.fromisoformat(
+        "2026-04-29T14:30:00+00:00"
+    )
 
 
 def test_from_dict_sem_cod_alerta_lanca() -> None:
