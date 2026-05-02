@@ -15,8 +15,8 @@ def test_agendamento_executa_imediatamente():
                     mock_datetime.now.return_value = now
                     scheduler.agendar_ingestao()
 
-    kwargs = scheduler_mock.add_job.call_args.kwargs
-    assert kwargs["next_run_time"] == now
+    ingestao_kwargs = scheduler_mock.add_job.call_args_list[0].kwargs
+    assert ingestao_kwargs["next_run_time"] == now
 
 
 def test_intervalo_correto():
@@ -28,13 +28,13 @@ def test_intervalo_correto():
                     mock_datetime.now.return_value = datetime.now()
                     scheduler.agendar_ingestao()
 
-    args = scheduler_mock.add_job.call_args.args
-    kwargs = scheduler_mock.add_job.call_args.kwargs
+    args = scheduler_mock.add_job.call_args_list[0].args
+    kwargs = scheduler_mock.add_job.call_args_list[0].kwargs
     assert args[1] == "interval"
     assert kwargs["minutes"] == 5
 
 
-def test_listener_continua_apos_erro():
+def test_listener_continua_apos_erro(caplog):
     scheduler_mock = Mock()
     with patch("alertavida.scheduler.BackgroundScheduler", return_value=scheduler_mock):
         with patch("alertavida.scheduler.datetime") as mock_datetime:
@@ -47,10 +47,10 @@ def test_listener_continua_apos_erro():
     assert mask == scheduler.EVENT_JOB_ERROR
 
     evento = SimpleNamespace(exception=RuntimeError("falha simulada"))
-    with patch("builtins.print") as mock_print:
-        listener(evento)
-
-    mock_print.assert_any_call("[ERRO] Rodada de ingestão falhou: falha simulada")
+    caplog.set_level("ERROR", logger="alertavida.scheduler")
+    listener(evento)
+    assert "[ERRO] Rodada de ingestão falhou: falha simulada" in caplog.text
+    assert any(record.levelname == "ERROR" for record in caplog.records)
 
 
 def test_keyboard_interrupt_encerra_limpo():
