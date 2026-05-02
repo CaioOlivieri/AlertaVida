@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
-from alertavida.monitor import fetch_alertas_com_retry, montar_alerta
+from alertavida.domain.detector import EventoDetectado, ResultadoDeteccao
+from alertavida.monitor import executar_ingestao, fetch_alertas_com_retry, montar_alerta
 
 
 def test_montar_alerta_mapeia_nomes_padrao_cemaden():
@@ -148,3 +149,63 @@ def test_fetch_esgota_tentativas_e_propaga():
 
     assert mock_urlopen.call_count == 4
     assert mock_sleep.call_count == 3
+
+
+def test_executar_ingestao_usa_busca_snapshots_e_aplica_resultado() -> None:
+    payload = [
+        {
+            "codigoalerta": 12345,
+            "municipio": "Rio de Janeiro",
+            "estado": "RJ",
+            "tipoevento": "Alagamento",
+            "nivel": "MODERADO",
+            "datahoracriacao": "2025-12-20T14:30:00",
+            "ult_atualizacao": "2025-12-20T15:30:00+00:00",
+        }
+    ]
+    resultado = ResultadoDeteccao(
+        eventos=[
+            EventoDetectado(
+                tipo="AlertaCriado",
+                cod_alerta=12345,
+                payload={"cod_alerta": 12345},
+            )
+        ],
+        codigos_vistos={12345},
+        codigos_ausentes=set(),
+        codigos_resolvidos=set(),
+    )
+
+    with patch("alertavida.monitor.criar_banco") as mock_criar_banco:
+        with patch(
+            "alertavida.monitor.fetch_alertas_com_retry",
+            return_value='{"alertas":[{"codigoalerta":12345,"municipio":"Rio de Janeiro","estado":"RJ","tipoevento":"Alagamento","nivel":"MODERADO","datahoracriacao":"2025-12-20T14:30:00","ult_atualizacao":"2025-12-20T15:30:00+00:00"}]}'.encode(
+                "utf-8"
+            ),
+        ):
+            with patch("alertavida.monitor.buscar_snapshots_ativos", return_value=[]) as mock_busca:
+                with patch("alertavida.monitor.detectar_mudancas", return_value=resultado):
+                    with patch("alertavida.monitor.aplicar_resultado_deteccao") as mock_aplicar:
+                        executar_ingestao()
+
+    assert payload[0]["codigoalerta"] == 12345
+    mock_criar_banco.assert_called_once()
+    mock_busca.assert_called_once()
+    mock_aplicar.assert_called_once()
+
+
+def test_executar_ingestao_conta_descartados_sem_erro_transacao() -> None:
+    raw = b'{"alertas":[{"id":7},{"codigoalerta":88,"municipio":"Curitiba","estado":"PR","tipoevento":"Deslizamento","nivel":"ALTO","datahoracriacao":"2024-11-01T08:00:00"}]}'
+    resultado = ResultadoDeteccao(
+        eventos=[],
+        codigos_vistos={88},
+        codigos_ausentes=set(),
+        codigos_resolvidos=set(),
+    )
+    with patch("alertavida.monitor.criar_banco"):
+        with patch("alertavida.monitor.fetch_alertas_com_retry", return_value=raw):
+            with patch("alertavida.monitor.buscar_snapshots_ativos", return_value=[]):
+                with patch("alertavida.monitor.detectar_mudancas", return_value=resultado):
+                    with patch("alertavida.monitor.aplicar_resultado_deteccao") as mock_aplicar:
+                        executar_ingestao()
+    assert mock_aplicar.call_count == 1

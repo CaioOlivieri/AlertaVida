@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from alertavida.domain import Alerta
+from alertavida.domain.detector import AlertaSnapshot, EventoDetectado, ResultadoDeteccao
 
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
@@ -132,4 +133,151 @@ def salvar_alerta(alerta: Alerta) -> None:
                 agora,
             ),
         )
+        conexao.commit()
+
+
+def buscar_snapshots_ativos() -> list[AlertaSnapshot]:
+    """Retorna snapshot de todos os alertas com status_interno='ATIVO'."""
+    with sqlite3.connect(DB_PATH) as conexao:
+        cursor = conexao.execute(
+            """
+            SELECT cod_alerta, nivel, evento, ult_atualizacao,
+                   rodadas_ausente, status_interno
+            FROM alertas
+            WHERE status_interno = 'ATIVO'
+            """
+        )
+        return [
+            AlertaSnapshot(
+                cod_alerta=row[0],
+                nivel_risco=row[1],
+                tipo_evento=row[2],
+                ult_atualizacao=row[3],
+                rodadas_ausente=row[4],
+                status_interno=row[5],
+            )
+            for row in cursor.fetchall()
+        ]
+
+
+def aplicar_resultado_deteccao(
+    resultado: ResultadoDeteccao,
+    alertas_por_codigo: dict[int, "Alerta"],
+    agora: str,
+) -> None:
+    """
+    Persiste o resultado do ChangeDetector atomicamente.
+    salvar_alerta e salvar_evento ocorrem na mesma transação — outbox pattern.
+    agora: isoformat sem microssegundos, usado em detectado_em e visto_ultima_vez.
+    """
+    with sqlite3.connect(DB_PATH) as conexao:
+        eventos: list[EventoDetectado] = resultado.eventos
+        for evento in eventos:
+            import json as _json
+
+            if evento.tipo == "AlertaCriado":
+                alerta = alertas_por_codigo[evento.cod_alerta]
+                lat = alerta.coordenadas.latitude if alerta.coordenadas else None
+                lon = alerta.coordenadas.longitude if alerta.coordenadas else None
+                ult = (
+                    alerta.ult_atualizacao.isoformat()
+                    if alerta.ult_atualizacao
+                    else None
+                )
+                conexao.execute(
+                    """
+                    INSERT INTO alertas (
+                        cod_alerta, municipio, uf, evento, nivel,
+                        datahoracriacao, detectado_em, codibge,
+                        latitude, longitude, ult_atualizacao,
+                        status_interno, visto_ultima_vez, rodadas_ausente,
+                        assinatura
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL)
+                    """,
+                    (
+                        alerta.cod_alerta,
+                        alerta.municipio.nome,
+                        alerta.municipio.uf,
+                        alerta.tipo_evento.value,
+                        alerta.nivel_risco.value,
+                        alerta.data_criacao.isoformat(),
+                        agora,
+                        alerta.municipio.codigo_ibge,
+                        lat,
+                        lon,
+                        ult,
+                        agora,
+                    ),
+                )
+
+            elif evento.tipo == "AlertaAtualizado":
+                alerta = alertas_por_codigo[evento.cod_alerta]
+                ult = (
+                    alerta.ult_atualizacao.isoformat()
+                    if alerta.ult_atualizacao
+                    else None
+                )
+                conexao.execute(
+                    """
+                    UPDATE alertas
+                    SET nivel = ?, evento = ?, ult_atualizacao = ?,
+                        visto_ultima_vez = ?, rodadas_ausente = 0
+                    WHERE cod_alerta = ?
+                    """,
+                    (
+                        alerta.nivel_risco.value,
+                        alerta.tipo_evento.value,
+                        ult,
+                        agora,
+                        evento.cod_alerta,
+                    ),
+                )
+
+            elif evento.tipo == "AlertaResolvido":
+                conexao.execute(
+                    """
+                    UPDATE alertas
+                    SET status_interno = 'RESOLVIDO', visto_ultima_vez = ?
+                    WHERE cod_alerta = ?
+                    """,
+                    (agora, evento.cod_alerta),
+                )
+
+            conexao.execute(
+                """
+                INSERT INTO eventos (
+                    tipo, agregado_id, payload, schema_versao,
+                    criado_em, processado_em, tentativas
+                ) VALUES (?, ?, ?, 1, ?, NULL, 0)
+                """,
+                (
+                    evento.tipo,
+                    evento.cod_alerta,
+                    _json.dumps(evento.payload, ensure_ascii=False),
+                    agora,
+                ),
+            )
+
+        codigos_com_evento = {e.cod_alerta for e in resultado.eventos}
+        for cod in resultado.codigos_vistos - codigos_com_evento:
+            conexao.execute(
+                """
+                UPDATE alertas
+                SET visto_ultima_vez = ?, rodadas_ausente = 0
+                WHERE cod_alerta = ?
+                """,
+                (agora, cod),
+            )
+
+        for cod in resultado.codigos_ausentes:
+            conexao.execute(
+                """
+                UPDATE alertas
+                SET rodadas_ausente = rodadas_ausente + 1,
+                    visto_ultima_vez = ?
+                WHERE cod_alerta = ?
+                """,
+                (agora, cod),
+            )
+
         conexao.commit()
