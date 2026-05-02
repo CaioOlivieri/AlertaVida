@@ -5,6 +5,7 @@ import time
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from alertavida.events import OutboxDispatcher, bus
 from alertavida.monitor import executar_ingestao
 
 INTERVALO_MINUTOS = 5
@@ -25,14 +26,33 @@ def _rodar_rodada() -> None:
 def agendar_ingestao() -> None:
     scheduler = BackgroundScheduler()
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
+    kwargs_ingestao = {
+        "minutes": INTERVALO_MINUTOS,
+        "next_run_time": datetime.now(),
+        "max_instances": 1,
+        "coalesce": True,
+        "misfire_grace_time": 60,
+        "id": "ingestao",
+    }
     scheduler.add_job(
         _rodar_rodada,
         "interval",
-        minutes=INTERVALO_MINUTOS,
-        next_run_time=datetime.now(),
+        **kwargs_ingestao,
+    )
+    scheduler.add_job(
+        OutboxDispatcher(bus).processar_pendentes,
+        "interval",
+        seconds=30,
+        id="dispatcher",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=60,
+    )
+    scheduler.add_job(
+        _rodar_rodada,
+        "interval",
+        replace_existing=True,
+        **kwargs_ingestao,
     )
 
     scheduler.start()
