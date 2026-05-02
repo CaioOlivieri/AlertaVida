@@ -2,11 +2,17 @@ import json
 import socket
 import sys
 import time
+from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from alertavida.database import alerta_existe, criar_banco, salvar_alerta
+from alertavida.database import (
+    aplicar_resultado_deteccao,
+    buscar_snapshots_ativos,
+    criar_banco,
+)
 from alertavida.domain import Alerta
+from alertavida.domain.detector import detectar_mudancas
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -82,49 +88,52 @@ def executar_ingestao():
         print(f"Falha ao interpretar JSON: {exc}")
         sys.exit(1)
 
-    alertas = normalize_alert_list(payload)
-    total_recebido = len(alertas)
-    novos = 0
-    ja_existentes = 0
+    itens_brutos = normalize_alert_list(payload)
+    total_recebido = len(itens_brutos)
+
+    alertas_validos: dict[int, Alerta] = {}
     descartados = 0
+    for item in itens_brutos:
+        try:
+            alerta = montar_alerta(item)
+            alertas_validos[alerta.cod_alerta] = alerta
+        except ValueError:
+            descartados += 1
+
+    snapshots = buscar_snapshots_ativos()
+    resultado = detectar_mudancas(list(alertas_validos.values()), snapshots)
+
+    agora = datetime.now().isoformat(timespec="seconds")
     erros = 0
+    try:
+        aplicar_resultado_deteccao(resultado, alertas_validos, agora)
+    except Exception as exc:  # noqa: BLE001 - proteção do ciclo de ingestão
+        erros = len(alertas_validos)
+        print(f"[ERRO] Falha na transação do banco: {exc}")
 
-    if not alertas:
+    novos = sum(1 for e in resultado.eventos if e.tipo == "AlertaCriado")
+    atualizados = sum(1 for e in resultado.eventos if e.tipo == "AlertaAtualizado")
+    resolvidos = sum(1 for e in resultado.eventos if e.tipo == "AlertaResolvido")
+    inalterados = len(resultado.codigos_vistos) - novos - atualizados
+    ausentes = len(resultado.codigos_ausentes)
+
+    if not itens_brutos:
         print("Nenhum alerta encontrado.")
-    else:
-        for alerta in alertas:
-            try:
-                mapeado = montar_alerta(alerta)
-            except ValueError:
-                descartados += 1
-                continue
-
-            cod = mapeado.cod_alerta
-            mun = mapeado.municipio.nome
-            uf = mapeado.municipio.uf
-            ev = mapeado.tipo_evento.value
-            try:
-                if alerta_existe(cod):
-                    ja_existentes += 1
-                    print(f"[JÁ VISTO] {mun} | {uf} | {ev}")
-                else:
-                    salvar_alerta(mapeado)
-                    novos += 1
-                    print(f"[NOVO] {mun} | {uf} | {ev}")
-            except Exception as exc:  # noqa: BLE001 — captura por item, segue o loop
-                erros += 1
-                print(f"[ERRO] cod_alerta={cod} — {exc}")
 
     print()
     print("=== Resumo ===")
-    print(f"Total recebido: {total_recebido}")
-    print(f"Novos salvos: {novos}")
-    print(f"Já existentes: {ja_existentes}")
-    print(f"Descartados: {descartados}")
-    print(f"Erros: {erros}")
+    print(f"Total recebido  : {total_recebido}")
+    print(f"Novos           : {novos}")
+    print(f"Atualizados     : {atualizados}")
+    print(f"Inalterados     : {inalterados}")
+    print(f"Descartados     : {descartados}")
+    print(f"Erros           : {erros}")
+    print(f"Ausentes (+1)   : {ausentes}")
+    print(f"Resolvidos      : {resolvidos}")
 
-    assert novos + ja_existentes + descartados + erros == total_recebido, (
-        f"Contadores inconsistentes: {novos}+{ja_existentes}+{descartados}+{erros} != {total_recebido}"
+    assert novos + atualizados + inalterados + descartados + erros == total_recebido, (
+        f"Contadores inconsistentes: "
+        f"{novos}+{atualizados}+{inalterados}+{descartados}+{erros} != {total_recebido}"
     )
 
 
