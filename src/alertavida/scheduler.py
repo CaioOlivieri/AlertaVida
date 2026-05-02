@@ -1,4 +1,6 @@
 from datetime import datetime
+import logging
+import os
 import sys
 import time
 
@@ -9,18 +11,19 @@ from alertavida.events import OutboxDispatcher, bus
 from alertavida.monitor import executar_ingestao
 
 INTERVALO_MINUTOS = 5
+logger = logging.getLogger(__name__)
 
 
 def _on_job_error(event) -> None:
     if event.exception:
-        print(f"[ERRO] Rodada de ingestão falhou: {event.exception}")
+        logger.error("[ERRO] Rodada de ingestão falhou: %s", event.exception)
 
 
 def _rodar_rodada() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] Iniciando rodada de ingestão...")
+    logger.info("[%s] Iniciando rodada de ingestão...", timestamp)
     executar_ingestao()
-    print(f"Próxima rodada em {INTERVALO_MINUTOS} minutos.")
+    logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
 
 
 def agendar_ingestao() -> None:
@@ -48,15 +51,9 @@ def agendar_ingestao() -> None:
         coalesce=True,
         misfire_grace_time=60,
     )
-    scheduler.add_job(
-        _rodar_rodada,
-        "interval",
-        replace_existing=True,
-        **kwargs_ingestao,
-    )
 
     scheduler.start()
-    print(
+    logger.info(
         f"Scheduler iniciado. Executando ingestão a cada {INTERVALO_MINUTOS} minutos. "
         "Pressione Ctrl+C para encerrar."
     )
@@ -64,10 +61,14 @@ def agendar_ingestao() -> None:
         while True:
             time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
-        print("\nScheduler encerrado pelo usuário.")
+        logger.info("Scheduler encerrado pelo usuário.")
         scheduler.shutdown(wait=False)
         sys.exit(0)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     agendar_ingestao()

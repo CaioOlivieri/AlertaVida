@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 import socket
 import sys
 import time
@@ -19,6 +21,7 @@ if (sys.stdout.encoding or "").lower() != "utf-8":
 
 
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
+logger = logging.getLogger(__name__)
 
 
 def montar_alerta(item: dict) -> Alerta:
@@ -54,7 +57,7 @@ def fetch_alertas_com_retry(
 
     for tentativa in range(max_tentativas):
         tentativa_humana = tentativa + 1
-        print(f"[Tentativa {tentativa_humana}/{max_tentativas}]")
+        logger.info("[Tentativa %s/%s]", tentativa_humana, max_tentativas)
         try:
             with urlopen(request, timeout=30) as response:
                 return response.read()
@@ -67,7 +70,7 @@ def fetch_alertas_com_retry(
 
         if tentativa_humana < max_tentativas:
             espera = backoff_inicial * (2**tentativa)
-            print(f"Aguardando {espera:g}s antes da próxima tentativa...")
+            logger.warning("Aguardando %gs antes da próxima tentativa...", espera)
             time.sleep(espera)
 
     assert ultima_excecao is not None
@@ -79,13 +82,13 @@ def executar_ingestao():
     try:
         raw = fetch_alertas_com_retry(URL)
     except (HTTPError, URLError, socket.timeout) as exc:
-        print(f"Erro ao consultar a API após múltiplas tentativas: {exc}")
+        logger.error("Erro ao consultar a API após múltiplas tentativas: %s", exc)
         sys.exit(1)
 
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        print(f"Falha ao interpretar JSON: {exc}")
+        logger.error("Falha ao interpretar JSON: %s", exc)
         sys.exit(1)
 
     itens_brutos = normalize_alert_list(payload)
@@ -106,19 +109,30 @@ def executar_ingestao():
     agora = datetime.now().isoformat(timespec="seconds")
     erros = 0
     try:
+        for alerta in alertas_validos.values():
+            logger.debug(
+                "Alerta %s: %s/%s — %s — %s",
+                alerta.cod_alerta,
+                alerta.municipio.nome,
+                alerta.municipio.uf,
+                alerta.tipo_evento,
+                alerta.nivel_risco,
+            )
         aplicar_resultado_deteccao(resultado, alertas_validos, agora)
-    except Exception as exc:  # noqa: BLE001 - proteção do ciclo de ingestão
+    except Exception:  # noqa: BLE001 - proteção do ciclo de ingestão
         erros = len(alertas_validos)
-        print(f"[ERRO] Falha na transação do banco: {exc}")
+        logger.exception("Falha na transação do banco")
+        novos = atualizados = inalterados = 0
+    else:
+        novos = sum(1 for e in resultado.eventos if e.tipo == "AlertaCriado")
+        atualizados = sum(1 for e in resultado.eventos if e.tipo == "AlertaAtualizado")
+        inalterados = len(resultado.codigos_vistos) - novos - atualizados
 
-    novos = sum(1 for e in resultado.eventos if e.tipo == "AlertaCriado")
-    atualizados = sum(1 for e in resultado.eventos if e.tipo == "AlertaAtualizado")
     resolvidos = sum(1 for e in resultado.eventos if e.tipo == "AlertaResolvido")
-    inalterados = len(resultado.codigos_vistos) - novos - atualizados
     ausentes = len(resultado.codigos_ausentes)
 
     if not itens_brutos:
-        print("Nenhum alerta encontrado.")
+        logger.info("Nenhum alerta encontrado.")
 
     print()
     print("=== Resumo ===")
@@ -141,4 +155,8 @@ main = executar_ingestao
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     executar_ingestao()
