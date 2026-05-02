@@ -35,27 +35,37 @@ The full suite must run in **< 1 second** — `time.sleep` is mocked everywhere 
 The system is built **layer by layer** following the roadmap in `CONTEXT.md` §3. Each layer must be functional and tested before moving on. Current state:
 
 - **Camada 1 (Ingestão)** — DONE. `monitor.py` fetches from CEMADEN with retry+backoff, `database.py` persists to SQLite with dedup by `cod_alerta` PK, `scheduler.py` wraps everything in APScheduler.
-- **Camada 2 (Domínio)** — Part 1 (src layout) is done. Part 2 (Pydantic models in `src/alertavida/domain/`) is implemented with 68 tests passing; revisions tracked in issue #1, blocked by investigation in issue #2. Part 3 (wiring `montar_alerta()` → `Alerta`, `database.py` accepting `Alerta`) is the next blocking work after #1 and #2 close.
-- **Camadas 3–7** — blocked. Don't pre-build for them. The eventual target structure (`ingestion/`, `events/`, `sources/`, `api/`, `notifications/` subpackages) is documented in `CONTEXT.md` §4 but migration happens **as each layer is worked on**, not upfront.
+- **Camada 2 (Domínio)** — DONE. `src/alertavida/domain/` has frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`) fully integrated with ingestion and persistence.
+- **Camada 3 (Detecção de Mudanças e Eventos)** — DONE. Pure `ChangeDetector`, transactional Outbox Pattern, in-memory EventBus, and `OutboxDispatcher` scheduled every 30 seconds are implemented and covered by 88 tests.
+- **Camadas 4–7** — blocked. Don't pre-build for them. The eventual target structure (`ingestion/`, `events/`, `sources/`, `api/`, `notifications/` subpackages) is documented in `CONTEXT.md` §4 but migration happens **as each layer is worked on**, not upfront.
 
 ### Key flow (current)
 
-`scheduler.agendar_ingestao()` → APScheduler job every 5 min → `monitor.executar_ingestao()` → `fetch_alertas_com_retry()` (urllib + 4 attempts, 2/4/8s backoff, no retry on 4xx except 408/429) → `normalize_alert_list()` → for each item: `montar_alerta()` (pure dict→dict mapper) → `alerta_existe()` / `salvar_alerta()` against `data/alertavida.db`.
+`scheduler.agendar_ingestao()` → APScheduler (`ingestao` job every 5 min + `dispatcher` job every 30s) → `monitor.executar_ingestao()` → `fetch_alertas_com_retry()` (urllib + 4 attempts, 2/4/8s backoff, no retry on 4xx except 408/429) → `normalize_alert_list()` → `montar_alerta()` returns `Alerta` → `buscar_snapshots_ativos()` → `detectar_mudancas()` → `aplicar_resultado_deteccao()` (single transaction: alerts + outbox events).
 
 ### Domain layer (Camada 2)
 
 `src/alertavida/domain/` contains frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`). `Alerta.from_dict()` is the canonical entry point: it accepts the raw CEMADEN-style dict (with field-name fallbacks) and raises `ValueError` on missing/invalid required fields. `TipoEvento.from_string` returns `OUTROS` for unknowns; `NivelRisco.from_string` raises. Both normalize accents/case before matching.
 
-The integration with `monitor.py`/`database.py` is **not yet wired** — `montar_alerta()` still returns a dict, `salvar_alerta()` still takes a dict. Part 3 of Camada 2 will replace both.
+Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` returns `Alerta`, and `database.py` persists through `aplicar_resultado_deteccao()`.
 
 ### Resilience invariants (don't break these)
 
-- **Counter assertion in `executar_ingestao`** — `novos + ja_existentes + descartados + erros == total_recebido`. If you add a new outcome path, increment the matching counter, otherwise the assertion catches it.
+- **Counter assertion in `executar_ingestao`** — `novos + atualizados + inalterados + descartados + erros == total_recebido`. If you add a new outcome path, increment the matching counter, otherwise the assertion catches it.
 - **Per-item `try/except` in the ingestion loop** — one bad alert must never stop the rest of the batch. Errors are counted, not raised.
 - **Retry only on 5xx / 408 / 429 / URLError / socket.timeout** — 4xx (other than 408/429) re-raise immediately. Don't widen this.
+- **Transactional outbox** — INSERTs into alerts and outbox events must happen in the same SQLite transaction. Do not split them.
+- **`ChangeDetector` is pure** — no I/O, no database, no network. Do not introduce side effects.
 - **`BackgroundScheduler` + `time.sleep(1)` loop** — don't switch to `BlockingScheduler`; the background variant is what gives clean `Ctrl+C` shutdown on Windows and prepares for FastAPI integration in Camada 5.
 - **`max_instances=1, coalesce=True, misfire_grace_time=60`** on the scheduler job — prevents pile-up if a round runs longer than the interval.
 - **UTF-8 stdout reconfigure at top of `monitor.py`** — Windows consoles default to cp1252; without this, accented place names crash `print`.
+
+### Observability
+
+- Logging uses stdlib `logging`. Each module defines its own logger with `logging.getLogger(__name__)`.
+- Logging configuration belongs only in entrypoints (`monitor.py` and `scheduler.py`, inside `if __name__ == "__main__"`).
+- `LOG_LEVEL` environment variable controls verbosity (default `INFO`).
+- `DEBUG` level includes per-alert detail (municipality, state, event type, and risk level).
 
 ## Conventions
 
