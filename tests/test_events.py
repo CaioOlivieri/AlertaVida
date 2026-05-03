@@ -1,6 +1,5 @@
 import sqlite3
 
-from alertavida import database as db_module
 from alertavida.events import EventBus, OutboxDispatcher
 
 
@@ -60,13 +59,8 @@ def test_handler_count() -> None:
     assert bus.handler_count("AlertaResolvido") == 0
 
 
-def test_dispatcher_processa_evento_pendente(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "eventos.db"
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
-    import alertavida.events as events_module
-
-    monkeypatch.setattr(events_module, "DB_PATH", db_path)
-    db_module.criar_banco()
+def test_dispatcher_processa_evento_pendente(db_temporario) -> None:
+    db_path = db_temporario
 
     with sqlite3.connect(db_path) as conexao:
         conexao.execute(
@@ -97,13 +91,8 @@ def test_dispatcher_processa_evento_pendente(tmp_path, monkeypatch) -> None:
     assert row is not None and row[0] is not None
 
 
-def test_dispatcher_ignora_ja_processados(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "eventos.db"
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
-    import alertavida.events as events_module
-
-    monkeypatch.setattr(events_module, "DB_PATH", db_path)
-    db_module.criar_banco()
+def test_dispatcher_ignora_ja_processados(db_temporario) -> None:
+    db_path = db_temporario
 
     with sqlite3.connect(db_path) as conexao:
         conexao.execute(
@@ -127,13 +116,8 @@ def test_dispatcher_ignora_ja_processados(tmp_path, monkeypatch) -> None:
     assert chamados == []
 
 
-def test_dispatcher_respeita_batch_size(tmp_path, monkeypatch) -> None:
-    db_path = tmp_path / "eventos.db"
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
-    import alertavida.events as events_module
-
-    monkeypatch.setattr(events_module, "DB_PATH", db_path)
-    db_module.criar_banco()
+def test_dispatcher_respeita_batch_size(db_temporario) -> None:
+    db_path = db_temporario
 
     with sqlite3.connect(db_path) as conexao:
         for idx in range(5):
