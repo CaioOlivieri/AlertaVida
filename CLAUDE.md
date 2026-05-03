@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Install (editable mode + dev deps):
+Install:
 ```powershell
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 One-shot ingestion run (debug):
@@ -25,10 +25,11 @@ python -m alertavida.scheduler
 
 Tests:
 ```powershell
-python -m pytest -v               # all tests
-python -m pytest tests/test_monitor.py::test_montar_alerta_descarta_sem_codigo  # single test
+uv run pytest                          # 88 testes, sem integração (padrão)
+uv run pytest -m integration -v        # só teste de contrato CEMADEN (bate na API real)
+uv run pytest tests/test_monitor.py::test_montar_alerta_descarta_sem_codigo  # teste único
 ```
-The full suite must run in **< 1 second** — `time.sleep` is mocked everywhere it appears. If a test starts taking real time, that's a regression.
+The full suite must run in **< 1 second** — `time.sleep` is mocked everywhere. Integration tests are excluded by default via `addopts = ["-m", "not integration"]` in `pyproject.toml`.
 
 ## Architecture
 
@@ -73,6 +74,7 @@ Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` retur
 - **Imports:** absolute, prefixed with `alertavida.` (e.g. `from alertavida.database import salvar_alerta`). Stdlib → third-party → local.
 - **Type hints required** on all functions (Python 3.13).
 - **Tests use mocks** for network and `time.sleep`. Anything touching the real CEMADEN endpoint or sleeping for real does not belong in the suite.
+- **Integration tests** are marked with `@pytest.mark.integration` and excluded from the default run. They hit real external APIs and belong in scheduled CI jobs, not in every push.
 - **Commits:** `tipo(escopo): descrição` in Portuguese. Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope is the layer when applicable: `feat(camada-2): ...`. Keep commits small and independently revertible.
 - **Error handling:** never bare `except:`. Always log with context. Decide explicitly between re-raise / retry / fallback.
 
@@ -89,6 +91,10 @@ Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` retur
 - **NASA EONET** — previsto. Eventos naturais globais (incêndios, tempestades).
 - **NOAA NOMADS / GFS** — previsto para camada preditiva. Formato GRIB2, 
   bibliotecas `xarray`/`cfgrib`. ECMWF open data como upgrade de qualidade.
+
+- `uv.lock` is committed — run `uv sync --extra dev --frozen` to reproduce the exact environment. Do not use `pip install` directly.
+- CI runs on every push via `.github/workflows/test.yml` (Ubuntu + Windows matrix). The `contrato CEMADEN` job runs daily at 09:00 UTC via schedule only.
+- `tests/conftest.py` provides the `db_temporario` fixture (tmp SQLite + monkeypatched DB_PATH) — use it in any test that needs a real database.
 
 ## Segurança
 

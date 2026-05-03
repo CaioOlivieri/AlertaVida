@@ -29,8 +29,9 @@
 - **Agendador:** APScheduler (BackgroundScheduler) ✅
 - **Banco de dados (início):** SQLite ✅
 - **Banco de dados (futuro):** PostgreSQL (via Supabase)
-- **Testes:** pytest ✅
-- **Empacotamento:** pyproject.toml + setuptools (src layout) ✅
+- **Testes:** pytest 9.0.3 + pytest-cov + pytest-randomly + ruff ✅
+- **Empacotamento:** uv + uv.lock + pyproject.toml + setuptools (src layout) ✅
+- **CI/CD:** GitHub Actions (Ubuntu + Windows, push + schedule diário) ✅
 
 ### Frontend (futuro)
 - **Framework:** Next.js (com suporte nativo a PWA)
@@ -160,6 +161,10 @@ PWA com mapa interativo, lista de alertas, filtros, instalável como app no celu
 ```
 alertavida/
 ├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── test.yml              ← CI Ubuntu + Windows + schedule CEMADEN
+├── uv.lock                       ← lockfile cross-platform (commitado)
 ├── CLAUDE.md
 ├── CONTEXT.md
 ├── README.md
@@ -185,6 +190,8 @@ alertavida/
 │           └── detector.py
 └── tests/
     ├── __init__.py
+    ├── conftest.py               ← fixture db_temporario
+    ├── test_contrato_cemaden.py  ← teste de contrato @integration
     ├── test_monitor.py
     ├── test_scheduler.py
     ├── test_events.py
@@ -344,6 +351,11 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | ult_atualizacao como gatilho de AlertaAtualizado | Campo explícito entregue pelo CEMADEN; mais confiável que hash de campos |
 | codibge parseado em from_dict | Campo presente no payload; evita lookup externo planejado para Camada 4 |
 | OutboxDispatcher a cada 30s no scheduler | Latência aceitável para Camada 3; Camada 7 pode reduzir se notificações exigirem |
+| uv em vez de pip direto | Lockfile cross-platform, reprodutibilidade garantida entre máquinas e CI |
+| CI matrix Ubuntu + Windows | Paths e encoding se comportam diferente entre OSes — bugs de plataforma aparecem antes do usuário descobrir |
+| Teste de contrato CEMADEN separado (`@integration`) | API não documentada pode mudar schema sem aviso; teste diário detecta antes de quebrar produção |
+| `conftest.py` com `db_temporario` | Centraliza setup de banco temporário — elimina monkeypatch duplicado em 3 testes |
+| Schedule diário para contrato (não em push) | Evita consumir minutos de CI em cada commit para um teste que depende de rede externa |
 
 ---
 
@@ -397,3 +409,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-02 | Camada 3 — ChangeDetector puro implementado, 79 testes passando |
 | 2026-05-02 | Camada 3 — integração do detector em executar_ingestao com outbox transacional, 81 testes |
 | 2026-05-02 | **Camada 3 concluída** — EventBus, OutboxDispatcher, job no scheduler, 88 testes passando |
+| 2026-05-03 | Infraestrutura de testes automatizados: uv + uv.lock, pytest-cov/randomly/ruff, CI GitHub Actions (Ubuntu + Windows), conftest.py com fixture db_temporario, marker integration, teste de contrato CEMADEN agendado diariamente |
