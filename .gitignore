@@ -91,3 +91,6 @@ secrets/
 *.bak
 
 diff.txt
+
+# Cursor / Claude
+.claude/
