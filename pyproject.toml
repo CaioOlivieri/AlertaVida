@@ -25,3 +25,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: testes que dependem de rede ou recursos externos",
+]
+addopts = ["-m", "not integration", "-v"]
