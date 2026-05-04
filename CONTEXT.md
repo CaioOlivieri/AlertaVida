@@ -45,7 +45,7 @@
 
 ---
 
-## 3. Arquitetura em 7 Camadas
+## 3. Arquitetura em 8 Camadas
 
 Abordagem **camada por camada**, sem pular etapas. Cada camada deve estar funcional e testada antes de avançar.
 
@@ -123,18 +123,38 @@ sem sinalização prévia. AlertaResolvido é inferido após 3 rodadas ausentes
 consecutivas (RODADAS_PARA_RESOLVER=3, configurável). Apenas rodadas
 bem-sucedidas contam — falhas de rede não incrementam o contador.
 
-### Camada 4 — Fontes Múltiplas 🔒 BLOQUEADA
+### Camada 4 — Ingestão Multi-Fonte 🔒 BLOQUEADA
 **Padrão arquitetural:** Adapter.
 
 Interface comum `DataSource` com implementações:
-- `CemadenSource` (já temos protótipo em `monitor.py`)
-- `NasaEonetSource`
-- `InmetSource`
-- `InpeSource`
+- `CemadenSource` (refator do que está em `monitor.py`)
+- `NasaEonetSource` (eventos globais — incluindo Brasil)
+- `InmetSource` (planejado, requer mapeamento empírico)
+- `InpeSource` (planejado, requer mapeamento empírico)
+
+**Escopo da Camada 4:** ingestão paralela de fontes independentes. Cada fonte produz `Alerta`s próprios que coexistem na tabela com a coluna `fonte` como discriminador. Sem cruzamento ou correlação entre fontes — isso é responsabilidade da Camada 5.
+
+**Estratégia de ingestão geográfica:**
+- CEMADEN, INMET, INPE: 100% Brasil por construção.
+- NASA EONET: ingestão global. O filtro Brasil/Próximo/Internacional acontece no domínio, não na ingestão. Isso permite ao usuário ativar visualização de eventos fora do Brasil quando desejar (Camadas 6-7).
 
 Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implementar interface.
 
-### Camada 5 — API Própria (FastAPI) 🔒 BLOQUEADA
+### Camada 5 — Correlação de Eventos 🔒 BLOQUEADA
+**Conceito:** `Incidente` = agregado de N `Alerta`s referentes ao mesmo evento físico observado por fontes diferentes.
+
+Exemplo: uma enchente em Recife pode produzir um `Alerta` do CEMADEN (nível ALTO), um `Alerta` da NASA EONET (categoria severeStorms) e um `Alerta` do INMET (medição de chuva acumulada). Os três são relatos do mesmo evento.
+
+**Algoritmo (versão inicial):**
+- Mesma janela temporal (ex: ±6h)
+- Distância geográfica abaixo de um limiar (ex: 50 km)
+- Tipos de evento "compatíveis" (regra explícita por par de tipos)
+
+**Pré-requisito técnico:** indexação espacial. SQLite R-Tree na fase atual; PostGIS quando migrarmos para Postgres na Camada 6. Correlação com loop puro não escala além de aproximadamente 100 alertas por rodada.
+
+**Saída:** novos handlers podem assinar eventos `IncidenteCriado` e `IncidenteAtualizado` para reagir a eventos correlacionados.
+
+### Camada 6 — API Própria (FastAPI) 🔒 BLOQUEADA
 **Endpoints planejados:**
 - `GET /alertas/ativos`
 - `GET /alertas/por-municipio/{ibge}`
@@ -145,10 +165,10 @@ Documentação automática via OpenAPI/Swagger (built-in do FastAPI).
 
 Quando integrarmos com FastAPI, o `BackgroundScheduler` já existente continua funcionando — não é necessário trocar.
 
-### Camada 6 — Interface Visual (Next.js + Leaflet) 🔒 BLOQUEADA
+### Camada 7 — Interface Visual (Next.js + Leaflet) 🔒 BLOQUEADA
 PWA com mapa interativo, lista de alertas, filtros, instalável como app no celular.
 
-### Camada 7 — Motor de Notificação 🔒 BLOQUEADA
+### Camada 8 — Motor de Notificação 🔒 BLOQUEADA
 **Curto prazo:** Web Push (nativo do PWA).
 **Médio prazo:** WhatsApp Business API, Email (SMTP), Telegram.
 **Longo prazo:** Cell Broadcast (via parceria com operadoras/governo).
@@ -230,11 +250,14 @@ alertavida/
 │       │   ├── cemaden.py
 │       │   ├── nasa_eonet.py
 │       │   └── inmet.py
-│       ├── api/                    ← Camada 5
+│       ├── correlation/            ← Camada 5
+│       │   ├── __init__.py
+│       │   └── incidente.py
+│       ├── api/                    ← Camada 6
 │       │   ├── __init__.py
 │       │   ├── main.py
 │       │   └── routes/
-│       └── notifications/          ← Camada 7
+│       └── notifications/          ← Camada 8
 │           └── __init__.py
 ├── tests/
 │   ├── ingestion/
@@ -356,6 +379,18 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | Teste de contrato CEMADEN separado (`@integration`) | API não documentada pode mudar schema sem aviso; teste diário detecta antes de quebrar produção |
 | `conftest.py` com `db_temporario` | Centraliza setup de banco temporário — elimina monkeypatch duplicado em 3 testes |
 | Schedule diário para contrato (não em push) | Evita consumir minutos de CI em cada commit para um teste que depende de rede externa |
+| Renumeração do roadmap (4-7 → 4-8 com Camada 5 nova) | Correlação de eventos é responsabilidade própria, não sub-tarefa da Camada 4. Documentar erros de planejamento explicitamente em vez de esconder via "Camada 4.5". |
+| Surrogate key + UNIQUE composto em vez de PK composta | `id INTEGER PRIMARY KEY AUTOINCREMENT` + `UNIQUE (fonte, cod_alerta)`. FKs em outras tabelas viram INTEGER simples; URLs futuras ficam opacas (`/alertas/12345`); renomear fontes não quebra referências. |
+| `cod_alerta` como TEXT, não INTEGER | CEMADEN usa código numérico, EONET usa string (`EONET_5421`). String é o tipo mais inclusivo. |
+| `municipio` opcional, `coordenadas` obrigatório no Alerta | Inversão da regra anterior. Múltiplas fontes mostraram que o mínimo garantido pelo conjunto é coordenadas, não município. Honestidade dos dados aplicada ao conjunto, não ao CEMADEN isolado. |
+| `NivelRisco.INDETERMINADO` adicionado ao enum | EONET não classifica gravidade. Tipo permanece não-nulo; downstream trata `INDETERMINADO` como categoria explícita em vez de caso especial de None. |
+| `EscopoGeografico` enum em vez de bool | Três estados (BRASIL, PROXIMO, INTERNACIONAL) capturam relevância geográfica sem inventar precisão. Eventos fronteiriços e marítimos próximos têm classificação própria. |
+| Bbox + buffer em vez de polígono shapely | Quatro comparações numéricas, sem dependência nova. "Honestidade dos dados" — imprecisão é assumida e documentada, substituível por shapely sem quebrar contrato. |
+| Faixas geográficas configuráveis em valor, imutáveis em estrutura | Buffers individuais via env var (`ALERTAVIDA_BUFFER_PROXIMO_GRAUS`). Adicionar/remover categorias requer mudança em `FAIXAS_DEFAULT` no código + migração via `scripts/reclassificar_escopos.py`. |
+| `escopo_geografico` pré-computado na ingestão | Cálculo na ingestão evita recálculo em queries. Mudanças nos buffers só afetam alertas novos; re-classificação é operação manual via script dedicado. |
+| Ingestão global de NASA EONET (sem filtro `bbox` na requisição) | Filtro Brasil/Próximo/Internacional acontece no domínio, não na fonte. Permite ao usuário visualizar eventos fora do Brasil quando desejar (Camadas 7-8). Custo de armazenamento aceitável até migração para Postgres. |
+| `monitor.py` vira orquestrador multi-fonte (Camada 4) | Continua sendo o entrypoint (`python -m alertavida.monitor`); lógica CEMADEN específica migra para `sources/cemaden.py`; loop sobre `[CemadenSource(), NasaEonetSource(), ...]`. Testes existentes continuam importando `executar_ingestao()`. |
+| Indexação espacial obrigatória na Camada 5 | SQLite R-Tree na fase atual; PostGIS quando migrarmos para Postgres na Camada 6. Não relevante para Camadas 1-4. |
 
 ---
 
@@ -410,3 +445,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-02 | Camada 3 — integração do detector em executar_ingestao com outbox transacional, 81 testes |
 | 2026-05-02 | **Camada 3 concluída** — EventBus, OutboxDispatcher, job no scheduler, 88 testes passando |
 | 2026-05-03 | Infraestrutura de testes automatizados: uv + uv.lock, pytest-cov/randomly/ruff, CI GitHub Actions (Ubuntu + Windows), conftest.py com fixture db_temporario, marker integration, teste de contrato CEMADEN agendado diariamente |
+| 2026-05-04 | Pré-Camada 4 — design da ingestão multi-fonte: roadmap renumerado (4-8 com Camada 5 nova de Correlação), decisões arquiteturais sobre EscopoGeografico, surrogate key, ingestão global EONET, faixas configuráveis. CONTEXT.md atualizado antes do código. |
