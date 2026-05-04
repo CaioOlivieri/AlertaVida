@@ -38,7 +38,8 @@ The system is built **layer by layer** following the roadmap in `CONTEXT.md` §3
 - **Camada 1 (Ingestão)** — DONE. `monitor.py` fetches from CEMADEN with retry+backoff, `database.py` persists to SQLite with dedup by `cod_alerta` PK, `scheduler.py` wraps everything in APScheduler.
 - **Camada 2 (Domínio)** — DONE. `src/alertavida/domain/` has frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`) fully integrated with ingestion and persistence.
 - **Camada 3 (Detecção de Mudanças e Eventos)** — DONE. Pure `ChangeDetector`, transactional Outbox Pattern, in-memory EventBus, and `OutboxDispatcher` scheduled every 30 seconds are implemented and covered by 88 tests.
-- **Camadas 4–7** — blocked. Don't pre-build for them. The eventual target structure (`ingestion/`, `events/`, `sources/`, `api/`, `notifications/` subpackages) is documented in `CONTEXT.md` §4 but migration happens **as each layer is worked on**, not upfront.
+- **Camada 4 (Ingestão Multi-Fonte)** — in progress. Roadmap renumbered: what was previously a single "Camada 4 — Fontes Múltiplas" was split into Camada 4 (parallel multi-source ingestion) and Camada 5 (event correlation). See `CONTEXT.md` §3 for the current 8-layer breakdown.
+- **Camadas 5–8** — blocked. Don't pre-build for them. The eventual target structure (`ingestion/`, `events/`, `sources/`, `correlation/`, `api/`, `notifications/` subpackages) is documented in `CONTEXT.md` §4 but migration happens **as each layer is worked on**, not upfront.
 
 ### Key flow (current)
 
@@ -60,6 +61,7 @@ Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` retur
 - **`BackgroundScheduler` + `time.sleep(1)` loop** — don't switch to `BlockingScheduler`; the background variant is what gives clean `Ctrl+C` shutdown on Windows and prepares for FastAPI integration in Camada 5.
 - **`max_instances=1, coalesce=True, misfire_grace_time=60`** on the scheduler job — prevents pile-up if a round runs longer than the interval.
 - **UTF-8 stdout reconfigure at top of `monitor.py`** — Windows consoles default to cp1252; without this, accented place names crash `print`.
+- **`escopo_geografico` is computed at ingestion time, never at query time** — changing buffer env vars (`ALERTAVIDA_BUFFER_PROXIMO_GRAUS`, etc.) only affects new alerts. Re-classification of existing rows requires running `scripts/reclassificar_escopos.py`. Don't recompute on read paths.
 
 ### Observability
 
@@ -85,10 +87,10 @@ Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` retur
 - `pythonpath = ["src"]` is set in pytest config, so tests import `alertavida.*` directly without needing the package installed (though `pip install -e .` is still the recommended dev setup).
 - Remote: `origin` aponta para o repositório privado no GitHub (`CaioOlivieri/AlertaVida`). Use `git push origin main` para publicar.
 
-### Fontes de dados planejadas (Camadas 3–4)
+### Fontes de dados planejadas (Camada 4)
 - **CEMADEN** — ativo (Camada 1). Alertas hidrológicos em tempo real.
 - **INMET** — previsto. Dados meteorológicos de estações automáticas.
-- **NASA EONET** — previsto. Eventos naturais globais (incêndios, tempestades).
+- **NASA EONET** — previsto. Eventos naturais globais (incêndios, tempestades). Ingestão é global (sem filtro `bbox` na requisição); filtragem Brasil/Próximo/Internacional acontece no domínio via `EscopoGeografico`, calculada por `geographic.classificar_escopo()` na ingestão.
 - **NOAA NOMADS / GFS** — previsto para camada preditiva. Formato GRIB2, 
   bibliotecas `xarray`/`cfgrib`. ECMWF open data como upgrade de qualidade.
 
