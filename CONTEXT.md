@@ -140,6 +140,53 @@ Interface comum `DataSource` com implementações:
 
 Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implementar interface.
 
+**Subdivisão do trabalho (definida em 05/05/2026, antes da implementação):**
+
+- **Parte A.1 — Refator destrutivo de domínio e banco**:
+  - Surrogate key (`id INTEGER PRIMARY KEY AUTOINCREMENT`) + `UNIQUE (fonte, cod_alerta)` em vez de PK composta
+  - `cod_alerta` muda de INTEGER para TEXT
+  - `municipio` torna-se opcional, `coordenadas` torna-se obrigatório
+  - Novo enum `NivelRisco.INDETERMINADO`
+  - Novo enum `EscopoGeografico` (BRASIL, PROXIMO, INTERNACIONAL) substituindo bool
+  - **Refator do enum `TipoEvento`**: valores antigos (`HIDROLOGICO`, `GEOLOGICO`, `METEOROLOGICO`, `OUTROS`) consolidados nos 5 subgrupos COBRADE (`HIDROLOGICO`, `GEOLOGICO`, `METEOROLOGICO`, `CLIMATOLOGICO`, `BIOLOGICO`) + `INDETERMINADO`. Domínio passa a depender de padrão internacional (COBRADE/EM-DAT) em vez da terminologia de uma fonte específica.
+  - `geographic.py` com `FaixaGeografica` + `classificar_escopo()` configurável via env var
+  - Buffer "PROXIMO" padrão: 5° (~500km) — configurável via `ALERTAVIDA_BUFFER_PROXIMO_GRAUS`
+  - `scripts/reclassificar_escopos.py` para re-classificar alertas existentes
+  - `monitor.py` ajustado para gravar com `fonte='CEMADEN'` e `escopo_geografico` calculado
+  - Atualização de TODOS os testes da Camada 3 que referenciam valores antigos do enum
+
+- **Parte A.2 — Aditivo: taxonomia COBRADE com proveniência de classificação**:
+  - Novo módulo `src/alertavida/domain/cobrade.py` com tabela de mapeamento `EVENTO_CEMADEN_PARA_COBRADE` (apenas 2 entradas, baseado em inspeção empírica de 240 alertas em 4 amostras de 01-02/05/2026): `Risco Hidrológico → 1.2.0.0.0`, `Movimentos de Massa → 1.1.3.0.0`
+  - Novo enum `FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA) registrando proveniência do `cobrade_codigo`
+  - Novo campo `cobrade_codigo: str | None` no domínio `Alerta`
+  - Novo campo `fonte_classificacao: FonteClassificacao` no domínio `Alerta` (default INDETERMINADA)
+  - Nova coluna `cobrade_codigo TEXT NULL` na tabela `alertas`
+  - Nova coluna `fonte_classificacao TEXT NOT NULL DEFAULT 'INDETERMINADA'` na tabela `alertas`
+  - Migração via `_migrar_banco()` (aditiva, não destrutiva)
+  - Testes do mapper e do parser CEMADEN populando os novos campos
+
+- **Parte B — `CemadenSource` como `DataSource`** (após A.1 + A.2):
+  - Refator de `monitor.py` em orquestrador real
+  - Lógica CEMADEN específica migra para `sources/cemaden.py`
+  - Pode rodar em paralelo com A.2 sem conflito
+
+- **Parte C — `NasaEonetSource`** (após Parte B):
+  - Nova fonte implementada como `DataSource`
+  - Mapeamento de categorias EONET para subgrupos COBRADE em `cobrade.py`
+  - Ingestão global, classificação geográfica via `EscopoGeografico`
+
+**Ordem de execução**: A.1 → A.2 → B → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). Aditivos sobre destrutivos evitam conflito de migration.
+
+**Granularidade COBRADE — limite consciente da Camada 4:**
+
+A taxonomia COBRADE permite 5 níveis (`GRUPO.SUBGRUPO.TIPO.SUBTIPO.0`). A Camada 4 do AlertaVida classifica APENAS até o nível de subgrupo:
+- `Risco Hidrológico` → `1.2.0.0.0` (não distingue inundação 1.2.1, enxurrada 1.2.2, alagamento 1.2.3)
+- `Movimentos de Massa` → `1.1.3.0.0` (não distingue quedas, deslizamentos, corridas, subsidências)
+
+Distinção entre subtipos exige cruzamento com topografia, densidade urbana, série temporal de chuva (INMET) — fora do escopo da Camada 4. É problema da Camada 5 (Correlação de Eventos).
+
+**Inferir subtipos heuristicamente na Camada 4 violaria §6.10 (honestidade dos dados).** O `Alerta` carrega `fonte_classificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA) para que reclassificações futuras na Camada 5 preservem trilha de auditoria — sempre via UPDATE atômico (cobrade_codigo + fonte_classificacao mudam juntos).
+
 ### Camada 5 — Correlação de Eventos 🔒 BLOQUEADA
 **Conceito:** `Incidente` = agregado de N `Alerta`s referentes ao mesmo evento físico observado por fontes diferentes.
 
@@ -391,6 +438,12 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | Ingestão global de NASA EONET (sem filtro `bbox` na requisição) | Filtro Brasil/Próximo/Internacional acontece no domínio, não na fonte. Permite ao usuário visualizar eventos fora do Brasil quando desejar (Camadas 7-8). Custo de armazenamento aceitável até migração para Postgres. |
 | `monitor.py` vira orquestrador multi-fonte (Camada 4) | Continua sendo o entrypoint (`python -m alertavida.monitor`); lógica CEMADEN específica migra para `sources/cemaden.py`; loop sobre `[CemadenSource(), NasaEonetSource(), ...]`. Testes existentes continuam importando `executar_ingestao()`. |
 | Indexação espacial obrigatória na Camada 5 | SQLite R-Tree na fase atual; PostGIS quando migrarmos para Postgres na Camada 6. Não relevante para Camadas 1-4. |
+| Refator do enum `TipoEvento` para subgrupos COBRADE | Domínio dependia da terminologia de uma fonte específica (CEMADEN), violando Dependency Inversion. Refator alinha com padrão internacional COBRADE/EM-DAT — `HIDROLOGICO`, `GEOLOGICO`, `METEOROLOGICO`, `CLIMATOLOGICO`, `BIOLOGICO`, `INDETERMINADO`. Cada `DataSource` implementa mapeamento próprio para esses valores. Janela de baixo custo: feito agora, antes de Parte B/C triplicarem a superfície de mudança. |
+| `cobrade_codigo` + enum `FonteClassificacao` no Alerta | Campo `cobrade_codigo: str \| None` preserva código no nível de subgrupo. Enum `FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA) registra proveniência da classificação. Trilha de auditoria preservada quando Camada 5 reclassificar para subtipos. Open/Closed: novas estratégias de classificação só adicionam valores ao enum. |
+| Granularidade COBRADE limitada ao subgrupo na Camada 4 | Inspeção empírica de 4 amostras CEMADEN (240 alertas, 01-02/05/2026) confirmou ausência de campo COBRADE explícito e taxonomia limitada a 2 tipos × 3 níveis. Distinção entre subtipos (inundação vs enxurrada vs alagamento; quedas vs deslizamentos vs corridas) exige topografia, densidade urbana, INMET. Inferir heuristicamente na Camada 4 violaria honestidade dos dados (§6.10). Subtipos são problema da Camada 5. |
+| Subdivisão da Camada 4 Parte A em A.1 (destrutivo) + A.2 (aditivo COBRADE) | A.1 quebra surrogate key, enum, refator de domínio. A.2 é aditivo puro: coluna nullable, módulo novo, sem reescrita. Cada parte com narrativa coerente e independentemente reversível. Ordem A.1 → A.2 evita conflito de migration. A.2 pode rodar em paralelo com Parte B. |
+| Fixtures CEMADEN versionadas em `tests/fixtures/cemaden/` | 4 amostras capturadas em 01-02/05/2026 (durante enchente real em PE) viram fixtures de teste de regressão. Uso por nível de teste: parsing usa 1 fixture, integração do `ChangeDetector` usa 2 fixtures consecutivas com diff controlado, contrato real continua via `@integration` no endpoint vivo. README documenta origem e contexto de cada fixture. |
+| Pasta `data/` é runtime/state, ignorada via gitignore com exceção `.gitkeep` | Banco SQLite, payloads brutos, logs do inspector, backups — nada canônico. Estratégia uniforme: `data/*` ignorado, estrutura preservada via `.gitkeep`. Fixtures canônicas vivem em `tests/fixtures/`, não em `data/samples/`. Single Responsibility aplicado a estrutura de pastas. |
 
 ---
 
@@ -446,3 +499,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-02 | **Camada 3 concluída** — EventBus, OutboxDispatcher, job no scheduler, 88 testes passando |
 | 2026-05-03 | Infraestrutura de testes automatizados: uv + uv.lock, pytest-cov/randomly/ruff, CI GitHub Actions (Ubuntu + Windows), conftest.py com fixture db_temporario, marker integration, teste de contrato CEMADEN agendado diariamente |
 | 2026-05-04 | Pré-Camada 4 — design da ingestão multi-fonte: roadmap renumerado (4-8 com Camada 5 nova de Correlação), decisões arquiteturais sobre EscopoGeografico, surrogate key, ingestão global EONET, faixas configuráveis. CONTEXT.md atualizado antes do código. |
+| 2026-05-05 | Pré-Camada 4 Parte A — análise empírica de 4 amostras CEMADEN (240 alertas, 01-02/05/2026) confirmou ausência de campo COBRADE no payload e taxonomia limitada a 2 tipos físicos × 3 níveis. Decisões: refator do enum `TipoEvento` para subgrupos COBRADE; novos campos `cobrade_codigo` + enum `FonteClassificacao` no `Alerta`; granularidade COBRADE limitada ao subgrupo na Camada 4 (subtipos pertencem à Camada 5); Parte A subdividida em A.1 (destrutivo) + A.2 (aditivo COBRADE); fixtures CEMADEN versionadas em `tests/fixtures/`; `data/*` no gitignore. CONTEXT.md atualizado antes do código. |
