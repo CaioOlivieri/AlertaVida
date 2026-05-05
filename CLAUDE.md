@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Source of truth
 
-`CONTEXT.md` is the project's living document — it tracks every architectural decision, the 7-layer roadmap, and a dated changelog. **Read it before any non-trivial work** and update it (sections 8 and 10) whenever a new architectural decision is made or a layer milestone is reached.
+`CONTEXT.md` is the project's living document — it tracks every architectural decision, the 8-layer roadmap, and a dated changelog. **Read it before any non-trivial work** and update it (sections 8 and 10) whenever a new architectural decision is made or a layer milestone is reached.
 
 ## Commands
 
@@ -38,7 +38,7 @@ The system is built **layer by layer** following the roadmap in `CONTEXT.md` §3
 - **Camada 1 (Ingestão)** — DONE. `monitor.py` fetches from CEMADEN with retry+backoff, `database.py` persists to SQLite with dedup by `cod_alerta` PK, `scheduler.py` wraps everything in APScheduler.
 - **Camada 2 (Domínio)** — DONE. `src/alertavida/domain/` has frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`) fully integrated with ingestion and persistence.
 - **Camada 3 (Detecção de Mudanças e Eventos)** — DONE. Pure `ChangeDetector`, transactional Outbox Pattern, in-memory EventBus, and `OutboxDispatcher` scheduled every 30 seconds are implemented and covered by 88 tests.
-- **Camada 4 (Ingestão Multi-Fonte)** — in progress. Roadmap renumbered: what was previously a single "Camada 4 — Fontes Múltiplas" was split into Camada 4 (parallel multi-source ingestion) and Camada 5 (event correlation). See `CONTEXT.md` §3 for the current 8-layer breakdown.
+- **Camada 4 (Ingestão Multi-Fonte)** — in progress. Subdivided into four parts (defined 2026-05-05, see `CONTEXT.md` §3): **Parte A.1** (destructive refactor of domain + database: surrogate key, `cod_alerta` as TEXT, `municipio` optional, `coordenadas` required, `EscopoGeografico` enum, `TipoEvento` refactored to COBRADE subgroups, `geographic.py`, `scripts/reclassificar_escopos.py`); **Parte A.2** (additive: `cobrade.py` module, `cobrade_codigo` field, `FonteClassificacao` enum, new nullable columns); **Parte B** (`CemadenSource` as `DataSource`, refactor `monitor.py` into orchestrator); **Parte C** (`NasaEonetSource`). Execution order: A.1 → A.2 → B → C. A.1 is destructive (PK shape, enum values change); A.2 is purely additive (nullable columns + new module); aditivos sobre destrutivos evitam conflito de migration. Do not merge A.1 and A.2 in the same commit.
 - **Camadas 5–8** — blocked. Don't pre-build for them. The eventual target structure (`ingestion/`, `events/`, `sources/`, `correlation/`, `api/`, `notifications/` subpackages) is documented in `CONTEXT.md` §4 but migration happens **as each layer is worked on**, not upfront.
 
 ### Key flow (current)
@@ -47,7 +47,7 @@ The system is built **layer by layer** following the roadmap in `CONTEXT.md` §3
 
 ### Domain layer (Camada 2)
 
-`src/alertavida/domain/` contains frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`). `Alerta.from_dict()` is the canonical entry point: it accepts the raw CEMADEN-style dict (with field-name fallbacks) and raises `ValueError` on missing/invalid required fields. `TipoEvento.from_string` returns `OUTROS` for unknowns; `NivelRisco.from_string` raises. Both normalize accents/case before matching.
+`src/alertavida/domain/` contains frozen Pydantic v2 models (`Alerta`, `Municipio`, `Coordenadas`) and enums (`NivelRisco`, `TipoEvento`, and — after Parte A.2 of Camada 4 — `FonteClassificacao`). `Alerta.from_dict()` is the canonical entry point: it accepts the raw source-style dict (with field-name fallbacks) and raises `ValueError` on missing/invalid required fields. After Parte A.1 of Camada 4: `TipoEvento` values are COBRADE subgroups (`HIDROLOGICO`, `GEOLOGICO`, `METEOROLOGICO`, `CLIMATOLOGICO`, `BIOLOGICO`, `INDETERMINADO`); `TipoEvento.from_string` returns `INDETERMINADO` for unknowns; `NivelRisco.from_string` raises. Both normalize accents/case before matching. After Parte A.2: `Alerta` carries `cobrade_codigo: str | None` (subgroup-level only — e.g. `1.2.0.0.0` for hydrological, `1.1.3.0.0` for mass movements) and `fonte_classificacao: FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA) registering provenance of the classification. Mapping logic lives in `domain/cobrade.py`.
 
 Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` returns `Alerta`, and `database.py` persists through `aplicar_resultado_deteccao()`.
 
@@ -62,6 +62,8 @@ Integration with `monitor.py`/`database.py` is complete: `montar_alerta()` retur
 - **`max_instances=1, coalesce=True, misfire_grace_time=60`** on the scheduler job — prevents pile-up if a round runs longer than the interval.
 - **UTF-8 stdout reconfigure at top of `monitor.py`** — Windows consoles default to cp1252; without this, accented place names crash `print`.
 - **`escopo_geografico` is computed at ingestion time, never at query time** — changing buffer env vars (`ALERTAVIDA_BUFFER_PROXIMO_GRAUS`, etc.) only affects new alerts. Re-classification of existing rows requires running `scripts/reclassificar_escopos.py`. Don't recompute on read paths.
+- **`TipoEvento` values are COBRADE subgroups, not source terminology** — after Parte A.1, the enum is `HIDROLOGICO`, `GEOLOGICO`, `METEOROLOGICO`, `CLIMATOLOGICO`, `BIOLOGICO`, `INDETERMINADO`. Do not introduce values that mirror a specific source's vocabulary (`RISCO_HIDROLOGICO`, `MOVIMENTOS_DE_MASSA`, etc.). Each `DataSource` implements its own mapping to these neutral values. Violating this re-couples the domain to a single source.
+- **`cobrade_codigo` and `fonte_classificacao` change atomically** — any UPDATE that changes the COBRADE classification of an `Alerta` MUST update `cobrade_codigo` and `fonte_classificacao` in the same transaction. Updating one without the other breaks the audit trail and means future reclassifications (Camada 5) cannot tell direct mappings from inferred ones. No exceptions.
 
 ### Observability
 
