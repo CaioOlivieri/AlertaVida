@@ -1,13 +1,17 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+"""Município brasileiro como entidade administrativa.
 
-from alertavida.domain.coordenadas import Coordenadas
+Coordenadas geográficas pertencem ao `Alerta`, não ao `Municipio`.
+Município identifica o "onde administrativo" (nome, UF, código IBGE);
+o ponto exato do alerta vai em `Alerta.coordenadas`.
+"""
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class Municipio(BaseModel):
     nome: str = Field(min_length=1)
     uf: str = Field(min_length=2, max_length=2)
     codigo_ibge: int | None = None
-    coordenadas: Coordenadas | None = None
 
     model_config = ConfigDict(frozen=True)
 
