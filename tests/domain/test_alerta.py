@@ -124,7 +124,7 @@ def test_from_dict_com_chaves_alternativas() -> None:
     alerta = Alerta.from_dict(payload)
     assert alerta.cod_alerta == 42
     assert alerta.municipio.nome == "Belo Horizonte"
-    assert alerta.tipo_evento == TipoEvento.INCENDIO
+    assert alerta.tipo_evento == TipoEvento.CLIMATOLOGICO
     assert alerta.ult_atualizacao == datetime.fromisoformat(
         "2026-04-29T14:30:00+00:00"
     )
@@ -208,7 +208,7 @@ def test_from_dict_tipo_evento_vazio_lanca() -> None:
         Alerta.from_dict(payload)
 
 
-def test_from_dict_tipo_evento_desconhecido_vira_outros() -> None:
+def test_from_dict_tipo_evento_desconhecido_vira_indeterminado() -> None:
     payload = {
         "codigoalerta": 10,
         "tipoevento": "Qualquer coisa",
@@ -218,7 +218,7 @@ def test_from_dict_tipo_evento_desconhecido_vira_outros() -> None:
         "datahoracriacao": "2026-04-29T10:00:00",
     }
     alerta = Alerta.from_dict(payload)
-    assert alerta.tipo_evento == TipoEvento.OUTROS
+    assert alerta.tipo_evento == TipoEvento.INDETERMINADO
 
 
 def test_from_dict_sem_nivel_lanca() -> None:
@@ -333,7 +333,7 @@ def test_alerta_serializa_e_desserializa_json_sem_perder_dados() -> None:
 def test_alerta_sem_coordenadas_serializa_e_desserializa_json() -> None:
     original = Alerta(
         cod_alerta=99,
-        tipo_evento=TipoEvento.OUTROS,
+        tipo_evento=TipoEvento.INDETERMINADO,
         nivel_risco=NivelRisco.BAIXO,
         municipio=Municipio(nome="Cuiabá", uf="MT"),
         data_criacao=datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc),
