@@ -34,8 +34,8 @@ def test_tipo_evento_geologico_movimentos_massa() -> None:
     assert TipoEvento.from_string("Movimentos de Massa") == TipoEvento.GEOLOGICO
 
 
-def test_tipo_evento_incendio_queimada() -> None:
-    assert TipoEvento.from_string("Queimada") == TipoEvento.INCENDIO
+def test_tipo_evento_climatologico_queimada() -> None:
+    assert TipoEvento.from_string("Queimada") == TipoEvento.CLIMATOLOGICO
 
 
 def test_tipo_evento_meteorologico_chuva() -> None:
@@ -46,12 +46,12 @@ def test_tipo_evento_meteorologico_vento_forte() -> None:
     assert TipoEvento.from_string("Vento Forte") == TipoEvento.METEOROLOGICO
 
 
-def test_tipo_evento_desconhecido_vira_outros() -> None:
-    assert TipoEvento.from_string("XYZ desconhecido") == TipoEvento.OUTROS
+def test_tipo_evento_desconhecido_vira_indeterminado() -> None:
+    assert TipoEvento.from_string("XYZ desconhecido") == TipoEvento.INDETERMINADO
 
 
-def test_tipo_evento_none_vira_outros() -> None:
-    assert TipoEvento.from_string(None) == TipoEvento.OUTROS
+def test_tipo_evento_none_vira_indeterminado() -> None:
+    assert TipoEvento.from_string(None) == TipoEvento.INDETERMINADO
 
 
 def test_nivel_risco_muito_alto_com_underscore() -> None:
@@ -64,3 +64,15 @@ def test_nivel_risco_muito_alto_sem_underscore() -> None:
 
 def test_enum_str_mixin_serialize_value() -> None:
     assert NivelRisco.MODERADO.value == "MODERADO"
+
+
+def test_tipo_evento_climatologico_incendio() -> None:
+    assert TipoEvento.from_string("incendio") == TipoEvento.CLIMATOLOGICO
+
+
+def test_tipo_evento_climatologico_fogo() -> None:
+    assert TipoEvento.from_string("fogo") == TipoEvento.CLIMATOLOGICO
+
+
+def test_nivel_risco_indeterminado() -> None:
+    assert NivelRisco.from_string("INDETERMINADO") == NivelRisco.INDETERMINADO
