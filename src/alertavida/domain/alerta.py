@@ -1,3 +1,19 @@
+"""Modelo de domínio do Alerta — Camada 2 + refator Camada 4 Parte A.1.2.
+
+Invariantes do `Alerta`:
+- `cod_alerta` é string não-vazia. Suporta CEMADEN ("1854") e EONET ("EONET_5421").
+- `coordenadas` é OBRIGATÓRIO. Alerta sem localização geográfica não entra no
+  sistema (princípio §6.10 do CONTEXT.md — honestidade dos dados).
+- `municipio` é opcional e descritivo. Pode ser None quando a fonte não fornece.
+- `escopo_geografico` é atributo do domínio mas calculado externamente em
+  `monitor.py` via `geographic.classificar_escopo()` (Camada 4 Parte A.1.4).
+  Default `INDETERMINADO` é o valor seguro até a classificação acontecer.
+- `descricao` é opcional. Atualmente write-only — entra no domínio mas não é
+  persistido nem propagado em eventos. Quando fontes que entreguem descrições
+  estruturadas (EONET, INMET) forem integradas (Parte C+), o campo passa a
+  ser usado downstream.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -6,7 +22,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import NivelRisco, TipoEvento
+from alertavida.domain.enums import EscopoGeografico, NivelRisco, TipoEvento
 from alertavida.domain.municipio import Municipio
 
 
@@ -22,11 +38,12 @@ def _pick(data: dict[str, Any], *keys: str) -> Any:
 
 
 class Alerta(BaseModel):
-    cod_alerta: int = Field(gt=0)
+    cod_alerta: str = Field(min_length=1)
     tipo_evento: TipoEvento
     nivel_risco: NivelRisco
-    municipio: Municipio
-    coordenadas: Coordenadas | None = None
+    coordenadas: Coordenadas
+    municipio: Municipio | None = None
+    escopo_geografico: EscopoGeografico = EscopoGeografico.INDETERMINADO
     data_criacao: datetime
     ult_atualizacao: datetime | None = None
     descricao: str | None = None
@@ -36,20 +53,11 @@ class Alerta(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Alerta":
         cod_raw = _pick(data, "codigoalerta", "cod_alerta", "id", "codigo")
-        try:
-            cod_alerta = int(cod_raw)
-            if cod_alerta <= 0:
-                raise ValueError
-        except (TypeError, ValueError):
-            raise ValueError("Alerta sem cod_alerta válido") from None
-
-        nome = _pick(data, "municipio", "nome_municipio", "cidade")
-        if nome is None or not str(nome).strip():
-            raise ValueError("Alerta sem municipio.nome")
-
-        uf = _pick(data, "uf", "estado", "state")
-        if uf is None or not str(uf).strip():
-            raise ValueError("Alerta sem municipio.uf")
+        if cod_raw is None:
+            raise ValueError("Alerta sem cod_alerta válido")
+        cod_alerta = str(cod_raw).strip()
+        if not cod_alerta:
+            raise ValueError("Alerta sem cod_alerta válido")
 
         tipo_raw = _pick(data, "tipo_evento", "evento", "tipo", "desastre", "tipoevento")
         if tipo_raw is None or not str(tipo_raw).strip():
@@ -63,6 +71,15 @@ class Alerta(BaseModel):
             if nivel_raw is None or not str(nivel_raw).strip():
                 raise ValueError("Alerta sem nivel_risco") from None
             raise
+
+        latitude = _pick(data, "latitude", "lat")
+        longitude = _pick(data, "longitude", "lon", "lng")
+        if latitude is None or longitude is None:
+            raise ValueError("Alerta sem coordenadas válidas")
+        try:
+            coordenadas = Coordenadas(latitude=float(latitude), longitude=float(longitude))
+        except (TypeError, ValueError, ValidationError):
+            raise ValueError("Alerta sem coordenadas válidas") from None
 
         dt_raw = _pick(data, "datahoracriacao", "data_criacao", "dataCriacao", "dt_criacao")
         if dt_raw is None or not str(dt_raw).strip():
@@ -84,35 +101,34 @@ class Alerta(BaseModel):
             except ValueError:
                 ult_atualizacao = None
 
-        latitude = _pick(data, "latitude", "lat")
-        longitude = _pick(data, "longitude", "lon", "lng")
-        coordenadas = None
-        if latitude is not None and longitude is not None:
+        nome = _pick(data, "municipio", "nome_municipio", "cidade")
+        uf = _pick(data, "uf", "estado", "state")
+        municipio = None
+        if nome is not None and str(nome).strip() and uf is not None and str(uf).strip():
+            ibge_raw = _pick(data, "codibge", "codigo_ibge", "ibge", "codigoIbge")
+            codigo_ibge = None
+            if ibge_raw is not None:
+                try:
+                    codigo_ibge = int(ibge_raw)
+                except (TypeError, ValueError):
+                    codigo_ibge = None
             try:
-                coordenadas = Coordenadas(latitude=float(latitude), longitude=float(longitude))
-            except (TypeError, ValueError, ValidationError):
-                coordenadas = None
+                municipio = Municipio(
+                    nome=str(nome).strip(),
+                    uf=str(uf).strip(),
+                    codigo_ibge=codigo_ibge,
+                )
+            except ValidationError:
+                municipio = None
 
         descricao = _pick(data, "descricao", "desc", "mensagem")
-        ibge_raw = _pick(data, "codibge", "codigo_ibge", "ibge", "codigoIbge")
-        codigo_ibge = None
-        if ibge_raw is not None:
-            try:
-                codigo_ibge = int(ibge_raw)
-            except (TypeError, ValueError):
-                codigo_ibge = None
-        municipio = Municipio(
-            nome=str(nome).strip(),
-            uf=str(uf).strip(),
-            codigo_ibge=codigo_ibge,
-        )
 
         return cls(
             cod_alerta=cod_alerta,
             tipo_evento=tipo_evento,
             nivel_risco=nivel_risco,
-            municipio=municipio,
             coordenadas=coordenadas,
+            municipio=municipio,
             data_criacao=data_criacao,
             ult_atualizacao=ult_atualizacao,
             descricao=None if descricao is None else str(descricao),
