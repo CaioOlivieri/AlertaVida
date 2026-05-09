@@ -238,6 +238,7 @@ alertavida/
 ├── pyproject.toml
 ├── scripts/
 │   └── inspect_cemaden_payload.py
+│   └── reclassificar_escopos.py   ← re-classifica escopo_geografico após mudança de buffers
 ├── data/
 │   └── alertavida.db          ← gerado em runtime (gitignored)
 │   └── samples/               ← JSONs do inspetor (gitignored)
@@ -500,4 +501,5 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-03 | Infraestrutura de testes automatizados: uv + uv.lock, pytest-cov/randomly/ruff, CI GitHub Actions (Ubuntu + Windows), conftest.py com fixture db_temporario, marker integration, teste de contrato CEMADEN agendado diariamente |
 | 2026-05-04 | Pré-Camada 4 — design da ingestão multi-fonte: roadmap renumerado (4-8 com Camada 5 nova de Correlação), decisões arquiteturais sobre EscopoGeografico, surrogate key, ingestão global EONET, faixas configuráveis. CONTEXT.md atualizado antes do código. |
 | 2026-05-05 | Pré-Camada 4 Parte A — análise empírica de 4 amostras CEMADEN (240 alertas, 01-02/05/2026) confirmou ausência de campo COBRADE no payload e taxonomia limitada a 2 tipos físicos × 3 níveis. Decisões: refator do enum `TipoEvento` para subgrupos COBRADE; novos campos `cobrade_codigo` + enum `FonteClassificacao` no `Alerta`; granularidade COBRADE limitada ao subgrupo na Camada 4 (subtipos pertencem à Camada 5); Parte A subdividida em A.1 (destrutivo) + A.2 (aditivo COBRADE); fixtures CEMADEN versionadas em `tests/fixtures/`; `data/*` no gitignore. CONTEXT.md atualizado antes do código. |
-| 2026-05-07 | Camada 4 Parte A.1 — A.1.1, A.1.3 commitadas e CI verde. A.1.2 commitada LOCAL (não pushed). A.1.4 pendente. Push de A.1.2 + A.1.4 será feito junto após A.1.4 commitada.
+| 2026-05-07 | Camada 4 Parte A.1 — A.1.1, A.1.3 commitadas e CI verde. A.1.2 commitada LOCAL (não pushed). A.1.4 concluída e commitada. Push pendente.
+| 2026-05-09 | Camada 4 Parte A.1.4 concluída — detector, database, monitor, testes e scripts/reclassificar_escopos.py. cod_alerta str, surrogate key + UNIQUE (fonte, cod_alerta), coordenadas obrigatório, escopo_geografico pré-computado na ingestão. 120 testes passando. |
