@@ -1,5 +1,20 @@
+"""Persistência SQLite — Camada 1 + refator Camada 4 Parte A.1.4.
+
+Schema da tabela `alertas` reescrito para multi-fonte:
+- Surrogate key `id` (FK opaca em outras tabelas).
+- `UNIQUE (fonte, cod_alerta)` substitui PK composta.
+- Coluna `fonte` discrimina origem do alerta (CEMADEN, EONET, INMET, INPE).
+- Coluna `escopo_geografico` armazena classificação calculada na ingestão.
+
+Tabela `eventos` (Outbox Pattern) preserva contrato — `agregado_id` agora
+referencia `alertas.id` (surrogate INTEGER), não `cod_alerta` da fonte.
+O `cod_alerta` original fica preservado dentro do `payload` JSON do evento.
+"""
+
+from __future__ import annotations
+
+import json
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 
 from alertavida.domain import Alerta
@@ -11,24 +26,14 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
-    """Aplica colunas novas em bancos criados antes da Camada 3."""
-    colunas_novas = {
-        "codibge": "INTEGER",
-        "latitude": "REAL",
-        "longitude": "REAL",
-        "ult_atualizacao": "TEXT",
-        "status_interno": "TEXT NOT NULL DEFAULT 'ATIVO'",
-        "visto_ultima_vez": "TEXT NOT NULL DEFAULT ''",
-        "rodadas_ausente": "INTEGER NOT NULL DEFAULT 0",
-        "assinatura": "TEXT",
-    }
-    cursor = conexao.execute("PRAGMA table_info(alertas)")
-    existentes = {row[1] for row in cursor.fetchall()}
-    for coluna, tipo in colunas_novas.items():
-        if coluna not in existentes:
-            conexao.execute(
-                f"ALTER TABLE alertas ADD COLUMN {coluna} {tipo}"
-            )
+    """Reservado para migrations futuras.
+
+    A migration de PK composta para surrogate (A.1.4) não foi necessária
+    aqui porque o banco estava vazio quando o refator aconteceu. Mantida
+    como ponto de extensão obrigatório — qualquer mudança de schema futura
+    é registrada nesta função.
+    """
+    pass
 
 
 def criar_banco() -> None:
@@ -36,7 +41,9 @@ def criar_banco() -> None:
         conexao.execute(
             """
             CREATE TABLE IF NOT EXISTS alertas (
-                cod_alerta          INTEGER PRIMARY KEY,
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                fonte               TEXT NOT NULL DEFAULT 'CEMADEN',
+                cod_alerta          TEXT NOT NULL,
                 municipio           TEXT,
                 uf                  TEXT,
                 evento              TEXT,
@@ -44,13 +51,15 @@ def criar_banco() -> None:
                 datahoracriacao     TEXT,
                 detectado_em        TEXT NOT NULL,
                 codibge             INTEGER,
-                latitude            REAL,
-                longitude           REAL,
+                latitude            REAL NOT NULL,
+                longitude           REAL NOT NULL,
+                escopo_geografico   TEXT NOT NULL DEFAULT 'INDETERMINADO',
                 ult_atualizacao     TEXT,
                 status_interno      TEXT NOT NULL DEFAULT 'ATIVO',
                 visto_ultima_vez    TEXT NOT NULL DEFAULT '',
                 rodadas_ausente     INTEGER NOT NULL DEFAULT 0,
-                assinatura          TEXT
+                assinatura          TEXT,
+                UNIQUE (fonte, cod_alerta)
             )
             """
         )
@@ -62,6 +71,12 @@ def criar_banco() -> None:
         )
         conexao.execute(
             "CREATE INDEX IF NOT EXISTS idx_nivel ON alertas (nivel)"
+        )
+        conexao.execute(
+            "CREATE INDEX IF NOT EXISTS idx_fonte ON alertas (fonte)"
+        )
+        conexao.execute(
+            "CREATE INDEX IF NOT EXISTS idx_escopo_geografico ON alertas (escopo_geografico)"
         )
         conexao.execute(
             """
@@ -87,65 +102,17 @@ def criar_banco() -> None:
         conexao.commit()
 
 
-def alerta_existe(cod_alerta: int) -> bool:
-    with sqlite3.connect(DB_PATH) as conexao:
-        cursor = conexao.execute(
-            "SELECT 1 FROM alertas WHERE cod_alerta = ? LIMIT 1",
-            (cod_alerta,),
-        )
-        return cursor.fetchone() is not None
-
-
-def salvar_alerta(alerta: Alerta) -> None:
-    """Persiste um Alerta no banco. Levanta se cod_alerta já existir."""
-    lat = lon = None
-    if alerta.coordenadas is not None:
-        lat = alerta.coordenadas.latitude
-        lon = alerta.coordenadas.longitude
-    agora = datetime.now().isoformat(timespec="seconds")
-    ult_str = (
-        alerta.ult_atualizacao.isoformat()
-        if alerta.ult_atualizacao is not None
-        else None
-    )
-    with sqlite3.connect(DB_PATH) as conexao:
-        conexao.execute(
-            """
-            INSERT INTO alertas (
-                cod_alerta, municipio, uf, evento, nivel,
-                datahoracriacao, detectado_em, codibge, latitude, longitude,
-                ult_atualizacao, status_interno, visto_ultima_vez,
-                rodadas_ausente, assinatura
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL)
-            """,
-            (
-                alerta.cod_alerta,
-                alerta.municipio.nome,
-                alerta.municipio.uf,
-                alerta.tipo_evento.value,
-                alerta.nivel_risco.value,
-                alerta.data_criacao.isoformat(),
-                agora,
-                alerta.municipio.codigo_ibge,
-                lat,
-                lon,
-                ult_str,
-                agora,
-            ),
-        )
-        conexao.commit()
-
-
-def buscar_snapshots_ativos() -> list[AlertaSnapshot]:
-    """Retorna snapshot de todos os alertas com status_interno='ATIVO'."""
+def buscar_snapshots_ativos(fonte: str) -> list[AlertaSnapshot]:
+    """Retorna snapshots de alertas ATIVOS da fonte especificada."""
     with sqlite3.connect(DB_PATH) as conexao:
         cursor = conexao.execute(
             """
             SELECT cod_alerta, nivel, evento, ult_atualizacao,
                    rodadas_ausente, status_interno
             FROM alertas
-            WHERE status_interno = 'ATIVO'
-            """
+            WHERE status_interno = 'ATIVO' AND fonte = ?
+            """,
+            (fonte,),
         )
         return [
             AlertaSnapshot(
@@ -162,53 +129,56 @@ def buscar_snapshots_ativos() -> list[AlertaSnapshot]:
 
 def aplicar_resultado_deteccao(
     resultado: ResultadoDeteccao,
-    alertas_por_codigo: dict[int, "Alerta"],
+    alertas_por_codigo: dict[str, "Alerta"],
+    fonte: str,
     agora: str,
 ) -> None:
-    """
-    Persiste o resultado do ChangeDetector atomicamente.
-    salvar_alerta e salvar_evento ocorrem na mesma transação — outbox pattern.
-    agora: isoformat sem microssegundos, usado em detectado_em e visto_ultima_vez.
+    """Persiste o resultado do ChangeDetector atomicamente.
+
+    INSERT/UPDATE em alertas e INSERT em eventos ocorrem na mesma transação
+    SQLite — outbox pattern. `agregado_id` em eventos referencia o `id`
+    surrogate da tabela `alertas`.
     """
     with sqlite3.connect(DB_PATH) as conexao:
         eventos: list[EventoDetectado] = resultado.eventos
         for evento in eventos:
-            import json as _json
+            agregado_id: int | None = None
 
             if evento.tipo == "AlertaCriado":
                 alerta = alertas_por_codigo[evento.cod_alerta]
-                lat = alerta.coordenadas.latitude if alerta.coordenadas else None
-                lon = alerta.coordenadas.longitude if alerta.coordenadas else None
                 ult = (
                     alerta.ult_atualizacao.isoformat()
                     if alerta.ult_atualizacao
                     else None
                 )
-                conexao.execute(
+                cursor = conexao.execute(
                     """
                     INSERT INTO alertas (
-                        cod_alerta, municipio, uf, evento, nivel,
+                        fonte, cod_alerta, municipio, uf, evento, nivel,
                         datahoracriacao, detectado_em, codibge,
-                        latitude, longitude, ult_atualizacao,
+                        latitude, longitude, escopo_geografico, ult_atualizacao,
                         status_interno, visto_ultima_vez, rodadas_ausente,
                         assinatura
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL)
                     """,
                     (
+                        fonte,
                         alerta.cod_alerta,
-                        alerta.municipio.nome,
-                        alerta.municipio.uf,
+                        alerta.municipio.nome if alerta.municipio is not None else None,
+                        alerta.municipio.uf if alerta.municipio is not None else None,
                         alerta.tipo_evento.value,
                         alerta.nivel_risco.value,
                         alerta.data_criacao.isoformat(),
                         agora,
-                        alerta.municipio.codigo_ibge,
-                        lat,
-                        lon,
+                        alerta.municipio.codigo_ibge if alerta.municipio is not None else None,
+                        alerta.coordenadas.latitude,
+                        alerta.coordenadas.longitude,
+                        alerta.escopo_geografico.value,
                         ult,
                         agora,
                     ),
                 )
+                agregado_id = cursor.lastrowid
 
             elif evento.tipo == "AlertaAtualizado":
                 alerta = alertas_por_codigo[evento.cod_alerta]
@@ -222,41 +192,55 @@ def aplicar_resultado_deteccao(
                     UPDATE alertas
                     SET nivel = ?, evento = ?, ult_atualizacao = ?,
                         visto_ultima_vez = ?, rodadas_ausente = 0
-                    WHERE cod_alerta = ?
+                    WHERE fonte = ? AND cod_alerta = ?
                     """,
                     (
                         alerta.nivel_risco.value,
                         alerta.tipo_evento.value,
                         ult,
                         agora,
+                        fonte,
                         evento.cod_alerta,
                     ),
                 )
+                cur_id = conexao.execute(
+                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
+                    (fonte, evento.cod_alerta),
+                )
+                row = cur_id.fetchone()
+                agregado_id = row[0] if row is not None else None
 
             elif evento.tipo == "AlertaResolvido":
                 conexao.execute(
                     """
                     UPDATE alertas
                     SET status_interno = 'RESOLVIDO', visto_ultima_vez = ?
-                    WHERE cod_alerta = ?
+                    WHERE fonte = ? AND cod_alerta = ?
                     """,
-                    (agora, evento.cod_alerta),
+                    (agora, fonte, evento.cod_alerta),
                 )
+                cur_id = conexao.execute(
+                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
+                    (fonte, evento.cod_alerta),
+                )
+                row = cur_id.fetchone()
+                agregado_id = row[0] if row is not None else None
 
-            conexao.execute(
-                """
-                INSERT INTO eventos (
-                    tipo, agregado_id, payload, schema_versao,
-                    criado_em, processado_em, tentativas
-                ) VALUES (?, ?, ?, 1, ?, NULL, 0)
-                """,
-                (
-                    evento.tipo,
-                    evento.cod_alerta,
-                    _json.dumps(evento.payload, ensure_ascii=False),
-                    agora,
-                ),
-            )
+            if agregado_id is not None:
+                conexao.execute(
+                    """
+                    INSERT INTO eventos (
+                        tipo, agregado_id, payload, schema_versao,
+                        criado_em, processado_em, tentativas
+                    ) VALUES (?, ?, ?, 1, ?, NULL, 0)
+                    """,
+                    (
+                        evento.tipo,
+                        agregado_id,
+                        json.dumps(evento.payload, ensure_ascii=False),
+                        agora,
+                    ),
+                )
 
         codigos_com_evento = {e.cod_alerta for e in resultado.eventos}
         for cod in resultado.codigos_vistos - codigos_com_evento:
@@ -264,9 +248,9 @@ def aplicar_resultado_deteccao(
                 """
                 UPDATE alertas
                 SET visto_ultima_vez = ?, rodadas_ausente = 0
-                WHERE cod_alerta = ?
+                WHERE fonte = ? AND cod_alerta = ?
                 """,
-                (agora, cod),
+                (agora, fonte, cod),
             )
 
         for cod in resultado.codigos_ausentes:
@@ -275,9 +259,9 @@ def aplicar_resultado_deteccao(
                 UPDATE alertas
                 SET rodadas_ausente = rodadas_ausente + 1,
                     visto_ultima_vez = ?
-                WHERE cod_alerta = ?
+                WHERE fonte = ? AND cod_alerta = ?
                 """,
-                (agora, cod),
+                (agora, fonte, cod),
             )
 
         conexao.commit()
