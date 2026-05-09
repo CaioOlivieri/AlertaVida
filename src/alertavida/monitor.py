@@ -15,12 +15,14 @@ from alertavida.database import (
 )
 from alertavida.domain import Alerta
 from alertavida.domain.detector import detectar_mudancas
+from alertavida.domain.geographic import classificar_escopo
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
+FONTE_CEMADEN = "CEMADEN"
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +33,9 @@ def montar_alerta(item: dict) -> Alerta:
     """
     if not isinstance(item, dict):
         raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
-    return Alerta.from_dict(item)
+    alerta = Alerta.from_dict(item)
+    escopo = classificar_escopo(alerta.coordenadas)
+    return alerta.model_copy(update={"escopo_geografico": escopo})
 
 
 def normalize_alert_list(payload):
@@ -94,7 +98,7 @@ def executar_ingestao():
     itens_brutos = normalize_alert_list(payload)
     total_recebido = len(itens_brutos)
 
-    alertas_validos: dict[int, Alerta] = {}
+    alertas_validos: dict[str, Alerta] = {}
     descartados = 0
     for item in itens_brutos:
         try:
@@ -103,8 +107,8 @@ def executar_ingestao():
         except ValueError:
             descartados += 1
 
-    snapshots = buscar_snapshots_ativos()
-    resultado = detectar_mudancas(list(alertas_validos.values()), snapshots)
+    snapshots = buscar_snapshots_ativos(FONTE_CEMADEN)
+    resultado = detectar_mudancas(list(alertas_validos.values()), snapshots, FONTE_CEMADEN)
 
     agora = datetime.now().isoformat(timespec="seconds")
     erros = 0
@@ -113,12 +117,12 @@ def executar_ingestao():
             logger.debug(
                 "Alerta %s: %s/%s — %s — %s",
                 alerta.cod_alerta,
-                alerta.municipio.nome,
-                alerta.municipio.uf,
+                alerta.municipio.nome if alerta.municipio else "?",
+                alerta.municipio.uf if alerta.municipio else "?",
                 alerta.tipo_evento,
                 alerta.nivel_risco,
             )
-        aplicar_resultado_deteccao(resultado, alertas_validos, agora)
+        aplicar_resultado_deteccao(resultado, alertas_validos, FONTE_CEMADEN, agora)
     except Exception:  # noqa: BLE001 - proteção do ciclo de ingestão
         erros = len(alertas_validos)
         logger.exception("Falha na transação do banco")
