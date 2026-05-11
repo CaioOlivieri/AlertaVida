@@ -19,10 +19,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from alertavida.domain.cobrade import validar_formato as _validar_formato_cobrade
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import EscopoGeografico, NivelRisco, TipoEvento
+from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, NivelRisco, TipoEvento
 from alertavida.domain.municipio import Municipio
 
 
@@ -47,8 +48,42 @@ class Alerta(BaseModel):
     data_criacao: datetime
     ult_atualizacao: datetime | None = None
     descricao: str | None = None
+    cobrade_codigo: str | None = None
+    fonte_classificacao: FonteClassificacao = FonteClassificacao.INDETERMINADA
 
     model_config = ConfigDict(frozen=True)
+
+    @field_validator("cobrade_codigo")
+    @classmethod
+    def _validar_formato(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _validar_formato_cobrade(v):
+            raise ValueError(
+                f"cobrade_codigo inválido: {v!r}. Formato esperado: N.N.N.N.N"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _validar_invariante_classificacao(self) -> "Alerta":
+        """
+        Invariante: cobrade_codigo e fonte_classificacao mudam atomicamente.
+
+        - cobrade_codigo IS NULL    ⇔ fonte_classificacao == INDETERMINADA
+        - cobrade_codigo IS NOT NULL ⇔ fonte_classificacao != INDETERMINADA
+
+        Ver CLAUDE.md "Resilience invariants" e CONTEXT.md §3 Camada 4 A.2.
+        """
+        tem_codigo = self.cobrade_codigo is not None
+        eh_indeterminada = self.fonte_classificacao == FonteClassificacao.INDETERMINADA
+        if tem_codigo == eh_indeterminada:
+            raise ValueError(
+                "Invariante violada: cobrade_codigo e fonte_classificacao "
+                "devem mudar juntos. "
+                f"cobrade_codigo={self.cobrade_codigo!r}, "
+                f"fonte_classificacao={self.fonte_classificacao.value}"
+            )
+        return self
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Alerta":

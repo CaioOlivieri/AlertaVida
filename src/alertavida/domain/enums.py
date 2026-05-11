@@ -9,7 +9,7 @@ fonte para esses valores neutros.
 from __future__ import annotations
 
 import unicodedata
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 def _normalizar(s: str) -> str:
@@ -125,3 +125,21 @@ class EscopoGeografico(str, Enum):
     PROXIMO = "PROXIMO"
     INTERNACIONAL = "INTERNACIONAL"
     INDETERMINADO = "INDETERMINADO"
+
+
+class FonteClassificacao(StrEnum):
+    """
+    Proveniência do código COBRADE atribuído a um Alerta.
+
+    DIRETA: fonte forneceu o COBRADE explicitamente (reservado; CEMADEN não fornece hoje).
+    MAPEADA_POR_NOME: derivado via tabela de mapeamento por nome de tipo
+                     (ex.: EVENTO_CEMADEN_PARA_COBRADE em domain/cobrade.py).
+    INFERIDA_POR_CONTEXTO: derivado de texto livre, descrição ou combinação
+                          de campos. Reservado para classificadores futuros.
+    INDETERMINADA: não foi possível classificar.
+    """
+
+    DIRETA = "DIRETA"
+    MAPEADA_POR_NOME = "MAPEADA_POR_NOME"
+    INFERIDA_POR_CONTEXTO = "INFERIDA_POR_CONTEXTO"
+    INDETERMINADA = "INDETERMINADA"
