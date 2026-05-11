@@ -155,7 +155,7 @@ Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implemen
   - `monitor.py` ajustado para gravar com `fonte='CEMADEN'` e `escopo_geografico` calculado
   - Atualização de TODOS os testes da Camada 3 que referenciam valores antigos do enum
 
-- **Parte A.2 — Aditivo: taxonomia COBRADE com proveniência de classificação**:
+- **Parte A.2 — Aditivo: taxonomia COBRADE com proveniência de classificação ✅ CONCLUÍDA**:
   - Novo módulo `src/alertavida/domain/cobrade.py` com tabela de mapeamento `EVENTO_CEMADEN_PARA_COBRADE` (apenas 2 entradas, baseado em inspeção empírica de 240 alertas em 4 amostras de 01-02/05/2026): `Risco Hidrológico → 1.2.0.0.0`, `Movimentos de Massa → 1.1.3.0.0`
   - Novo enum `FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA) registrando proveniência do `cobrade_codigo`
   - Novo campo `cobrade_codigo: str | None` no domínio `Alerta`
@@ -175,7 +175,7 @@ Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implemen
   - Mapeamento de categorias EONET para subgrupos COBRADE em `cobrade.py`
   - Ingestão global, classificação geográfica via `EscopoGeografico`
 
-**Ordem de execução**: A.1 → A.2 → B → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). Aditivos sobre destrutivos evitam conflito de migration.
+**Ordem de execução**: A.1 → A.2 → B → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). Aditivos sobre destrutivos evitam conflito de migration. **A.1 e A.2 concluídas em 2026-05-09 e 2026-05-11 respectivamente. Próximo: Parte B.**
 
 **Granularidade COBRADE — limite consciente da Camada 4:**
 
@@ -445,6 +445,7 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | Subdivisão da Camada 4 Parte A em A.1 (destrutivo) + A.2 (aditivo COBRADE) | A.1 quebra surrogate key, enum, refator de domínio. A.2 é aditivo puro: coluna nullable, módulo novo, sem reescrita. Cada parte com narrativa coerente e independentemente reversível. Ordem A.1 → A.2 evita conflito de migration. A.2 pode rodar em paralelo com Parte B. |
 | Fixtures CEMADEN versionadas em `tests/fixtures/cemaden/` | 4 amostras capturadas em 01-02/05/2026 (durante enchente real em PE) viram fixtures de teste de regressão. Uso por nível de teste: parsing usa 1 fixture, integração do `ChangeDetector` usa 2 fixtures consecutivas com diff controlado, contrato real continua via `@integration` no endpoint vivo. README documenta origem e contexto de cada fixture. |
 | Pasta `data/` é runtime/state, ignorada via gitignore com exceção `.gitkeep` | Banco SQLite, payloads brutos, logs do inspector, backups — nada canônico. Estratégia uniforme: `data/*` ignorado, estrutura preservada via `.gitkeep`. Fixtures canônicas vivem em `tests/fixtures/`, não em `data/samples/`. Single Responsibility aplicado a estrutura de pastas. |
+| Invariante de atomicidade COBRADE via `@model_validator` Pydantic, não CHECK constraint SQL | SQLite não permite adicionar CHECK constraint via `ALTER TABLE`, apenas via rebuild da tabela. Usar CHECK quebraria o caminho de `_migrar_banco()` em bancos preexistentes (A.2 deixaria de ser aditivo puro). Mover a invariante para o domínio (`@model_validator(mode="after")` em `Alerta`) cobre uniformemente banco novo e migrado, gera `ValidationError` explícito no boundary, e alinha com §6 ("Pydantic para qualquer entrada/saída de dados externos. Validação no limite do sistema"). |
 
 ---
 
@@ -503,3 +504,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-05 | Pré-Camada 4 Parte A — análise empírica de 4 amostras CEMADEN (240 alertas, 01-02/05/2026) confirmou ausência de campo COBRADE no payload e taxonomia limitada a 2 tipos físicos × 3 níveis. Decisões: refator do enum `TipoEvento` para subgrupos COBRADE; novos campos `cobrade_codigo` + enum `FonteClassificacao` no `Alerta`; granularidade COBRADE limitada ao subgrupo na Camada 4 (subtipos pertencem à Camada 5); Parte A subdividida em A.1 (destrutivo) + A.2 (aditivo COBRADE); fixtures CEMADEN versionadas em `tests/fixtures/`; `data/*` no gitignore. CONTEXT.md atualizado antes do código. |
 | 2026-05-07 | Camada 4 Parte A.1 — A.1.1, A.1.3 commitadas e CI verde. A.1.2 commitada LOCAL (não pushed). A.1.4 concluída e commitada. Push pendente.
 | 2026-05-09 | Camada 4 Parte A.1.4 concluída — detector, database, monitor, testes e scripts/reclassificar_escopos.py. cod_alerta str, surrogate key + UNIQUE (fonte, cod_alerta), coordenadas obrigatório, escopo_geografico pré-computado na ingestão. 120 testes passando. |
+| 2026-05-11 | Camada 4 Parte A.2 concluída — `domain/cobrade.py` com `EVENTO_CEMADEN_PARA_COBRADE` (2 entradas baseadas em inspeção empírica) e `validar_formato`. Enum `FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA). Campos `cobrade_codigo: str \| None` e `fonte_classificacao: FonteClassificacao` em `Alerta`, com `@field_validator` de formato e `@model_validator` da invariante atômica. Colunas correspondentes em `alertas` via `_migrar_banco()` idempotente. 139 testes passando, CI verde em Ubuntu + Windows. |
