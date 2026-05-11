@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from alertavida.domain.alerta import Alerta
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import EscopoGeografico, NivelRisco, TipoEvento
+from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, NivelRisco, TipoEvento
 from alertavida.domain.municipio import Municipio
 
 
@@ -477,3 +477,87 @@ def test_alerta_sem_municipio_serializa_e_desserializa_json() -> None:
     reconstruido = Alerta.model_validate_json(json_str)
     assert reconstruido == original
     assert reconstruido.municipio is None
+
+
+# ============================================================
+# Camada 4 A.2 — cobrade_codigo + fonte_classificacao
+# ============================================================
+
+
+def test_cobrade_codigo_e_fonte_mapeada_aceita() -> None:
+    alerta = Alerta(
+        cod_alerta="1001",
+        tipo_evento=TipoEvento.HIDROLOGICO,
+        nivel_risco=NivelRisco.MODERADO,
+        coordenadas=Coordenadas(latitude=-8.05, longitude=-34.88),
+        data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+        cobrade_codigo="1.2.0.0.0",
+        fonte_classificacao=FonteClassificacao.MAPEADA_POR_NOME,
+    )
+    assert alerta.cobrade_codigo == "1.2.0.0.0"
+    assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
+
+
+def test_cobrade_defaults_none_e_indeterminada() -> None:
+    alerta = Alerta(
+        cod_alerta="EONET_42",
+        tipo_evento=TipoEvento.INDETERMINADO,
+        nivel_risco=NivelRisco.INDETERMINADO,
+        coordenadas=Coordenadas(latitude=35.68, longitude=139.69),
+        data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+    )
+    assert alerta.cobrade_codigo is None
+    assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
+
+
+def test_cobrade_formato_invalido_lanca() -> None:
+    with pytest.raises(ValidationError):
+        Alerta(
+            cod_alerta="1001",
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.ALTO,
+            coordenadas=Coordenadas(latitude=-8.05, longitude=-34.88),
+            data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+            cobrade_codigo="formato_errado",
+            fonte_classificacao=FonteClassificacao.MAPEADA_POR_NOME,
+        )
+
+
+def test_cobrade_invariante_codigo_com_fonte_indeterminada_lanca() -> None:
+    with pytest.raises(ValidationError):
+        Alerta(
+            cod_alerta="1001",
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.ALTO,
+            coordenadas=Coordenadas(latitude=-8.05, longitude=-34.88),
+            data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+            cobrade_codigo="1.2.0.0.0",
+            fonte_classificacao=FonteClassificacao.INDETERMINADA,
+        )
+
+
+def test_cobrade_invariante_fonte_sem_codigo_lanca() -> None:
+    with pytest.raises(ValidationError):
+        Alerta(
+            cod_alerta="1001",
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.ALTO,
+            coordenadas=Coordenadas(latitude=-8.05, longitude=-34.88),
+            data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+            cobrade_codigo=None,
+            fonte_classificacao=FonteClassificacao.MAPEADA_POR_NOME,
+        )
+
+
+def test_cobrade_none_com_fonte_indeterminada_aceita() -> None:
+    alerta = Alerta(
+        cod_alerta="pre_a2",
+        tipo_evento=TipoEvento.HIDROLOGICO,
+        nivel_risco=NivelRisco.ALTO,
+        coordenadas=Coordenadas(latitude=-8.05, longitude=-34.88),
+        data_criacao=datetime(2026, 5, 1, 10, 0, 0, tzinfo=timezone.utc),
+        cobrade_codigo=None,
+        fonte_classificacao=FonteClassificacao.INDETERMINADA,
+    )
+    assert alerta.cobrade_codigo is None
+    assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA

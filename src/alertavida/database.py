@@ -33,7 +33,18 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     como ponto de extensão obrigatório — qualquer mudança de schema futura
     é registrada nesta função.
     """
-    pass
+    # Camada 4 / A.2 — colunas COBRADE
+    cursor = conexao.execute("PRAGMA table_info(alertas)")
+    colunas_existentes = {row[1] for row in cursor.fetchall()}
+
+    if "cobrade_codigo" not in colunas_existentes:
+        conexao.execute("ALTER TABLE alertas ADD COLUMN cobrade_codigo TEXT NULL")
+
+    if "fonte_classificacao" not in colunas_existentes:
+        conexao.execute(
+            "ALTER TABLE alertas ADD COLUMN fonte_classificacao "
+            "TEXT NOT NULL DEFAULT 'INDETERMINADA'"
+        )
 
 
 def criar_banco() -> None:
@@ -59,6 +70,8 @@ def criar_banco() -> None:
                 visto_ultima_vez    TEXT NOT NULL DEFAULT '',
                 rodadas_ausente     INTEGER NOT NULL DEFAULT 0,
                 assinatura          TEXT,
+                cobrade_codigo      TEXT NULL,
+                fonte_classificacao TEXT NOT NULL DEFAULT 'INDETERMINADA',
                 UNIQUE (fonte, cod_alerta)
             )
             """
@@ -158,8 +171,8 @@ def aplicar_resultado_deteccao(
                         datahoracriacao, detectado_em, codibge,
                         latitude, longitude, escopo_geografico, ult_atualizacao,
                         status_interno, visto_ultima_vez, rodadas_ausente,
-                        assinatura
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL)
+                        assinatura, cobrade_codigo, fonte_classificacao
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL, ?, ?)
                     """,
                     (
                         fonte,
@@ -176,6 +189,8 @@ def aplicar_resultado_deteccao(
                         alerta.escopo_geografico.value,
                         ult,
                         agora,
+                        alerta.cobrade_codigo,
+                        alerta.fonte_classificacao.value,
                     ),
                 )
                 agregado_id = cursor.lastrowid
@@ -191,7 +206,8 @@ def aplicar_resultado_deteccao(
                     """
                     UPDATE alertas
                     SET nivel = ?, evento = ?, ult_atualizacao = ?,
-                        visto_ultima_vez = ?, rodadas_ausente = 0
+                        visto_ultima_vez = ?, rodadas_ausente = 0,
+                        cobrade_codigo = ?, fonte_classificacao = ?
                     WHERE fonte = ? AND cod_alerta = ?
                     """,
                     (
@@ -199,6 +215,8 @@ def aplicar_resultado_deteccao(
                         alerta.tipo_evento.value,
                         ult,
                         agora,
+                        alerta.cobrade_codigo,
+                        alerta.fonte_classificacao.value,
                         fonte,
                         evento.cod_alerta,
                     ),

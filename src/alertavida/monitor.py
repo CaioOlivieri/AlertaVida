@@ -14,7 +14,9 @@ from alertavida.database import (
     criar_banco,
 )
 from alertavida.domain import Alerta
+from alertavida.domain.cobrade import mapear_cemaden
 from alertavida.domain.detector import detectar_mudancas
+from alertavida.domain.enums import FonteClassificacao
 from alertavida.domain.geographic import classificar_escopo
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
@@ -35,7 +37,19 @@ def montar_alerta(item: dict) -> Alerta:
         raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
     alerta = Alerta.from_dict(item)
     escopo = classificar_escopo(alerta.coordenadas)
-    return alerta.model_copy(update={"escopo_geografico": escopo})
+
+    tipo_evento_bruto = item.get("tipoevento") or ""
+    cobrade = mapear_cemaden(tipo_evento_bruto)
+    if cobrade is not None:
+        fonte_classificacao = FonteClassificacao.MAPEADA_POR_NOME
+    else:
+        fonte_classificacao = FonteClassificacao.INDETERMINADA
+
+    return alerta.model_copy(update={
+        "escopo_geografico": escopo,
+        "cobrade_codigo": cobrade,
+        "fonte_classificacao": fonte_classificacao,
+    })
 
 
 def normalize_alert_list(payload):

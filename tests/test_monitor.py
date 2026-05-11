@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
 from alertavida.domain.detector import EventoDetectado, ResultadoDeteccao
+from alertavida.domain.enums import FonteClassificacao
 from alertavida.monitor import executar_ingestao, fetch_alertas_com_retry, montar_alerta
 
 
@@ -222,3 +223,39 @@ def test_executar_ingestao_conta_descartados_sem_erro_transacao() -> None:
                     with patch("alertavida.monitor.aplicar_resultado_deteccao") as mock_aplicar:
                         executar_ingestao()
     assert mock_aplicar.call_count == 1
+
+
+# ============================================================
+# Camada 4 A.2 — cobrade_codigo + fonte_classificacao em montar_alerta
+# ============================================================
+
+_BASE_ITEM = {
+    "codigoalerta": "1001",
+    "nivel": "MODERADO",
+    "estado": "PE",
+    "municipio": "Recife",
+    "datahoracriacao": "2026-05-01T10:00:00",
+    "latitude": -8.05,
+    "longitude": -34.88,
+}
+
+
+def test_montar_alerta_risco_hidrologico_popula_cobrade() -> None:
+    item = {**_BASE_ITEM, "tipoevento": "Risco Hidrológico"}
+    alerta = montar_alerta(item)
+    assert alerta.cobrade_codigo == "1.2.0.0.0"
+    assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
+
+
+def test_montar_alerta_movimentos_de_massa_popula_cobrade() -> None:
+    item = {**_BASE_ITEM, "tipoevento": "Movimentos de Massa", "nivel": "ALTO"}
+    alerta = montar_alerta(item)
+    assert alerta.cobrade_codigo == "1.1.3.0.0"
+    assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
+
+
+def test_montar_alerta_tipoevento_desconhecido_cobrade_none() -> None:
+    item = {**_BASE_ITEM, "tipoevento": "Tipo Desconhecido"}
+    alerta = montar_alerta(item)
+    assert alerta.cobrade_codigo is None
+    assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
