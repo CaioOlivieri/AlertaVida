@@ -98,3 +98,5 @@ diff.txt
 tmp_database_*.py
 
 tmp_database_*.py
+
+scripts/diagnostico_banco.py
