@@ -94,3 +94,7 @@ diff.txt
 
 # Cursor / Claude
 .claude/
+
+tmp_database_*.py
+
+tmp_database_*.py
