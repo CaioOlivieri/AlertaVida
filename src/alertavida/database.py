@@ -25,6 +25,52 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.d
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
+class SchemaIncompativelError(Exception):
+    """Banco existente tem schema incompatível com a versão atual do código.
+
+    Levantada quando criar_banco() detecta uma tabela `alertas` pré-A.1
+    (sem coluna `id` ou `fonte`). Bancos pré-A.1 não têm caminho de migration
+    automática — a Camada 4 Parte A.1 (09/05/2026) introduziu ruptura de
+    schema (PK composta -> surrogate key) que SQLite não suporta via ALTER.
+    """
+
+
+def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
+    """Verifica se o schema existente é compatível com a versão atual.
+
+    Casos:
+    - Tabela `alertas` não existe -> OK, criar_banco() vai criá-la
+    - Tabela existe com `id` + `fonte` -> OK, _migrar_banco() cuida de aditivos
+    - Tabela existe sem `id` ou sem `fonte` -> SchemaIncompativelError
+
+    Pré-condição: chamada como primeira operação dentro de criar_banco(),
+    antes de qualquer CREATE TABLE ou ALTER TABLE.
+    """
+    cursor = conexao.execute("PRAGMA table_info(alertas)")
+    colunas = {row[1] for row in cursor.fetchall()}
+
+    if not colunas:
+        return
+
+    colunas_obrigatorias = {"id", "fonte"}
+    faltantes = colunas_obrigatorias - colunas
+
+    if faltantes:
+        raise SchemaIncompativelError(
+            f"Schema do banco em '{DB_PATH}' é incompatível com a versão atual.\n"
+            f"\n"
+            f"Detectado: tabela `alertas` sem coluna(s): {sorted(faltantes)}.\n"
+            f"Provável origem: banco criado antes da Camada 4 Parte A.1 (09/05/2026).\n"
+            f"\n"
+            f"A Camada 4 Parte A.1 introduziu ruptura estrutural (surrogate key + "
+            f"UNIQUE composto) sem caminho de migration automática — bancos pré-A.1 "
+            f"precisam ser recriados.\n"
+            f"\n"
+            f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
+            f"Se houver dados a preservar, exporte para JSON antes de apagar."
+        )
+
+
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
     """Reservado para migrations futuras.
 
@@ -49,6 +95,7 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
 
 def criar_banco() -> None:
     with sqlite3.connect(DB_PATH) as conexao:
+        _verificar_compatibilidade_schema(conexao)  # detecta bancos pré-A.1
         conexao.execute(
             """
             CREATE TABLE IF NOT EXISTS alertas (
