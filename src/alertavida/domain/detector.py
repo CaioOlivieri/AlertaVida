@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from alertavida.domain.alerta import Alerta
+from alertavida.domain.enums import FonteDado
 
 RODADAS_PARA_RESOLVER: int = 3
 
@@ -16,6 +17,7 @@ RODADAS_PARA_RESOLVER: int = 3
 @dataclass(frozen=True)
 class AlertaSnapshot:
     cod_alerta: str
+    fonte: FonteDado
     nivel_risco: str
     tipo_evento: str
     ult_atualizacao: str | None
@@ -27,6 +29,7 @@ class AlertaSnapshot:
 class EventoDetectado:
     tipo: str
     cod_alerta: str
+    fonte: FonteDado
     payload: dict
     schema_versao: int = 1
 
@@ -39,10 +42,10 @@ class ResultadoDeteccao:
     codigos_resolvidos: set[str]
 
 
-def _payload_de(alerta: Alerta, fonte: str) -> dict:
+def _payload_de(alerta: Alerta) -> dict:
     return {
         "cod_alerta": alerta.cod_alerta,
-        "fonte": fonte,
+        "fonte": alerta.fonte.value,
         "tipo_evento": alerta.tipo_evento.value,
         "nivel_risco": alerta.nivel_risco.value,
         "municipio": alerta.municipio.nome if alerta.municipio else None,
@@ -64,7 +67,6 @@ def _payload_de(alerta: Alerta, fonte: str) -> dict:
 def detectar_mudancas(
     alertas_atuais: list[Alerta],
     snapshots_banco: list[AlertaSnapshot],
-    fonte: str,
     rodadas_para_resolver: int = RODADAS_PARA_RESOLVER,
 ) -> ResultadoDeteccao:
     snapshots_por_codigo = {s.cod_alerta: s for s in snapshots_banco}
@@ -79,7 +81,8 @@ def detectar_mudancas(
                 EventoDetectado(
                     tipo="AlertaCriado",
                     cod_alerta=cod,
-                    payload=_payload_de(alerta, fonte),
+                    fonte=alerta.fonte,
+                    payload=_payload_de(alerta),
                 )
             )
         else:
@@ -97,7 +100,8 @@ def detectar_mudancas(
                         EventoDetectado(
                             tipo="AlertaAtualizado",
                             cod_alerta=cod,
-                            payload=_payload_de(alerta, fonte),
+                            fonte=alerta.fonte,
+                            payload=_payload_de(alerta),
                         )
                     )
         codigos_vistos.add(cod)
@@ -115,9 +119,10 @@ def detectar_mudancas(
                 EventoDetectado(
                     tipo="AlertaResolvido",
                     cod_alerta=cod,
+                    fonte=snapshot.fonte,
                     payload={
                         "cod_alerta": cod,
-                        "fonte": fonte,
+                        "fonte": snapshot.fonte.value,
                         "rodadas_ausente": snapshot.rodadas_ausente + 1,
                     },
                 )
