@@ -167,17 +167,50 @@ Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implemen
   - Migração via `_migrar_banco()` (aditiva, não destrutiva)
   - Testes do mapper e do parser CEMADEN populando os novos campos
 
-- **Parte B — `CemadenSource` como `DataSource`** (após A.1 + A.2):
-  - Refator de `monitor.py` em orquestrador real
-  - Lógica CEMADEN específica migra para `sources/cemaden.py`
-  - Pode rodar em paralelo com A.2 sem conflito
+- **Parte B — CemadenSource como DataSource + Orquestrador isolado (após A.1 + A.2):** subdividida em três sub-partes encadeadas, cada uma com commit, CI verde e recap próprios:
+
+  - **B.0 — `fonte` como atributo do modelo `Alerta`:**
+    - Adiciona campo `fonte: str` em `domain/alerta.py` (frozen, validação Pydantic)
+    - `Alerta.from_dict()` recebe `fonte` como parâmetro explícito (não detectável do payload)
+    - `database.aplicar_resultado_deteccao()` perde parâmetro `fonte` — passa a ler de `Alerta.fonte` linha-a-linha
+    - `database.buscar_snapshots_ativos(fonte: str)` MANTÉM parâmetro (é query sobre o banco, não inserção)
+    - Atualização de TODOS os testes que constroem `Alerta` ou chamam `aplicar_resultado_deteccao`
+    - Justificativa: proveniência da fonte é metadado de domínio, consistente com `fonte_classificacao` (A.2). Elimina parâmetro propagado, garante imutabilidade da origem via frozen, torna `Alerta` auto-suficiente para auditoria.
+
+  - **B.1 — Interface `DataSource` + extração CEMADEN + infra de testes de contrato:**
+    - Novo módulo `src/alertavida/sources/base.py` com:
+      - `DataSource(ABC)` — interface com property abstrata `fonte: str` e método abstrato `coletar() -> ResultadoColeta`
+      - `ResultadoColeta` — dataclass frozen com `alertas: list[Alerta]`, `descartados: int`, `coletado_em: str`
+      - `FalhaDeColeta(Exception)` — exceção tipada do domínio para falhas irrecuperáveis de coleta (rede esgotada, schema rejeitado)
+    - Novo módulo `src/alertavida/sources/cemaden.py` com `CemadenSource(DataSource)`:
+      - Migra lógica HTTP+retry+backoff atualmente em `monitor.py`
+      - Migra `montar_alerta()` (mapeamento CEMADEN→Alerta) atualmente em `monitor.py`
+      - Migra cálculo de `escopo_geografico` e classificação COBRADE para alertas CEMADEN
+      - Internamente: filtra alertas malformados, conta descartes, registra log; sobe `FalhaDeColeta` em falha de rodada
+    - Novo módulo `src/alertavida/sources/__init__.py` exportando `DataSource`, `ResultadoColeta`, `FalhaDeColeta`, `CemadenSource`
+    - Nova suíte `tests/sources/test_base.py` — verifica que `DataSource` é ABC, força implementação de `fonte` e `coletar`
+    - Nova suíte `tests/sources/test_cemaden.py` — testa `CemadenSource.coletar()` com mock de `urllib`, herda cenários atuais de `test_monitor.py` (retry, backoff, descarte)
+    - Novo módulo `tests/sources/contrato.py` — função `verificar_contrato_data_source(source_factory)` parametrizável, roda em qualquer `DataSource` futuro
+    - Novo módulo `tests/fixtures/sources_fake.py` com `FakeDataSource` (implementação determinística da interface para testes do orquestrador, sem I/O)
+    - `monitor.py` passa a importar `CemadenSource` e usar em vez do código inline; comportamento idêntico, só reorganizado
+
+  - **B.2 — Orquestrador isolado em `ingestao/orquestrador.py`:**
+    - Novo módulo `src/alertavida/ingestao/orquestrador.py` com:
+      - `executar_ingestao(sources: list[DataSource], agora: str | None = None) -> RelatorioIngestao` — função pública, recebe lista de fontes, captura `FalhaDeColeta` por fonte, isola falhas
+      - `RelatorioFonte` — dataclass frozen por fonte: `fonte`, `coletados`, `novos`, `atualizados`, `inalterados`, `descartados`, `erros`, `falha_coleta: bool`, `duracao_segundos: float`
+      - `RelatorioIngestao` — dataclass frozen agregando: `por_fonte: list[RelatorioFonte]`, `agora: str`, com `@property total`
+    - `monitor.py` reduzido a ~30 linhas — entrypoint puro: parse args, configura logging, instancia `CemadenSource`, chama `executar_ingestao`, imprime relatório formatado, encerra
+    - `scheduler.py` ajusta imports — passa a importar `executar_ingestao` de `alertavida.ingestao.orquestrador`
+    - Testes existentes de `test_monitor.py` migram para `tests/ingestao/test_orquestrador.py` (testam o orquestrador com `FakeDataSource`, sem mocks de rede)
+    - `tests/test_monitor.py` esvazia ou some — substituído pelos novos testes
+    - `tests/sources/test_cemaden.py` recebe os testes CEMADEN-específicos que antes viviam em `test_monitor.py`
 
 - **Parte C — `NasaEonetSource`** (após Parte B):
   - Nova fonte implementada como `DataSource`
   - Mapeamento de categorias EONET para subgrupos COBRADE em `cobrade.py`
   - Ingestão global, classificação geográfica via `EscopoGeografico`
 
-**Ordem de execução**: A.1 → A.2 → B → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). Aditivos sobre destrutivos evitam conflito de migration. **A.1 e A.2 concluídas em 2026-05-09 e 2026-05-11 respectivamente. Próximo: Parte B.**
+Ordem de execução: A.1 → A.2 → B.0 → B.1 → B.2 → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). A.1 e A.2 concluídas em 2026-05-09 e 2026-05-11 respectivamente. A Parte B foi subdividida em 12/05/2026 em três sub-partes encadeadas (B.0 muda domínio, B.1 introduz interface, B.2 isola orquestrador) — cada uma com commit, CI verde e recap próprios antes da próxima. Big-bang foi rejeitado em favor de commits encadeados pelo mesmo motivo de A.1.1 → A.1.4: revisão localizada e reversibilidade independente.
 
 **Granularidade COBRADE — limite consciente da Camada 4:**
 
@@ -450,6 +483,14 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | Invariante de atomicidade COBRADE via `@model_validator` Pydantic, não CHECK constraint SQL | SQLite não permite adicionar CHECK constraint via `ALTER TABLE`, apenas via rebuild da tabela. Usar CHECK quebraria o caminho de `_migrar_banco()` em bancos preexistentes (A.2 deixaria de ser aditivo puro). Mover a invariante para o domínio (`@model_validator(mode="after")` em `Alerta`) cobre uniformemente banco novo e migrado, gera `ValidationError` explícito no boundary, e alinha com §6 ("Pydantic para qualquer entrada/saída de dados externos. Validação no limite do sistema"). |
 | Verificação explícita de schema antes de `_migrar_banco()` | A migration C3 → A.1 nunca existiu (PK composta → surrogate key não é alterável via ALTER TABLE no SQLite). O `CREATE TABLE IF NOT EXISTS` mascarava a incompatibilidade silenciosamente, e `_migrar_banco()` pós-A.2 adicionaria colunas COBRADE a bancos C3, criando quimera C3+A.2 onde queries do código atual quebrariam em runtime longe da causa raiz. Verificação aborta com erro claro mandando recriar o banco. Caminho 3 da discussão arquitetural de 12/05/2026. |
 | `SchemaIncompativelError` como exceção específica | Facilita `pytest.raises(SchemaIncompativelError)` e filtragem em logs futuros. Não é `RuntimeError` genérico — distingue erro de schema de qualquer outra falha de inicialização do banco. |
+| `fonte` como atributo do modelo `Alerta` (B.0) | Proveniência da fonte é metadado de domínio, consistente com `fonte_classificacao` (A.2) que registra proveniência da classificação COBRADE. Inconsistência conceitual em manter um no domínio e outro como parâmetro de operação. Atributo no modelo elimina parâmetro propagado em `aplicar_resultado_deteccao`, garante imutabilidade da origem via Pydantic frozen, torna `Alerta` auto-suficiente para auditoria (REPL, logs, testes). Custo: `Alerta.from_dict()` ganha parâmetro `fonte`. |
+| `DataSource` como ABC com `ResultadoColeta` tipado, não `list[Alerta]` | Orquestrador precisa de `descartados` por fonte para preservar a assertion sanitária (`novos + atualizados + inalterados + descartados + erros == total`) que hoje vive globalmente. `list[Alerta]` puro força o orquestrador a adivinhar quantos foram descartados. `ResultadoColeta` (frozen dataclass com `alertas`, `descartados`, `coletado_em`) carrega contabilidade explícita. |
+| `FalhaDeColeta` como exceção tipada do domínio | Mesma filosofia de `SchemaIncompativelError`: exceção específica facilita `pytest.raises(FalhaDeColeta)` e filtragem em logs. Não é `RuntimeError` genérico — distingue falha de fonte de qualquer outra falha do orquestrador. Falhas individuais de alerta dentro de uma rodada NÃO sobem como `FalhaDeColeta` (são contadas em `descartados`); só falhas de rodada inteira (rede esgotada, schema rejeitado, retries esgotados). |
+| Orquestrador separado em `ingestao/orquestrador.py`, não em `monitor.py` (B.2) | `monitor.py` atual viola SRP três vezes: entrypoint + orquestração + lógica CEMADEN. B.1 extrai a lógica CEMADEN para `sources/cemaden.py`; B.2 extrai a orquestração para `ingestao/orquestrador.py`; `monitor.py` fica como entrypoint puro (~30 linhas: argv, logging config, instancia sources, chama executar_ingestao, formata relatório). Alinha com estrutura-alvo documentada em §4 (subpacote `ingestion/` da Camada 1). |
+| `RelatorioIngestao` tipado em vez de contadores soltos | Hoje a "assertion sanitária" vive em variáveis locais frágeis (`novos`, `atualizados`, `inalterados`, `descartados`, `erros`). `RelatorioFonte` (frozen dataclass por fonte) + `RelatorioIngestao` (frozen agregado com `@property total`) torna contabilidade imutável, tipada, e consumível por: logging, testes, e (futuro) endpoint `/health` da Camada 6. Invariantes verificáveis em vez de variáveis locais. |
+| Testes de contrato parametrizados em `tests/sources/contrato.py` | Suíte `verificar_contrato_data_source(source_factory)` roda em qualquer `DataSource`. Quando `NasaEonetSource` entrar (Parte C), uma linha de teste garante conformidade total com o contrato. Mudanças no contrato (campo novo em `DataSource`, invariante nova em `ResultadoColeta`) quebram TODAS as sources em uma única definição. Manutenção centralizada, evolução segura. |
+| `FakeDataSource` em vez de `unittest.mock.Mock` | `Mock` é genérico — qualquer atributo acessado retorna outro Mock, escondendo erros de assinatura. `FakeDataSource` implementa a interface real; se `DataSource` mudar (método novo, assinatura nova), o fake quebra imediatamente dando feedback. Princípio: testes verdadeiros usam dublês fiéis ao contrato real. |
+| Migração da Parte B em três commits encadeados (B.0 → B.1 → B.2), não big-bang | Mesmo princípio de A.1.1 → A.1.4: revisão localizada, reversibilidade independente, CI verde por etapa. B.0 muda domínio sem mexer em sources; B.1 extrai sem reorganizar; B.2 reorganiza com a interface já estabelecida. Big-bang concentraria risco em um commit gigante onde falhas viram garimpo. |
 
 ---
 
@@ -510,3 +551,4 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-09 | Camada 4 Parte A.1.4 concluída — detector, database, monitor, testes e scripts/reclassificar_escopos.py. cod_alerta str, surrogate key + UNIQUE (fonte, cod_alerta), coordenadas obrigatório, escopo_geografico pré-computado na ingestão. 120 testes passando. |
 | 2026-05-11 | Camada 4 Parte A.2 concluída — `domain/cobrade.py` com `EVENTO_CEMADEN_PARA_COBRADE` (2 entradas baseadas em inspeção empírica) e `validar_formato`. Enum `FonteClassificacao` (DIRETA, MAPEADA_POR_NOME, INFERIDA_POR_CONTEXTO, INDETERMINADA). Campos `cobrade_codigo: str \| None` e `fonte_classificacao: FonteClassificacao` em `Alerta`, com `@field_validator` de formato e `@model_validator` da invariante atômica. Colunas correspondentes em `alertas` via `_migrar_banco()` idempotente. 139 testes passando, CI verde em Ubuntu + Windows. |
 | 2026-05-12 | Item 8 do ciclo de testes concluído — testes diretos de `database.py` (11 testes em `tests/test_database.py` cobrindo verificação de compatibilidade, migration aditiva, criação de schema atual, idempotência). Descoberta retroativa: A.1 (09/05/2026) introduziu ruptura de schema sem migration automática — `_migrar_banco()` pós-A.1 era `pass`, e o pós-A.2 só adiciona aditivamente as colunas COBRADE. `SchemaIncompativelError` adicionada para detectar e abortar com erro claro em bancos pré-A.1. Fixtures de schemas legados versionadas em `tests/fixtures/schemas_legados.py` (pré-C3, pós-C3, pós-A.1). 150 testes passando, CI verde em Ubuntu + Windows. |
+| 2026-05-12 | Pré-Parte B — desenho arquitetural da Camada 4 Parte B registrado antes da implementação. Decisões: `fonte` vira atributo do `Alerta` (consistência com proveniência da classificação A.2); `DataSource` ABC com `ResultadoColeta` tipado (preserva assertion sanitária por fonte); `FalhaDeColeta` exceção tipada; orquestrador isolado em `ingestao/orquestrador.py` (SRP — `monitor.py` viola três vezes); `RelatorioIngestao` tipado substitui contadores soltos; testes de contrato parametrizados em `tests/sources/contrato.py`; `FakeDataSource` em vez de `unittest.mock.Mock`; migração em três commits encadeados B.0 → B.1 → B.2 (big-bang rejeitado). CONTEXT.md atualizado antes do código. |
