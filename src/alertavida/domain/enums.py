@@ -143,3 +143,45 @@ class FonteClassificacao(StrEnum):
     MAPEADA_POR_NOME = "MAPEADA_POR_NOME"
     INFERIDA_POR_CONTEXTO = "INFERIDA_POR_CONTEXTO"
     INDETERMINADA = "INDETERMINADA"
+
+
+class FonteDado(StrEnum):
+    """Fontes de dados de alertas suportadas pelo sistema.
+
+    Valores fechados — typo em string solta violaria UNIQUE(fonte, cod_alerta)
+    silenciosamente. Cada DataSource (Camada 4 Parte B+) declara sua fonte
+    via atributo `fonte: FonteDado` no modelo `Alerta`.
+
+    Diferente de outros enums do domínio, NÃO inclui INDETERMINADA — fonte
+    sempre é conhecida no momento de coleta (a `DataSource` que produziu o
+    `Alerta` declara sua origem). Alerta sem fonte é cenário inválido por
+    construção.
+    """
+
+    CEMADEN = "CEMADEN"
+    EONET = "EONET"
+    INMET = "INMET"
+    INPE = "INPE"
+
+    @classmethod
+    def from_string(cls, valor: str | None) -> "FonteDado":
+        """Normaliza string para FonteDado. Strict — levanta em valor inválido.
+
+        Comportamento alinhado com NivelRisco.from_string (levanta em valor
+        desconhecido), não com TipoEvento.from_string (que retorna sentinela
+        INDETERMINADO). Justificativa: fonte desconhecida em runtime é bug
+        grave — banco gravaria valor inválido violando UNIQUE constraint.
+        Levantar força tratar.
+
+        Aceita variações de case e whitespace ('cemaden', 'Cemaden ',
+        'CEMADEN' todos viram FonteDado.CEMADEN).
+        """
+        if valor is None or not str(valor).strip():
+            raise ValueError("Fonte ausente ou vazia")
+        try:
+            return cls(str(valor).strip().upper())
+        except ValueError as err:
+            raise ValueError(
+                f"Fonte desconhecida: {valor!r}. "
+                f"Válidas: {[f.value for f in cls]}"
+            ) from err

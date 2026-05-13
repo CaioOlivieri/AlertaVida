@@ -17,13 +17,13 @@ Invariantes do `Alerta`:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, Strict, ValidationError, field_validator, model_validator
 
 from alertavida.domain.cobrade import validar_formato as _validar_formato_cobrade
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, NivelRisco, TipoEvento
+from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, FonteDado, NivelRisco, TipoEvento
 from alertavida.domain.municipio import Municipio
 
 
@@ -40,6 +40,7 @@ def _pick(data: dict[str, Any], *keys: str) -> Any:
 
 class Alerta(BaseModel):
     cod_alerta: str = Field(min_length=1)
+    fonte: Annotated[FonteDado, Strict()]
     tipo_evento: TipoEvento
     nivel_risco: NivelRisco
     coordenadas: Coordenadas
@@ -86,7 +87,7 @@ class Alerta(BaseModel):
         return self
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Alerta":
+    def from_dict(cls, data: dict[str, Any], *, fonte: FonteDado) -> "Alerta":
         cod_raw = _pick(data, "codigoalerta", "cod_alerta", "id", "codigo")
         if cod_raw is None:
             raise ValueError("Alerta sem cod_alerta válido")
@@ -160,6 +161,7 @@ class Alerta(BaseModel):
 
         return cls(
             cod_alerta=cod_alerta,
+            fonte=fonte,
             tipo_evento=tipo_evento,
             nivel_risco=nivel_risco,
             coordenadas=coordenadas,

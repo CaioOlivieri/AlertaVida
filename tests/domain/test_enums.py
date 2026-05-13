@@ -1,6 +1,6 @@
 import pytest
 
-from alertavida.domain.enums import NivelRisco, TipoEvento
+from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
 
 
 def test_nivel_risco_moderado_uppercase() -> None:
@@ -76,3 +76,77 @@ def test_tipo_evento_climatologico_fogo() -> None:
 
 def test_nivel_risco_indeterminado() -> None:
     assert NivelRisco.from_string("INDETERMINADO") == NivelRisco.INDETERMINADO
+
+
+# ============================================================
+# Camada 4 B.0.a — FonteDado
+# ============================================================
+
+
+class TestFonteDadoValores:
+    """Conjunto fechado de valores válidos."""
+
+    def test_valores_esperados(self):
+        valores = {f.value for f in FonteDado}
+        assert valores == {"CEMADEN", "EONET", "INMET", "INPE"}
+
+    def test_cardinalidade(self):
+        assert len(list(FonteDado)) == 4
+
+
+class TestFonteDadoFromString:
+    """Construção a partir de string com normalização."""
+
+    @pytest.mark.parametrize("valor,esperado", [
+        ("CEMADEN", FonteDado.CEMADEN),
+        ("cemaden", FonteDado.CEMADEN),
+        ("Cemaden", FonteDado.CEMADEN),
+        ("  CEMADEN  ", FonteDado.CEMADEN),
+        ("EONET", FonteDado.EONET),
+        ("eonet", FonteDado.EONET),
+        ("INMET", FonteDado.INMET),
+        ("INPE", FonteDado.INPE),
+    ])
+    def test_normaliza_case_e_whitespace(self, valor, esperado):
+        assert FonteDado.from_string(valor) == esperado
+
+    @pytest.mark.parametrize("valor", [
+        "CEMADAN",
+        "NASA",
+        "NOAA",
+        "xyz",
+    ])
+    def test_levanta_em_valor_desconhecido(self, valor):
+        with pytest.raises(ValueError, match="Fonte desconhecida"):
+            FonteDado.from_string(valor)
+
+    @pytest.mark.parametrize("valor", [None, "", "  ", "\n", "\t"])
+    def test_levanta_em_valor_vazio(self, valor):
+        with pytest.raises(ValueError, match="ausente ou vazia"):
+            FonteDado.from_string(valor)
+
+    def test_mensagem_lista_validas(self):
+        """Erro deve listar as fontes válidas para diagnóstico."""
+        with pytest.raises(ValueError) as exc_info:
+            FonteDado.from_string("INVALIDA")
+        msg = str(exc_info.value)
+        assert "CEMADEN" in msg
+        assert "EONET" in msg
+        assert "INMET" in msg
+        assert "INPE" in msg
+
+
+class TestFonteDadoStrEnum:
+    """Comportamento de StrEnum — serialização transparente."""
+
+    def test_value_e_string(self):
+        assert FonteDado.CEMADEN.value == "CEMADEN"
+        assert isinstance(FonteDado.CEMADEN.value, str)
+
+    def test_membro_e_string(self):
+        """StrEnum: instância do enum é também instância de str."""
+        assert isinstance(FonteDado.CEMADEN, str)
+
+    def test_comparacao_com_string(self):
+        """StrEnum permite comparação direta com string."""
+        assert FonteDado.CEMADEN == "CEMADEN"

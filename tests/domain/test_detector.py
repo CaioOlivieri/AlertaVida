@@ -1,17 +1,19 @@
 """Testes do ChangeDetector (detecção pura de mudanças).
 
 Atualizado em A.1.4: cod_alerta como string, payload com fonte/coordenadas/escopo.
+Atualizado em B.0.a: fonte como atributo de Alerta e AlertaSnapshot (não mais parâmetro).
 """
 
+from datetime import datetime, timezone
+
 from alertavida.domain.alerta import Alerta
+from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.detector import (
     AlertaSnapshot,
     RODADAS_PARA_RESOLVER,
     detectar_mudancas,
 )
-
-
-FONTE_TESTE = "CEMADEN"
+from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
 
 
 def _payload_base_cemaden(cod: int | str) -> dict:
@@ -32,8 +34,8 @@ def test_alerta_novo_gera_evento_criado() -> None:
         **_payload_base_cemaden(9001),
         "ult_atualizacao": "2026-04-29T11:00:00+00:00",
     }
-    alerta = Alerta.from_dict(payload)
-    res = detectar_mudancas([alerta], [], FONTE_TESTE)
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+    res = detectar_mudancas([alerta], [])
     assert len(res.eventos) == 1
     assert res.eventos[0].tipo == "AlertaCriado"
     assert res.eventos[0].cod_alerta == "9001"
@@ -44,16 +46,17 @@ def test_alerta_novo_gera_evento_criado() -> None:
 def test_alerta_inalterado_nao_gera_evento() -> None:
     ult = "2026-04-29T11:00:00+00:00"
     payload = {**_payload_base_cemaden(9002), "ult_atualizacao": ult}
-    alerta = Alerta.from_dict(payload)
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     snap = AlertaSnapshot(
         cod_alerta="9002",
+        fonte=FonteDado.CEMADEN,
         nivel_risco=alerta.nivel_risco.value,
         tipo_evento=alerta.tipo_evento.value,
         ult_atualizacao=ult,
         rodadas_ausente=0,
         status_interno="ATIVO",
     )
-    res = detectar_mudancas([alerta], [snap], FONTE_TESTE)
+    res = detectar_mudancas([alerta], [snap])
     assert res.eventos == []
 
 
@@ -62,16 +65,17 @@ def test_alerta_atualizado_gera_evento_atualizado() -> None:
         **_payload_base_cemaden(9003),
         "ult_atualizacao": "2026-05-01T14:00:00+00:00",
     }
-    alerta = Alerta.from_dict(payload)
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     snap = AlertaSnapshot(
         cod_alerta="9003",
+        fonte=FonteDado.CEMADEN,
         nivel_risco=alerta.nivel_risco.value,
         tipo_evento=alerta.tipo_evento.value,
         ult_atualizacao="2026-04-29T09:00:00+00:00",
         rodadas_ausente=0,
         status_interno="ATIVO",
     )
-    res = detectar_mudancas([alerta], [snap], FONTE_TESTE)
+    res = detectar_mudancas([alerta], [snap])
     assert len(res.eventos) == 1
     assert res.eventos[0].tipo == "AlertaAtualizado"
     assert res.eventos[0].cod_alerta == "9003"
@@ -81,13 +85,14 @@ def test_alerta_ausente_incrementa_ausente() -> None:
     cod = "9004"
     snap = AlertaSnapshot(
         cod_alerta=cod,
+        fonte=FonteDado.CEMADEN,
         nivel_risco="MODERADO",
         tipo_evento="HIDROLOGICO",
         ult_atualizacao="2026-04-29T09:00:00+00:00",
         rodadas_ausente=0,
         status_interno="ATIVO",
     )
-    res = detectar_mudancas([], [snap], FONTE_TESTE)
+    res = detectar_mudancas([], [snap])
     assert res.codigos_ausentes == {cod}
     assert res.codigos_resolvidos == set()
 
@@ -96,13 +101,14 @@ def test_alerta_ausente_resolve_apos_limite() -> None:
     cod = "9005"
     snap = AlertaSnapshot(
         cod_alerta=cod,
+        fonte=FonteDado.CEMADEN,
         nivel_risco="ALTO",
         tipo_evento="HIDROLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=2,
         status_interno="ATIVO",
     )
-    res = detectar_mudancas([], [snap], FONTE_TESTE, rodadas_para_resolver=3)
+    res = detectar_mudancas([], [snap], rodadas_para_resolver=3)
     assert res.codigos_resolvidos == {cod}
     assert len(res.eventos) == 1
     assert res.eventos[0].tipo == "AlertaResolvido"
@@ -115,16 +121,17 @@ def test_alerta_resolvido_no_banco_nao_reativa() -> None:
         **_payload_base_cemaden(9006),
         "ult_atualizacao": "2026-05-02T08:00:00+00:00",
     }
-    alerta = Alerta.from_dict(payload)
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     snap = AlertaSnapshot(
         cod_alerta="9006",
+        fonte=FonteDado.CEMADEN,
         nivel_risco="BAIXO",
         tipo_evento="INDETERMINADO",
         ult_atualizacao=None,
         rodadas_ausente=0,
         status_interno="RESOLVIDO",
     )
-    res = detectar_mudancas([alerta], [snap], FONTE_TESTE)
+    res = detectar_mudancas([alerta], [snap])
     assert res.eventos == []
 
 
@@ -138,11 +145,12 @@ def test_multiplos_alertas_mix() -> None:
         **_payload_base_cemaden(9200),
         "ult_atualizacao": ult_existente,
     }
-    alerta_novo = Alerta.from_dict(novo_payload)
-    alerta_igual = Alerta.from_dict(existe_payload)
+    alerta_novo = Alerta.from_dict(novo_payload, fonte=FonteDado.CEMADEN)
+    alerta_igual = Alerta.from_dict(existe_payload, fonte=FonteDado.CEMADEN)
 
     snap_igual = AlertaSnapshot(
         cod_alerta="9200",
+        fonte=FonteDado.CEMADEN,
         nivel_risco=alerta_igual.nivel_risco.value,
         tipo_evento=alerta_igual.tipo_evento.value,
         ult_atualizacao=ult_existente,
@@ -151,6 +159,7 @@ def test_multiplos_alertas_mix() -> None:
     )
     snap_ausente = AlertaSnapshot(
         cod_alerta="9300",
+        fonte=FonteDado.CEMADEN,
         nivel_risco="MODERADO",
         tipo_evento="GEOLOGICO",
         ult_atualizacao=None,
@@ -161,7 +170,6 @@ def test_multiplos_alertas_mix() -> None:
     res = detectar_mudancas(
         [alerta_novo, alerta_igual],
         [snap_igual, snap_ausente],
-        FONTE_TESTE,
         rodadas_para_resolver=RODADAS_PARA_RESOLVER,
     )
 
@@ -170,3 +178,58 @@ def test_multiplos_alertas_mix() -> None:
     assert tipos.count("AlertaAtualizado") == 0
     assert res.codigos_ausentes == {"9300"}
     assert res.codigos_resolvidos == set()
+
+
+# ============================================================
+# Camada 4 B.0.a — fonte propagada via objetos
+# ============================================================
+
+
+def test_detectar_propaga_fonte_em_alerta_criado():
+    """EventoDetectado.fonte para AlertaCriado vem do Alerta atual."""
+    alerta = Alerta(
+        cod_alerta="X1",
+        fonte=FonteDado.CEMADEN,
+        tipo_evento=TipoEvento.HIDROLOGICO,
+        nivel_risco=NivelRisco.ALTO,
+        coordenadas=Coordenadas(latitude=-10.0, longitude=-40.0),
+        data_criacao=datetime(2026, 5, 13, tzinfo=timezone.utc),
+    )
+
+    resultado = detectar_mudancas(
+        alertas_atuais=[alerta],
+        snapshots_banco=[],
+    )
+
+    assert len(resultado.eventos) == 1
+    evento = resultado.eventos[0]
+    assert evento.tipo == "AlertaCriado"
+    assert evento.fonte == FonteDado.CEMADEN
+    assert evento.payload["fonte"] == "CEMADEN"
+
+
+def test_detectar_propaga_fonte_em_alerta_resolvido():
+    """EventoDetectado.fonte para AlertaResolvido vem do AlertaSnapshot.
+
+    Caso crítico: alerta desapareceu do feed atual; fonte só pode vir
+    do snapshot persistido.
+    """
+    snapshot = AlertaSnapshot(
+        cod_alerta="Y1",
+        fonte=FonteDado.EONET,
+        nivel_risco="ALTO",
+        tipo_evento="HIDROLOGICO",
+        ult_atualizacao=None,
+        rodadas_ausente=2,
+        status_interno="ATIVO",
+    )
+
+    resultado = detectar_mudancas(
+        alertas_atuais=[],
+        snapshots_banco=[snapshot],
+    )
+
+    resolvidos = [e for e in resultado.eventos if e.tipo == "AlertaResolvido"]
+    assert len(resolvidos) == 1
+    assert resolvidos[0].fonte == FonteDado.EONET
+    assert resolvidos[0].payload["fonte"] == "EONET"
