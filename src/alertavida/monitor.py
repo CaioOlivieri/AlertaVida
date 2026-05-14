@@ -16,7 +16,7 @@ from alertavida.database import (
 from alertavida.domain import Alerta
 from alertavida.domain.cobrade import mapear_cemaden
 from alertavida.domain.detector import detectar_mudancas
-from alertavida.domain.enums import FonteClassificacao
+from alertavida.domain.enums import FonteClassificacao, FonteDado
 from alertavida.domain.geographic import classificar_escopo
 
 if (sys.stdout.encoding or "").lower() != "utf-8":
@@ -24,7 +24,7 @@ if (sys.stdout.encoding or "").lower() != "utf-8":
 
 
 URL = "https://painelalertas.cemaden.gov.br/wsAlertas2"
-FONTE_CEMADEN = "CEMADEN"
+FONTE_CEMADEN: FonteDado = FonteDado.CEMADEN
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +35,7 @@ def montar_alerta(item: dict) -> Alerta:
     """
     if not isinstance(item, dict):
         raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
-    alerta = Alerta.from_dict(item)
+    alerta = Alerta.from_dict(item, fonte=FONTE_CEMADEN)
     escopo = classificar_escopo(alerta.coordenadas)
 
     tipo_evento_bruto = item.get("tipoevento") or ""
@@ -122,7 +122,7 @@ def executar_ingestao():
             descartados += 1
 
     snapshots = buscar_snapshots_ativos(FONTE_CEMADEN)
-    resultado = detectar_mudancas(list(alertas_validos.values()), snapshots, FONTE_CEMADEN)
+    resultado = detectar_mudancas(list(alertas_validos.values()), snapshots)
 
     agora = datetime.now().isoformat(timespec="seconds")
     erros = 0
@@ -136,7 +136,7 @@ def executar_ingestao():
                 alerta.tipo_evento,
                 alerta.nivel_risco,
             )
-        aplicar_resultado_deteccao(resultado, alertas_validos, FONTE_CEMADEN, agora)
+        aplicar_resultado_deteccao(resultado, alertas_validos, agora)
     except Exception:  # noqa: BLE001 - proteção do ciclo de ingestão
         erros = len(alertas_validos)
         logger.exception("Falha na transação do banco")

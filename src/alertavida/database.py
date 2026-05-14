@@ -19,6 +19,7 @@ from pathlib import Path
 
 from alertavida.domain import Alerta
 from alertavida.domain.detector import AlertaSnapshot, EventoDetectado, ResultadoDeteccao
+from alertavida.domain.enums import FonteDado
 
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
@@ -162,26 +163,32 @@ def criar_banco() -> None:
         conexao.commit()
 
 
-def buscar_snapshots_ativos(fonte: str) -> list[AlertaSnapshot]:
-    """Retorna snapshots de alertas ATIVOS da fonte especificada."""
+def buscar_snapshots_ativos(fonte: FonteDado) -> list[AlertaSnapshot]:
+    """Retorna snapshots de alertas ATIVOS da fonte especificada.
+
+    Cada snapshot carrega sua `fonte` como campo (lido da row, não
+    hardcoded do parâmetro) — robustez contra futuras mudanças no
+    WHERE da query.
+    """
     with sqlite3.connect(DB_PATH) as conexao:
         cursor = conexao.execute(
             """
-            SELECT cod_alerta, nivel, evento, ult_atualizacao,
+            SELECT cod_alerta, fonte, nivel, evento, ult_atualizacao,
                    rodadas_ausente, status_interno
             FROM alertas
             WHERE status_interno = 'ATIVO' AND fonte = ?
             """,
-            (fonte,),
+            (fonte.value,),
         )
         return [
             AlertaSnapshot(
                 cod_alerta=row[0],
-                nivel_risco=row[1],
-                tipo_evento=row[2],
-                ult_atualizacao=row[3],
-                rodadas_ausente=row[4],
-                status_interno=row[5],
+                fonte=FonteDado.from_string(row[1]),
+                nivel_risco=row[2],
+                tipo_evento=row[3],
+                ult_atualizacao=row[4],
+                rodadas_ausente=row[5],
+                status_interno=row[6],
             )
             for row in cursor.fetchall()
         ]
@@ -190,7 +197,6 @@ def buscar_snapshots_ativos(fonte: str) -> list[AlertaSnapshot]:
 def aplicar_resultado_deteccao(
     resultado: ResultadoDeteccao,
     alertas_por_codigo: dict[str, "Alerta"],
-    fonte: str,
     agora: str,
 ) -> None:
     """Persiste o resultado do ChangeDetector atomicamente.
@@ -198,6 +204,11 @@ def aplicar_resultado_deteccao(
     INSERT/UPDATE em alertas e INSERT em eventos ocorrem na mesma transação
     SQLite — outbox pattern. `agregado_id` em eventos referencia o `id`
     surrogate da tabela `alertas`.
+
+    A fonte de cada código é obtida via `resultado.fonte_por_codigo[cod]`
+    (populado pelo detector) — não recebe `fonte` como parâmetro. Isso
+    permite que rodadas multi-fonte (Camada 5+) sejam tratadas sem
+    mudanças nesta função.
     """
     with sqlite3.connect(DB_PATH) as conexao:
         eventos: list[EventoDetectado] = resultado.eventos
@@ -222,7 +233,7 @@ def aplicar_resultado_deteccao(
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL, ?, ?)
                     """,
                     (
-                        fonte,
+                        alerta.fonte.value,
                         alerta.cod_alerta,
                         alerta.municipio.nome if alerta.municipio is not None else None,
                         alerta.municipio.uf if alerta.municipio is not None else None,
@@ -264,13 +275,13 @@ def aplicar_resultado_deteccao(
                         agora,
                         alerta.cobrade_codigo,
                         alerta.fonte_classificacao.value,
-                        fonte,
+                        alerta.fonte.value,
                         evento.cod_alerta,
                     ),
                 )
                 cur_id = conexao.execute(
                     "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
-                    (fonte, evento.cod_alerta),
+                    (alerta.fonte.value, evento.cod_alerta),
                 )
                 row = cur_id.fetchone()
                 agregado_id = row[0] if row is not None else None
@@ -282,11 +293,11 @@ def aplicar_resultado_deteccao(
                     SET status_interno = 'RESOLVIDO', visto_ultima_vez = ?
                     WHERE fonte = ? AND cod_alerta = ?
                     """,
-                    (agora, fonte, evento.cod_alerta),
+                    (agora, evento.fonte.value, evento.cod_alerta),
                 )
                 cur_id = conexao.execute(
                     "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
-                    (fonte, evento.cod_alerta),
+                    (evento.fonte.value, evento.cod_alerta),
                 )
                 row = cur_id.fetchone()
                 agregado_id = row[0] if row is not None else None
@@ -309,16 +320,18 @@ def aplicar_resultado_deteccao(
 
         codigos_com_evento = {e.cod_alerta for e in resultado.eventos}
         for cod in resultado.codigos_vistos - codigos_com_evento:
+            fonte_cod = resultado.fonte_por_codigo[cod]
             conexao.execute(
                 """
                 UPDATE alertas
                 SET visto_ultima_vez = ?, rodadas_ausente = 0
                 WHERE fonte = ? AND cod_alerta = ?
                 """,
-                (agora, fonte, cod),
+                (agora, fonte_cod.value, cod),
             )
 
         for cod in resultado.codigos_ausentes:
+            fonte_cod = resultado.fonte_por_codigo[cod]
             conexao.execute(
                 """
                 UPDATE alertas
@@ -326,7 +339,7 @@ def aplicar_resultado_deteccao(
                     visto_ultima_vez = ?
                 WHERE fonte = ? AND cod_alerta = ?
                 """,
-                (agora, fonte, cod),
+                (agora, fonte_cod.value, cod),
             )
 
         conexao.commit()
