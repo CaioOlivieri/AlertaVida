@@ -36,10 +36,22 @@ class EventoDetectado:
 
 @dataclass
 class ResultadoDeteccao:
+    """Resultado de uma rodada de detecção de mudanças.
+
+    Carrega TODOS os dados que `aplicar_resultado_deteccao` precisa para
+    persistir a rodada — autocontido, sem necessidade de a infra consultar
+    snapshots ou alertas separadamente para descobrir contexto.
+
+    Princípio Tell, Don't Ask: o detector "diz" tudo que aconteceu (eventos,
+    códigos vistos, códigos ausentes, e o mapa de fonte por código);
+    a infra "executa" sem precisar adivinhar.
+    """
+
     eventos: list[EventoDetectado]
     codigos_vistos: set[str]
     codigos_ausentes: set[str]
     codigos_resolvidos: set[str]
+    fonte_por_codigo: dict[str, FonteDado]
 
 
 def _payload_de(alerta: Alerta) -> dict:
@@ -131,9 +143,20 @@ def detectar_mudancas(
 
     codigos_ausentes_final = codigos_ausentes_work - codigos_resolvidos
 
+    fonte_por_codigo: dict[str, FonteDado] = {}
+    for alerta in alertas_atuais:
+        fonte_por_codigo[alerta.cod_alerta] = alerta.fonte
+    for snapshot in snapshots_banco:
+        # Snapshots de códigos não vistos no feed atual também precisam
+        # ter sua fonte conhecida (AlertaResolvido ou ausência simples).
+        # Códigos presentes em ambos: alerta vence (mesma fonte, dict ok).
+        if snapshot.cod_alerta not in fonte_por_codigo:
+            fonte_por_codigo[snapshot.cod_alerta] = snapshot.fonte
+
     return ResultadoDeteccao(
         eventos=eventos,
         codigos_vistos=codigos_vistos,
         codigos_ausentes=codigos_ausentes_final,
         codigos_resolvidos=codigos_resolvidos,
+        fonte_por_codigo=fonte_por_codigo,
     )

@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from unittest.mock import Mock, patch
 
 from alertavida.domain.detector import EventoDetectado, ResultadoDeteccao
-from alertavida.domain.enums import FonteClassificacao
+from alertavida.domain.enums import FonteClassificacao, FonteDado
 from alertavida.monitor import executar_ingestao, fetch_alertas_com_retry, montar_alerta
 
 
@@ -180,12 +180,14 @@ def test_executar_ingestao_usa_busca_snapshots_e_aplica_resultado() -> None:
             EventoDetectado(
                 tipo="AlertaCriado",
                 cod_alerta="12345",
+                fonte=FonteDado.CEMADEN,
                 payload={"cod_alerta": "12345", "fonte": "CEMADEN"},
             )
         ],
         codigos_vistos={"12345"},
         codigos_ausentes=set(),
         codigos_resolvidos=set(),
+        fonte_por_codigo={"12345": FonteDado.CEMADEN},
     )
 
     with patch("alertavida.monitor.criar_banco") as mock_criar_banco:
@@ -199,8 +201,12 @@ def test_executar_ingestao_usa_busca_snapshots_e_aplica_resultado() -> None:
                         executar_ingestao()
 
     mock_criar_banco.assert_called_once()
-    mock_busca.assert_called_once_with("CEMADEN")
+    mock_busca.assert_called_once_with(FonteDado.CEMADEN)
     mock_aplicar.assert_called_once()
+    # Validar que aplicar_resultado_deteccao foi chamado sem param 'fonte'
+    args, kwargs = mock_aplicar.call_args
+    todos_args = list(args) + list(kwargs.values())
+    assert "CEMADEN" not in todos_args
 
 
 def test_executar_ingestao_conta_descartados_sem_erro_transacao() -> None:
@@ -215,6 +221,7 @@ def test_executar_ingestao_conta_descartados_sem_erro_transacao() -> None:
         codigos_vistos={"88"},
         codigos_ausentes=set(),
         codigos_resolvidos=set(),
+        fonte_por_codigo={"88": FonteDado.CEMADEN},
     )
     with patch("alertavida.monitor.criar_banco"):
         with patch("alertavida.monitor.fetch_alertas_com_retry", return_value=raw_json.encode("utf-8")):

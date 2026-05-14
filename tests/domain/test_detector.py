@@ -2,6 +2,7 @@
 
 Atualizado em A.1.4: cod_alerta como string, payload com fonte/coordenadas/escopo.
 Atualizado em B.0.a: fonte como atributo de Alerta e AlertaSnapshot (não mais parâmetro).
+Atualizado em B.0.b: ResultadoDeteccao.fonte_por_codigo populado pelo detector.
 """
 
 from datetime import datetime, timezone
@@ -233,3 +234,89 @@ def test_detectar_propaga_fonte_em_alerta_resolvido():
     assert len(resolvidos) == 1
     assert resolvidos[0].fonte == FonteDado.EONET
     assert resolvidos[0].payload["fonte"] == "EONET"
+
+
+# ============================================================
+# Camada 4 B.0.b — ResultadoDeteccao.fonte_por_codigo
+# ============================================================
+
+
+def test_resultado_inclui_fonte_por_codigo_de_alertas_atuais():
+    """fonte_por_codigo é populado para todo Alerta em alertas_atuais."""
+    a1 = Alerta(
+        cod_alerta="X1",
+        fonte=FonteDado.CEMADEN,
+        tipo_evento=TipoEvento.HIDROLOGICO,
+        nivel_risco=NivelRisco.ALTO,
+        coordenadas=Coordenadas(latitude=-10.0, longitude=-40.0),
+        data_criacao=datetime(2026, 5, 13, tzinfo=timezone.utc),
+    )
+    a2 = Alerta(
+        cod_alerta="X2",
+        fonte=FonteDado.EONET,
+        tipo_evento=TipoEvento.METEOROLOGICO,
+        nivel_risco=NivelRisco.MODERADO,
+        coordenadas=Coordenadas(latitude=-5.0, longitude=-35.0),
+        data_criacao=datetime(2026, 5, 13, tzinfo=timezone.utc),
+    )
+
+    resultado = detectar_mudancas(alertas_atuais=[a1, a2], snapshots_banco=[])
+
+    assert resultado.fonte_por_codigo == {
+        "X1": FonteDado.CEMADEN,
+        "X2": FonteDado.EONET,
+    }
+
+
+def test_resultado_inclui_fonte_por_codigo_de_snapshots_ausentes():
+    """Snapshots cujo código não aparece em alertas_atuais ainda têm
+    sua fonte registrada em fonte_por_codigo. Essencial para que
+    aplicar_resultado_deteccao consiga fazer UPDATE em alertas ausentes.
+    """
+    snapshot = AlertaSnapshot(
+        cod_alerta="Z1",
+        fonte=FonteDado.CEMADEN,
+        nivel_risco="ALTO",
+        tipo_evento="HIDROLOGICO",
+        ult_atualizacao=None,
+        rodadas_ausente=1,
+        status_interno="ATIVO",
+    )
+
+    resultado = detectar_mudancas(
+        alertas_atuais=[],
+        snapshots_banco=[snapshot],
+    )
+
+    assert resultado.fonte_por_codigo == {"Z1": FonteDado.CEMADEN}
+
+
+def test_resultado_fonte_por_codigo_alerta_vence_snapshot():
+    """Quando código está em alertas_atuais E em snapshots_banco,
+    a fonte vem do Alerta atual. Em B.0 ambas devem ser iguais (single
+    fonte por rodada), mas o teste documenta a precedência.
+    """
+    alerta = Alerta(
+        cod_alerta="W1",
+        fonte=FonteDado.CEMADEN,
+        tipo_evento=TipoEvento.HIDROLOGICO,
+        nivel_risco=NivelRisco.ALTO,
+        coordenadas=Coordenadas(latitude=-10.0, longitude=-40.0),
+        data_criacao=datetime(2026, 5, 13, tzinfo=timezone.utc),
+    )
+    snapshot = AlertaSnapshot(
+        cod_alerta="W1",
+        fonte=FonteDado.CEMADEN,
+        nivel_risco="ALTO",
+        tipo_evento="HIDROLOGICO",
+        ult_atualizacao=None,
+        rodadas_ausente=0,
+        status_interno="ATIVO",
+    )
+
+    resultado = detectar_mudancas(
+        alertas_atuais=[alerta],
+        snapshots_banco=[snapshot],
+    )
+
+    assert resultado.fonte_por_codigo["W1"] == FonteDado.CEMADEN
