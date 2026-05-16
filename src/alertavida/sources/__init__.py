@@ -16,9 +16,11 @@ Implementações concretas (B.1.b em diante):
 """
 
 from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
+from alertavida.sources.cemaden import CemadenSource
 
 __all__ = [
     "DataSource",
     "FalhaDeColeta",
     "ResultadoColeta",
+    "CemadenSource",
 ]
