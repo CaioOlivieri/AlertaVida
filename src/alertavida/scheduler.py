@@ -7,8 +7,10 @@ import time
 from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from alertavida.database import criar_banco
 from alertavida.events import OutboxDispatcher, bus
-from alertavida.monitor import executar_ingestao
+from alertavida.ingestion.orquestrador import executar_ingestao
+from alertavida.sources.cemaden import CemadenSource
 
 INTERVALO_MINUTOS = 5
 logger = logging.getLogger(__name__)
@@ -22,11 +24,12 @@ def _on_job_error(event) -> None:
 def _rodar_rodada() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("[%s] Iniciando rodada de ingestão...", timestamp)
-    executar_ingestao()
+    executar_ingestao([CemadenSource()])
     logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
 
 
 def agendar_ingestao() -> None:
+    criar_banco()
     scheduler = BackgroundScheduler()
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
     kwargs_ingestao = {
