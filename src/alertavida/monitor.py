@@ -1,92 +1,46 @@
-import logging
-import os
-import sys
-from datetime import datetime
+"""Entrypoint manual para uma rodada única de ingestão CEMADEN.
 
-from alertavida.database import (
-    aplicar_resultado_deteccao,
-    buscar_snapshots_ativos,
-    criar_banco,
-)
-from alertavida.domain import Alerta
-from alertavida.domain.detector import detectar_mudancas
-from alertavida.sources import FalhaDeColeta
+Em produção, o scheduler (`agendar_ingestao` em
+`alertavida.scheduler`) orquestra rodadas periódicas. Este módulo
+serve para debug/desenvolvimento manual: `python -m alertavida.monitor`
+executa UMA rodada e imprime o relatório no terminal.
+"""
+
+from __future__ import annotations
+
+from alertavida.database import criar_banco
+from alertavida.ingestion.orquestrador import RelatorioIngestao, executar_ingestao
 from alertavida.sources.cemaden import CemadenSource
 
-if (sys.stdout.encoding or "").lower() != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8")
 
-
-logger = logging.getLogger(__name__)
-
-
-def executar_ingestao():
-    criar_banco()
-    source = CemadenSource()
-    try:
-        resultado = source.coletar()
-    except FalhaDeColeta as exc:
-        logger.error("Falha na coleta %s: %s", exc.fonte.value, exc.causa)
-        sys.exit(1)
-
-    alertas_validos: dict[str, Alerta] = {a.cod_alerta: a for a in resultado.alertas}
-    descartados = resultado.descartados
-    total_recebido = len(resultado.alertas) + descartados
-
-    snapshots = buscar_snapshots_ativos(source.fonte)
-    resultado_det = detectar_mudancas(list(alertas_validos.values()), snapshots)
-
-    agora = datetime.now().isoformat(timespec="seconds")
-    erros = 0
-    try:
-        for alerta in alertas_validos.values():
-            logger.debug(
-                "Alerta %s: %s/%s — %s — %s",
-                alerta.cod_alerta,
-                alerta.municipio.nome if alerta.municipio else "?",
-                alerta.municipio.uf if alerta.municipio else "?",
-                alerta.tipo_evento,
-                alerta.nivel_risco,
+def _formatar_relatorio(relatorio: RelatorioIngestao) -> str:
+    """Formata RelatorioIngestao para saída em terminal."""
+    linhas = [f"{relatorio.agora.isoformat()}: rodada concluída"]
+    for rf in relatorio.por_fonte:
+        if rf.falha_coleta:
+            linhas.append(
+                f"  {rf.fonte.value}: FALHA de coleta "
+                f"({rf.duracao_segundos:.2f}s)"
             )
-        aplicar_resultado_deteccao(resultado_det, alertas_validos, agora)
-    except Exception:  # noqa: BLE001 - proteção do ciclo de ingestão
-        erros = len(alertas_validos)
-        logger.exception("Falha na transação do banco")
-        novos = atualizados = inalterados = 0
-    else:
-        novos = sum(1 for e in resultado_det.eventos if e.tipo == "AlertaCriado")
-        atualizados = sum(1 for e in resultado_det.eventos if e.tipo == "AlertaAtualizado")
-        inalterados = len(resultado_det.codigos_vistos) - novos - atualizados
-
-    resolvidos = sum(1 for e in resultado_det.eventos if e.tipo == "AlertaResolvido")
-    ausentes = len(resultado_det.codigos_ausentes)
-
-    if not total_recebido:
-        logger.info("Nenhum alerta encontrado.")
-
-    print()
-    print("=== Resumo ===")
-    print(f"Total recebido  : {total_recebido}")
-    print(f"Novos           : {novos}")
-    print(f"Atualizados     : {atualizados}")
-    print(f"Inalterados     : {inalterados}")
-    print(f"Descartados     : {descartados}")
-    print(f"Erros           : {erros}")
-    print(f"Ausentes (+1)   : {ausentes}")
-    print(f"Resolvidos      : {resolvidos}")
-
-    assert novos + atualizados + inalterados + descartados + erros == total_recebido, (
-        f"Contadores inconsistentes: "
-        f"{novos}+{atualizados}+{inalterados}+{descartados}+{erros} != {total_recebido}"
-    )
+        else:
+            linhas.append(
+                f"  {rf.fonte.value}: {rf.coletados} coletados "
+                f"({rf.novos} novos, {rf.atualizados} atualizados, "
+                f"{rf.inalterados} inalterados, {rf.descartados} descartados) "
+                f"em {rf.duracao_segundos:.2f}s"
+            )
+    linhas.append(f"Total: {relatorio.total} alertas")
+    return "\n".join(linhas)
 
 
-main = executar_ingestao
+def main() -> int:
+    """Executa uma rodada de ingestão e imprime o relatório."""
+    criar_banco()
+    sources = [CemadenSource()]
+    relatorio = executar_ingestao(sources)
+    print(_formatar_relatorio(relatorio))
+    return 0
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO"),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-    executar_ingestao()
+    raise SystemExit(main())
