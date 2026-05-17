@@ -12,6 +12,7 @@ from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.detector import (
     AlertaSnapshot,
     RODADAS_PARA_RESOLVER,
+    TipoEventoDetectado,
     detectar_mudancas,
 )
 from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
@@ -38,7 +39,7 @@ def test_alerta_novo_gera_evento_criado() -> None:
     alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     res = detectar_mudancas([alerta], [])
     assert len(res.eventos) == 1
-    assert res.eventos[0].tipo == "AlertaCriado"
+    assert res.eventos[0].tipo is TipoEventoDetectado.CRIADO
     assert res.eventos[0].cod_alerta == "9001"
     assert res.eventos[0].payload["fonte"] == "CEMADEN"
     assert res.eventos[0].payload["coordenadas"]["latitude"] == -8.05
@@ -78,7 +79,7 @@ def test_alerta_atualizado_gera_evento_atualizado() -> None:
     )
     res = detectar_mudancas([alerta], [snap])
     assert len(res.eventos) == 1
-    assert res.eventos[0].tipo == "AlertaAtualizado"
+    assert res.eventos[0].tipo is TipoEventoDetectado.ATUALIZADO
     assert res.eventos[0].cod_alerta == "9003"
 
 
@@ -112,7 +113,7 @@ def test_alerta_ausente_resolve_apos_limite() -> None:
     res = detectar_mudancas([], [snap], rodadas_para_resolver=3)
     assert res.codigos_resolvidos == {cod}
     assert len(res.eventos) == 1
-    assert res.eventos[0].tipo == "AlertaResolvido"
+    assert res.eventos[0].tipo is TipoEventoDetectado.RESOLVIDO
     assert res.eventos[0].payload["fonte"] == "CEMADEN"
     assert res.codigos_ausentes == set()
 
@@ -175,8 +176,8 @@ def test_multiplos_alertas_mix() -> None:
     )
 
     tipos = [e.tipo for e in res.eventos]
-    assert tipos.count("AlertaCriado") == 1
-    assert tipos.count("AlertaAtualizado") == 0
+    assert tipos.count(TipoEventoDetectado.CRIADO) == 1
+    assert tipos.count(TipoEventoDetectado.ATUALIZADO) == 0
     assert res.codigos_ausentes == {"9300"}
     assert res.codigos_resolvidos == set()
 
@@ -204,7 +205,7 @@ def test_detectar_propaga_fonte_em_alerta_criado():
 
     assert len(resultado.eventos) == 1
     evento = resultado.eventos[0]
-    assert evento.tipo == "AlertaCriado"
+    assert evento.tipo is TipoEventoDetectado.CRIADO
     assert evento.fonte == FonteDado.CEMADEN
     assert evento.payload["fonte"] == "CEMADEN"
 
@@ -230,7 +231,7 @@ def test_detectar_propaga_fonte_em_alerta_resolvido():
         snapshots_banco=[snapshot],
     )
 
-    resolvidos = [e for e in resultado.eventos if e.tipo == "AlertaResolvido"]
+    resolvidos = [e for e in resultado.eventos if e.tipo is TipoEventoDetectado.RESOLVIDO]
     assert len(resolvidos) == 1
     assert resolvidos[0].fonte == FonteDado.EONET
     assert resolvidos[0].payload["fonte"] == "EONET"

@@ -18,7 +18,12 @@ import sqlite3
 from pathlib import Path
 
 from alertavida.domain import Alerta
-from alertavida.domain.detector import AlertaSnapshot, EventoDetectado, ResultadoDeteccao
+from alertavida.domain.detector import (
+    AlertaSnapshot,
+    EventoDetectado,
+    ResultadoDeteccao,
+    TipoEventoDetectado,
+)
 from alertavida.domain.enums import FonteDado
 
 
@@ -215,7 +220,7 @@ def aplicar_resultado_deteccao(
         for evento in eventos:
             agregado_id: int | None = None
 
-            if evento.tipo == "AlertaCriado":
+            if evento.tipo is TipoEventoDetectado.CRIADO:
                 alerta = alertas_por_codigo[evento.cod_alerta]
                 ult = (
                     alerta.ult_atualizacao.isoformat()
@@ -253,7 +258,7 @@ def aplicar_resultado_deteccao(
                 )
                 agregado_id = cursor.lastrowid
 
-            elif evento.tipo == "AlertaAtualizado":
+            elif evento.tipo is TipoEventoDetectado.ATUALIZADO:
                 alerta = alertas_por_codigo[evento.cod_alerta]
                 ult = (
                     alerta.ult_atualizacao.isoformat()
@@ -286,7 +291,7 @@ def aplicar_resultado_deteccao(
                 row = cur_id.fetchone()
                 agregado_id = row[0] if row is not None else None
 
-            elif evento.tipo == "AlertaResolvido":
+            elif evento.tipo is TipoEventoDetectado.RESOLVIDO:
                 conexao.execute(
                     """
                     UPDATE alertas

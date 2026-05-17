@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Sequence
 
 from alertavida.database import aplicar_resultado_deteccao, buscar_snapshots_ativos
-from alertavida.domain.detector import detectar_mudancas
+from alertavida.domain.detector import TipoEventoDetectado, detectar_mudancas
 from alertavida.domain.enums import FonteDado
 from alertavida.sources.base import DataSource, FalhaDeColeta
 
@@ -138,9 +138,9 @@ def executar_ingestao(
             agora_da_rodada.isoformat(),
         )
 
-        criados_count = sum(1 for e in resultado_det.eventos if e.tipo == "AlertaCriado")
+        criados_count = sum(1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.CRIADO)
         atualizados_count = sum(
-            1 for e in resultado_det.eventos if e.tipo == "AlertaAtualizado"
+            1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.ATUALIZADO
         )
         inalterados_count = (
             len(resultado_det.codigos_vistos) - criados_count - atualizados_count

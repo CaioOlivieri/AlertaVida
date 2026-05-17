@@ -7,11 +7,20 @@ payload enriquecido com coordenadas e escopo geográfico.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from alertavida.domain.alerta import Alerta
 from alertavida.domain.enums import FonteDado
 
 RODADAS_PARA_RESOLVER: int = 3
+
+
+class TipoEventoDetectado(StrEnum):
+    """Universo fechado de tipos de evento produzidos pelo ChangeDetector."""
+
+    CRIADO = "AlertaCriado"
+    ATUALIZADO = "AlertaAtualizado"
+    RESOLVIDO = "AlertaResolvido"
 
 
 @dataclass(frozen=True)
@@ -27,7 +36,7 @@ class AlertaSnapshot:
 
 @dataclass(frozen=True)
 class EventoDetectado:
-    tipo: str
+    tipo: TipoEventoDetectado
     cod_alerta: str
     fonte: FonteDado
     payload: dict
@@ -91,7 +100,7 @@ def detectar_mudancas(
         if cod not in snapshots_por_codigo:
             eventos.append(
                 EventoDetectado(
-                    tipo="AlertaCriado",
+                    tipo=TipoEventoDetectado.CRIADO,
                     cod_alerta=cod,
                     fonte=alerta.fonte,
                     payload=_payload_de(alerta),
@@ -110,7 +119,7 @@ def detectar_mudancas(
                 if ult_cur != snapshot.ult_atualizacao:
                     eventos.append(
                         EventoDetectado(
-                            tipo="AlertaAtualizado",
+                            tipo=TipoEventoDetectado.ATUALIZADO,
                             cod_alerta=cod,
                             fonte=alerta.fonte,
                             payload=_payload_de(alerta),
@@ -129,7 +138,7 @@ def detectar_mudancas(
         if snapshot.rodadas_ausente + 1 >= rodadas_para_resolver:
             eventos.append(
                 EventoDetectado(
-                    tipo="AlertaResolvido",
+                    tipo=TipoEventoDetectado.RESOLVIDO,
                     cod_alerta=cod,
                     fonte=snapshot.fonte,
                     payload={
