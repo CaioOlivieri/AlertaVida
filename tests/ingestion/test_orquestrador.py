@@ -3,6 +3,7 @@
 import math
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +17,14 @@ from tests.fixtures.sources_fake import FakeDataSource
 _DATA_CRIACAO = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def _alerta(cod: str, fonte: FonteDado, lat: float = -23.5, lon: float = -46.6) -> Alerta:
+def _alerta(
+    cod: str,
+    fonte: FonteDado,
+    lat: float = -23.5,
+    lon: float = -46.6,
+    *,
+    ult_atualizacao: datetime | None = None,
+) -> Alerta:
     """Constrói um Alerta mínimo e válido para testes."""
     return Alerta(
         cod_alerta=cod,
@@ -25,6 +33,7 @@ def _alerta(cod: str, fonte: FonteDado, lat: float = -23.5, lon: float = -46.6) 
         nivel_risco=NivelRisco.ALTO,
         coordenadas=Coordenadas(latitude=lat, longitude=lon),
         data_criacao=_DATA_CRIACAO,
+        ult_atualizacao=ult_atualizacao,
     )
 
 
@@ -210,7 +219,7 @@ def test_falha_coleta_zera_coletado_em() -> None:
     assert relatorio.por_fonte[0].coletado_em is None
 
 
-def test_isolamento_de_persistencia(db_temporario: object) -> None:
+def test_persistencia_separada_por_fonte(db_temporario: object) -> None:
     alertas_cemaden = [
         _alerta("C1", FonteDado.CEMADEN),
         _alerta("C2", FonteDado.CEMADEN),
@@ -237,3 +246,168 @@ def test_rodada_sem_fontes() -> None:
     relatorio = executar_ingestao([])
     assert relatorio.por_fonte == ()
     assert relatorio.total == 0
+
+
+# ---------------------------------------------------------------------------
+# Hardening-2 — ciclos multi-rodada e isolamento sob falha
+# ---------------------------------------------------------------------------
+
+
+def test_segunda_rodada_com_mesmo_ult_atualizacao_conta_inalterados(
+    db_temporario: Path,
+) -> None:
+    """Alerta com mesmo ult_atualizacao em 2 rodadas conta como inalterado."""
+    cod = "C1"
+    ult_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+
+    rodada_1 = [_alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at)]
+    rodada_2 = [_alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at)]
+
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[rodada_1, rodada_2],
+    )
+
+    relatorio_1 = executar_ingestao([source])
+    assert relatorio_1.por_fonte[0].novos == 1
+    assert relatorio_1.por_fonte[0].atualizados == 0
+    assert relatorio_1.por_fonte[0].inalterados == 0
+
+    relatorio_2 = executar_ingestao([source])
+    assert relatorio_2.por_fonte[0].novos == 0
+    assert relatorio_2.por_fonte[0].atualizados == 0
+    assert relatorio_2.por_fonte[0].inalterados == 1
+
+
+def test_segunda_rodada_com_ult_atualizacao_diferente_conta_atualizado(
+    db_temporario: Path,
+) -> None:
+    """Mesmo cod_alerta com ult_atualizacao diferente conta como atualizado."""
+    cod = "C1"
+    ult_at_v1 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    ult_at_v2 = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+
+    rodada_1 = [_alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at_v1)]
+    rodada_2 = [_alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at_v2)]
+
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[rodada_1, rodada_2],
+    )
+
+    relatorio_1 = executar_ingestao([source])
+    assert relatorio_1.por_fonte[0].novos == 1
+
+    relatorio_2 = executar_ingestao([source])
+    assert relatorio_2.por_fonte[0].novos == 0
+    assert relatorio_2.por_fonte[0].atualizados == 1
+    assert relatorio_2.por_fonte[0].inalterados == 0
+
+
+def test_alerta_ausente_por_tres_rodadas_emite_resolvido_no_outbox(
+    db_temporario: Path,
+) -> None:
+    """Alerta ausente por 3 rodadas consecutivas emite AlertaResolvido no outbox.
+
+    Verifica via query direta na tabela `eventos` (banco é fonte de verdade
+    para resolvidos — RelatorioFonte não contém esse contador, decisão
+    arquitetural: resolvidos são fenômeno derivado de ausência, não do
+    batch coletado).
+    """
+    cod = "C1"
+    ult_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    alerta = _alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at)
+
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[
+            [alerta],  # rodada 1 — alerta presente
+            [],        # rodada 2 — ausente (1ª)
+            [],        # rodada 3 — ausente (2ª)
+            [],        # rodada 4 — ausente (3ª, dispara AlertaResolvido)
+        ],
+    )
+
+    for _ in range(4):
+        executar_ingestao([source])
+
+    with sqlite3.connect(db_temporario) as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM eventos "
+            "WHERE tipo = 'AlertaResolvido' "
+            "AND json_extract(payload, '$.fonte') = 'CEMADEN' "
+            "AND json_extract(payload, '$.cod_alerta') = ?",
+            (cod,),
+        ).fetchone()[0]
+
+    assert rows == 1, (
+        f"Esperado exatamente 1 AlertaResolvido no outbox após 3 rodadas "
+        f"ausentes consecutivas; encontrei {rows}."
+    )
+
+
+def test_persistencia_de_fontes_anteriores_sobrevive_a_falha_posterior(
+    db_temporario: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fonte que persistiu commit antes de outra fonte falhar sobrevive à falha.
+
+    Cenário: 3 sources. Source A commita. Source B levanta
+    sqlite3.OperationalError na persistência. Source C nunca roda porque
+    a exceção propaga. Verificação: source A continua no banco, source
+    B não. Prova durabilidade do commit por fonte.
+    """
+    from alertavida.database import aplicar_resultado_deteccao as _real
+    from alertavida.domain.detector import ResultadoDeteccao
+
+    chamadas_persistencia: list[int] = []
+
+    def aplicar_com_falha_na_segunda(
+        resultado: ResultadoDeteccao,
+        alertas_por_codigo: dict[str, Alerta],
+        agora: str,
+    ) -> None:
+        chamadas_persistencia.append(len(chamadas_persistencia))
+        if len(chamadas_persistencia) == 2:
+            raise sqlite3.OperationalError("falha simulada na 2a fonte")
+        _real(resultado, alertas_por_codigo, agora)
+
+    monkeypatch.setattr(
+        "alertavida.ingestion.orquestrador.aplicar_resultado_deteccao",
+        aplicar_com_falha_na_segunda,
+    )
+
+    source_a = FakeDataSource(
+        fonte=FonteDado.CEMADEN,
+        alertas=[_alerta("A1", FonteDado.CEMADEN), _alerta("A2", FonteDado.CEMADEN)],
+    )
+    source_b = FakeDataSource(
+        fonte=FonteDado.EONET,
+        alertas=[_alerta("B1", FonteDado.EONET)],
+    )
+    source_c = FakeDataSource(
+        fonte=FonteDado.INMET,
+        alertas=[_alerta("C1", FonteDado.INMET)],
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="falha simulada"):
+        executar_ingestao([source_a, source_b, source_c])
+
+    with sqlite3.connect(db_temporario) as conn:
+        rows_a = conn.execute(
+            "SELECT COUNT(*) FROM alertas WHERE fonte = 'CEMADEN'"
+        ).fetchone()[0]
+        rows_b = conn.execute(
+            "SELECT COUNT(*) FROM alertas WHERE fonte = 'EONET'"
+        ).fetchone()[0]
+        rows_c = conn.execute(
+            "SELECT COUNT(*) FROM alertas WHERE fonte = 'INMET'"
+        ).fetchone()[0]
+
+    assert rows_a == 2, "Source A devia ter persistido antes da falha em B"
+    assert rows_b == 0, "Source B levantou na persistência — nada deve estar lá"
+    assert rows_c == 0, "Source C nunca rodou — nada deve estar lá"
+    assert len(chamadas_persistencia) == 2, (
+        "Esperado exatamente 2 chamadas à aplicar_resultado_deteccao "
+        "(A e B); C nunca chega por causa da exceção em B"
+    )

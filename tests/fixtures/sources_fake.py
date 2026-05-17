@@ -80,3 +80,65 @@ class FakeDataSource(DataSource):
             descartados=self._descartados,
             coletado_em=self._coletado_em,
         )
+
+    @classmethod
+    def com_rodadas(
+        cls,
+        fonte: FonteDado,
+        rodadas: list[list[Alerta]],
+        *,
+        coletado_em_por_rodada: list[datetime] | None = None,
+    ) -> "FakeDataSource":
+        """Fake que retorna alertas diferentes em cada chamada de coletar().
+
+        Cada elemento de `rodadas` é a lista de alertas retornada na chamada
+        sucessiva correspondente de `coletar()`. Se `coletado_em_por_rodada`
+        for fornecido, deve ter o mesmo comprimento de `rodadas`; caso
+        contrário, cada rodada usa `datetime.now(timezone.utc)` no momento
+        da chamada.
+
+        Se `coletar()` for chamado mais vezes do que existem rodadas,
+        levanta `RuntimeError("rodadas esgotadas")`.
+        """
+        if coletado_em_por_rodada is not None and len(coletado_em_por_rodada) != len(rodadas):
+            raise ValueError(
+                f"coletado_em_por_rodada deve ter o mesmo comprimento de rodadas "
+                f"(rodadas={len(rodadas)}, "
+                f"coletado_em_por_rodada={len(coletado_em_por_rodada)})"
+            )
+        return _FakeDataSourceMultiRodada(fonte, rodadas, coletado_em_por_rodada)
+
+
+class _FakeDataSourceMultiRodada(FakeDataSource):
+    """Variante interna de FakeDataSource com rodadas pré-configuradas.
+
+    Retorna uma lista diferente de alertas a cada chamada de coletar().
+    Criada exclusivamente via FakeDataSource.com_rodadas().
+    """
+
+    def __init__(
+        self,
+        fonte: FonteDado,
+        rodadas: list[list[Alerta]],
+        coletado_em_por_rodada: list[datetime] | None,
+    ) -> None:
+        super().__init__(fonte=fonte)
+        self._rodadas_pendentes: list[list[Alerta]] = [list(r) for r in rodadas]
+        self._coletado_em_pendentes: list[datetime] | None = (
+            list(coletado_em_por_rodada) if coletado_em_por_rodada is not None else None
+        )
+
+    def coletar(self) -> ResultadoColeta:
+        if not self._rodadas_pendentes:
+            raise RuntimeError("rodadas esgotadas")
+        alertas = self._rodadas_pendentes.pop(0)
+        coletado_em = (
+            self._coletado_em_pendentes.pop(0)
+            if self._coletado_em_pendentes is not None
+            else datetime.now(timezone.utc)
+        )
+        return ResultadoColeta(
+            alertas=alertas,
+            descartados=0,
+            coletado_em=coletado_em,
+        )
