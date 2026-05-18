@@ -85,22 +85,13 @@ credentials
 secrets/       
 
 # ==========================================
-# Arquivos temporários
+# Arquivos temporários e de trabalho
 # ==========================================
 *.tmp
 *.bak
-
 diff.txt
-
-# Cursor / Claude
-.claude/
-
-tmp_database_*.py
-
-tmp_database_*.py
-
-scripts/diagnostico_banco.py
-
-tmp_*.py
-
 tmp_*
+# ==========================================
+# Configs locais de IDE (Cursor / Claude)
+# ==========================================
+.claude/
