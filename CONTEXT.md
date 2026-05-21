@@ -204,11 +204,25 @@ Benefício: se uma fonte cair, sistema continua. Adicionar nova fonte = implemen
   - **B.2.b — `monitor.py` reduzido a entrypoint puro ✅ CONCLUÍDA 17/05/2026** (commit `4714095`): refator destrutivo que fecha a Camada 4 Parte B inteira. `monitor.py` reduzido de 92 linhas para 46 linhas — entrypoint puro com `main()`, `_formatar_relatorio()` (função pura testável), e `raise SystemExit(main())`. `main()` chama `criar_banco()` para bootstrap, instancia `CemadenSource()`, chama `executar_ingestao([source])`, imprime relatório formatado, retorna exit code 0. Removida toda a lógica de orquestração (já migrada para `ingestion/orquestrador.py` em B.2.a) e as 3 comparações `e.tipo == "AlertaX"` (linhas 57-61, código morto pós-hardening-1). Removido o alias `main = executar_ingestao`; `main()` agora é função real. `scheduler.py` ajustado em três mudanças cirúrgicas: (1) imports trocam `from alertavida.monitor import executar_ingestao` para `from alertavida.ingestion.orquestrador import executar_ingestao`, mais imports novos de `CemadenSource` (de `alertavida.sources.cemaden`) e `criar_banco` (de `alertavida.database`); (2) `_rodar_rodada()` muda `executar_ingestao()` para `executar_ingestao([CemadenSource()])`; (3) `agendar_ingestao()` chama `criar_banco()` UMA VEZ no startup antes de `scheduler.start()` — não a cada rodada (decisão arquitetural: schema setup pertence ao bootstrap, falhas de schema incompatível devem ocorrer imediatamente no startup, custo de I/O de chamar a cada 5 minutos é desnecessário). `tests/test_monitor.py` reescrito completamente: 3 testes antigos de orquestração deletados (redundantes com `test_orquestrador.py`), 2 testes novos puros para `_formatar_relatorio` (sucesso com contadores, falha de coleta). `tests/test_scheduler.py` intocado (discovery revelou zero mock de símbolos de `monitor` — política "NÃO TOQUE" do prompt aplicada). 222 testes totais (223 - 3 deletados + 2 novos), CI verde em Ubuntu + Windows. Smoke test do entrypoint em produção contra CEMADEN real: 7 alertas coletados, formato correto, exit 0. **Parte B inteira (B.0 + B.1 + B.2.a + B.2.b) concluída em 8 commits encadeados com CI verde por etapa.**
 
 - **Parte C — `NasaEonetSource`** (após Parte B):
-  - Nova fonte implementada como `DataSource`
-  - Mapeamento de categorias EONET para subgrupos COBRADE em `cobrade.py`
-  - Ingestão global, classificação geográfica via `EscopoGeografico`
+  - **C.0.a — Inspeção empírica do payload EONET v3 ✅ CONCLUÍDA 18/05/2026** (commit `37f6dd1`): script `scripts/inspect_eonet_payload.py` (441 linhas) faz duas requisições simultâneas à API EONET v3 — `status=open&limit=500` e `status=all&days=30&limit=500` — salva fixtures JSON em `data/samples/eonet/` (gitignored), gera relatório tabular em stdout e relatório MD em `docs/analise_eonet_2026-05-18.md`. Resultados empíricos: 500 eventos abertos (497 `wildfires`), 328 eventos últimos 30 dias, 0 eventos abertos no Brasil, 3 no histórico. Geometria 100% Point, 1 fix por evento na maioria. Magnitudes: `acres` (wildfires), `NM^2`, `hectare`, `kts`. 13 categorias confirmadas (IDs string, v3 — incompatível com v2.1 que usava inteiros). `tests/fixtures/eonet/README.md` documenta espaço reservado para fixtures sintéticas. `scripts/diagnostico_banco.py` (56 linhas) promovido a utilitário versionado (commit `4325b15`) — diagnostica versão do schema local (pré-A.1, pós-A.1, pós-A.2). `.gitignore` limpo de duplicatas (commit `d865bb4`).
+  - **C.1 — `NasaEonetSource` como `DataSource`** (próximo):
+    - Nova classe `NasaEonetSource(DataSource)` em `sources/nasa_eonet.py`
+    - Construtor keyword-only injetável (mesmo padrão de `CemadenSource`: `url`, `opener`, `timeout_segundos`)
+    - HTTP GET → parse JSON → iteração sobre `events[]` → mapeamento para `Alerta`
+    - Categorias EONET → subgrupos COBRADE via `cobrade.py` (ampliar `EVENTO_EONET_PARA_COBRADE`)
+    - Geometria: `geometry[].type == "Point"`, `coordinates = [lon, lat]`, `closed` como indicador de resolução
+    - Magnitude: `magnitudeValue` + `magnitudeUnit` → mapeamento para domínio
+    - Classificação geográfica via `geographic.classificar_escopo()` (ingestão global, filtro no domínio)
+    - Testes: fixtures sintéticas em `tests/fixtures/eonet/`, testes de contrato parametrizados
+  - **C.2 — Mapeamento COBRADE EONET**:
+    - Ampliar `domain/cobrade.py` com `EVENTO_EONET_PARA_COBRADE`
+    - Categorias relevantes: `wildfires` → `CLIMATOLOGICO`, `severeStorms` → `METEOROLOGICO`, `floods` → `HIDROLOGICO`, `volcanoes` → `GEOLOGICO`, `landslides` → `GEOLOGICO`
+    - Categorias fora do escopo Brasil: `seaLakeIce`, `snow`, `drought`, `dustHaze`, `waterColor`, `manmade`, `earthquakes`, `tempExtremes` → mapear ou descartar conforme relevância
+  - **C.3 — Integração no orquestrador**:
+    - `monitor.py` e `scheduler.py` passam a incluir `NasaEonetSource()` na lista de sources
+    - Testes de orquestração com duas fontes
 
-Ordem de execução: A.1 → A.2 → B.0 → B.1 → B.2 → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). A.1, A.2, B.0 e B.1 concluídas em 2026-05-09, 2026-05-11, 2026-05-13 e 2026-05-16 respectivamente. A Parte B foi subdividida em 12/05/2026 em três sub-partes encadeadas (B.0 muda domínio, B.1 introduz interface e extrai CEMADEN, B.2 isola orquestrador) — cada uma com commit, CI verde e recap próprios antes da próxima. B.0 e B.1 foram cada uma entregues em dois commits encadeados (B.0.a/B.0.b, B.1.a/B.1.b). Big-bang foi rejeitado em favor de commits encadeados pelo mesmo motivo de A.1.1 → A.1.4: revisão localizada e reversibilidade independente. Próximo: B.2.
+Ordem de execução: A.1 → A.2 → B.0 → B.1 → B.2 → C. A.1 é destrutivo (PK composta, enum mudando valores). A.2 é puramente aditivo (campo nullable, coluna nova nullable, módulo novo). A.1, A.2, B.0 e B.1 concluídas em 2026-05-09, 2026-05-11, 2026-05-13 e 2026-05-16 respectivamente. A Parte B foi subdividida em 12/05/2026 em três sub-partes encadeadas (B.0 muda domínio, B.1 introduz interface e extrai CEMADEN, B.2 isola orquestrador) — cada uma com commit, CI verde e recap próprios antes da próxima. B.0 e B.1 foram cada uma entregues em dois commits encadeados (B.0.a/B.0.b, B.1.a/B.1.b). Big-bang foi rejeitado em favor de commits encadeados pelo mesmo motivo de A.1.1 → A.1.4: revisão localizada e reversibilidade independente. Parte C iniciada com C.0.a (inspeção empírica) em 18/05/2026. Próximo: C.1.
 
 **Granularidade COBRADE — limite consciente da Camada 4:**
 
@@ -270,11 +284,16 @@ alertavida/
 ├── README.md
 ├── pyproject.toml
 ├── scripts/
-│   └── inspect_cemaden_payload.py
-│   └── reclassificar_escopos.py   ← re-classifica escopo_geografico após mudança de buffers
+│   ├── inspect_cemaden_payload.py
+│   ├── inspect_eonet_payload.py   ← inspeção empírica NASA EONET v3 (C.0.a)
+│   ├── reclassificar_escopos.py   ← re-classifica escopo_geografico após mudança de buffers
+│   └── diagnostico_banco.py       ← diagnostica versão do schema local
 ├── data/
 │   └── alertavida.db          ← gerado em runtime (gitignored)
 │   └── samples/               ← JSONs do inspetor (gitignored)
+│       └── eonet/             ← amostras EONET brutas (gitignored)
+├── docs/
+│   └── analise_eonet_2026-05-18.md  ← relatório empírico EONET v3
 ├── src/
 │   └── alertavida/
 │       ├── __init__.py
@@ -282,13 +301,21 @@ alertavida/
 │       ├── database.py
 │       ├── scheduler.py
 │       ├── events.py
-│       └── domain/
+│       ├── domain/
+│       │   ├── __init__.py
+│       │   ├── alerta.py
+│       │   ├── municipio.py
+│       │   ├── coordenadas.py
+│       │   ├── enums.py
+│       │   ├── detector.py
+│       │   └── cobrade.py
+│       ├── ingestion/
+│       │   ├── __init__.py
+│       │   └── orquestrador.py
+│       └── sources/
 │           ├── __init__.py
-│           ├── alerta.py
-│           ├── municipio.py
-│           ├── coordenadas.py
-│           ├── enums.py
-│           └── detector.py
+│           ├── base.py
+│           └── cemaden.py
 └── tests/
     ├── __init__.py
     ├── conftest.py               ← fixture db_temporario
@@ -296,9 +323,21 @@ alertavida/
     ├── test_monitor.py
     ├── test_scheduler.py
     ├── test_events.py
-    └── domain/
-        ├── test_alerta.py
-        └── test_detector.py
+    ├── domain/
+    │   ├── test_alerta.py
+    │   └── test_detector.py
+    ├── sources/
+    │   ├── test_base.py
+    │   ├── test_cemaden.py
+    │   └── contrato.py
+    ├── ingestion/
+    │   ├── __init__.py
+    │   └── test_orquestrador.py
+    └── fixtures/
+        ├── sources_fake.py
+        ├── cemaden/
+        └── eonet/
+            └── README.md
 ```
 
 ### Estrutura alvo (após refatorações futuras)
@@ -569,4 +608,5 @@ Roda os 15 testes da suíte. Tempo total < 1 segundo (graças ao mock de `time.s
 | 2026-05-13 | Camada 4 Parte B.0 concluída — `fonte` como atributo do modelo `Alerta`, propagado por toda a stack (domínio + infra). Entregue em dois commits encadeados: B.0.a (d28cf56, domínio: `FonteDado` enum, campos `fonte` em `Alerta`/`AlertaSnapshot`/`EventoDetectado`, `Annotated[FonteDado, Strict()]` cirúrgico) deixou CI intencionalmente vermelho em 10 testes de `test_monitor.py`; B.0.b (a5f5062, infra: `aplicar_resultado_deteccao` sem param `fonte`, `buscar_snapshots_ativos(fonte: FonteDado)`, `monitor.py` ajustado) fechou o ciclo com CI verde. Decisão arquitetural retroativa em B.0.b: `fonte_por_codigo: dict[str, FonteDado]` em `ResultadoDeteccao` populado pelo detector — princípio Tell, Don't Ask, evita vazamento de responsabilidade entre Infrastructure e Domain. Schema SQL inalterado, `events.py` intocado. 183 testes passando em 0.58s, CI verde em Ubuntu + Windows. Próximo: B.1 (interface `DataSource` + extração `CemadenSource`). |
 | 2026-05-16 | Camada 4 Parte B.1 concluída — interface `DataSource` + extração `CemadenSource` + infra de testes de contrato. Entregue em dois commits encadeados, ambos com CI verde: B.1.a (90aa977, infra: `sources/base.py` com `DataSource` ABC + `ResultadoColeta` frozen + `FalhaDeColeta` exception; `sources/contrato.py` com `verificar_contrato_data_source` parametrizada e 7 invariantes; `sources_fake.py` com `FakeDataSource` determinístico; 13 testes em `test_base.py`; 196 testes totais) e B.1.b (c9d9592, extração: `sources/cemaden.py` com `CemadenSource(DataSource)` migrando HTTP+retry+backoff+`_montar_alerta`+`_normalize_payload`+escopo+COBRADE de `monitor.py`; construtor keyword-only com `url`/`opener`/`timeout_segundos` injetáveis; Protocol local `_RespostaHTTP` PEP 544 para strict pelo contrato usado em vez de pela classe `HTTPResponse` concreta; `monitor.py` simplificado removendo `montar_alerta`/`normalize_alert_list`/`fetch_alertas_com_retry`/constantes/imports de transporte; `test_cemaden.py` com 20 testes (14 migrados + 6 novos de invariantes B.1: propagação de TypeError/AttributeError, FalhaDeColeta em rede/JSON/Unicode, fonte CEMADEN em alertas, coletado_em aware, contrato); `test_monitor.py` reduzido a 3 testes de orquestração com `CemadenSource.coletar` mockado; `test_contrato_cemaden.py` reescrito para usar `CemadenSource().coletar()` exercitando o fluxo completo; 205 testes totais, 0.66s local, 37s no CI). Importação circular evitada: `cemaden.py` importa de `sources.base` (não de `sources.__init__`). Decisões arquiteturais emergentes em B.1.b: Protocol local `_RespostaHTTP` e construtor keyword-only com transport injetável — registradas em §3 dentro do bloco B.1. Próximo: B.2 (orquestrador em `ingestion/orquestrador.py` com `RelatorioFonte`/`RelatorioIngestao`; `monitor.py` reduzido a entrypoint puro; testes migram para `tests/ingestion/`). |
 | 2026-05-17 | Camada 4 Parte B.2.a concluída — ciclo completo encerrado em três commits encadeados com CI verde por etapa. **B.2.a** (`5044a7d`): criação do pacote `ingestion/` com `executar_ingestao(sources, *, agora=None) -> RelatorioIngestao`, `RelatorioFonte` (frozen dataclass com invariantes via `__post_init__`), `RelatorioIngestao` (frozen, com `@property total`), 14 testes de orquestração com `FakeDataSource`; 219 testes totais. **B.2.a-hardening-1** (`c77864d`): refator de Camada 3 introduz `TipoEventoDetectado(StrEnum)` em `domain/detector.py`, propaga para `database.py` e `ingestion/orquestrador.py` (comparações `is`), `events.py` mantém strings cruas (decisão de não violar Dependency Inversion Infrastructure → Domain); zero mudança comportamental. **B.2.a-hardening-2** (`059a6d5`): `FakeDataSource.com_rodadas` via subclasse interna `_FakeDataSourceMultiRodada` preserva construtor original; renomeio de `test_isolamento_de_persistencia` → `test_persistencia_separada_por_fonte`; 4 testes novos cobrindo segunda rodada com mesmo/diferente `ult_atualizacao`, `AlertaResolvido` no outbox via `json_extract` no payload, e persistência de fontes anteriores sobrevivendo à falha posterior via monkeypatch em namespace de uso (`alertavida.ingestion.orquestrador.aplicar_resultado_deteccao`); 223 testes totais. Pendências reconhecidas: Item 7 (DB_PATH explícito — bloqueador para Postgres) e fronteira `datetime → str` no `aplicar_resultado_deteccao` ficam para prompts dedicados. Próximo: B.2.b — refator destrutivo de `monitor.py` para entrypoint puro + ajuste de imports em `scheduler.py`. |
-| 2026-05-17 | Camada 4 Parte B.2.b concluída — refator destrutivo de `monitor.py` para entrypoint puro (`4714095`). `monitor.py` reduzido de 92 para 46 linhas: `main()` chama `criar_banco()` + instancia `CemadenSource()` + chama `executar_ingestao([source])` + imprime relatório via `_formatar_relatorio` (função pura testável) + retorna 0; `raise SystemExit(main())` no `__main__`. `scheduler.py` ajustado em três mudanças cirúrgicas: troca import de `executar_ingestao` para namespace canônico em `alertavida.ingestion.orquestrador`, `_rodar_rodada()` passa `[CemadenSource()]` ao orquestrador, `agendar_ingestao()` chama `criar_banco()` no startup antes de `scheduler.start()` (não a cada rodada — schema setup pertence ao bootstrap, padrão Django/SQLAlchemy/FastAPI). `tests/test_monitor.py` reescrito: 3 testes antigos de orquestração deletados (redundância com `test_orquestrador.py`), 2 testes novos puros para `_formatar_relatorio`. `tests/test_scheduler.py` intocado (zero mock de símbolos de `monitor`). 222 testes totais; CI verde em Ubuntu + Windows. Smoke test em produção contra CEMADEN real: 7 alertas coletados, exit 0. **Parte B inteira (B.0 + B.1 + B.2.a + B.2.b) concluída — 8 commits encadeados, 8 CIs verdes, zero rollback. Próximo: Item 7 (DB_PATH explícito) ou Parte C (NasaEonetSource) — decisão a tomar.** |
+| 2026-05-17 | Camada 4 Parte B.2.b concluída — refator destrutivo de `monitor.py` para entrypoint puro (`4714095`). `monitor.py` reduzido de 92 para 46 linhas: `main()` chama `criar_banco()` + instancia `CemadenSource()` + chama `executar_ingestao([source])` + imprime relatório via `_formatar_relatorio` (função pura testável) + retorna 0; `raise SystemExit(main())` no `__main__`. `scheduler.py` ajustado em três mudanças cirúrgicas: troca import de `executar_ingestao` para namespace canônico em `alertavida.ingestion.orquestrador`, `_rodar_rodada()` passa `[CemadenSource()]` ao orquestrador, `agendar_ingestao()` chama `criar_banco()` no startup antes de `scheduler.start()` (não a cada rodada — schema setup pertence ao bootstrap, padrão Django/SQLAlchemy/FastAPI). `tests/test_monitor.py` reescrito: 3 testes antigos de orquestração deletados (redundância com `test_orquestrador.py`), 2 testes novos puros para `_formatar_relatorio`. `tests/test_scheduler.py` intocado (zero mock de símbolos de `monitor`). 222 testes totais; CI verde em Ubuntu + Windows. Smoke test em produção contra CEMADEN real: 7 alertas coletados, exit 0. **Parte B inteira (B.0 + B.1 + B.2.a + B.2.b) concluída — 8 commits encadeados, 8 CIs verdes, zero rollback.** |
+| 2026-05-18 | Camada 4 Parte C.0.a — inspeção empírica do payload NASA EONET v3 (`37f6dd1`). Script `scripts/inspect_eonet_payload.py` captura dados reais: 500 eventos abertos (497 wildfires), 328 eventos últimos 30 dias, 0 abertos no Brasil, 3 no histórico. Geometria 100% Point. Relatório MD em `docs/analise_eonet_2026-05-18.md`. `tests/fixtures/eonet/README.md` documenta espaço para fixtures sintéticas. `scripts/diagnostico_banco.py` promovido a utilitário versionado (`4325b15`). `.gitignore` limpo (`d865bb4`). **Próximo: C.1 — implementar `NasaEonetSource`.** |
