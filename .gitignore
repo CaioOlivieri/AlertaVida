@@ -7,7 +7,6 @@ __pycache__/
 *.pyd
 *.egg-info/
 .pytest_cache/
-.python-version
 
 # ==========================================
 # Ambientes virtuais
