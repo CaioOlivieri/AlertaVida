@@ -30,7 +30,7 @@ jobs:
         run: uv python install
 
       - name: Sync dependencies
-        run: uv sync --extra dev --frozen
+        run: uv sync --frozen
 
       - name: Run tests
         run: uv run pytest -v --cov=src --cov-report=term-missing
@@ -53,7 +53,7 @@ jobs:
         run: uv python install
 
       - name: Sync dependencies
-        run: uv sync --extra dev --frozen
+        run: uv sync --frozen
 
       - name: Run contrato test
         run: uv run pytest -m integration -v
