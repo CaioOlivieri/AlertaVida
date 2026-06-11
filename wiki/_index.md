@@ -63,3 +63,4 @@ updated: 2026-06-11
 - [[decisions/scheduler-background-jobs]]
 - [[decisions/alert-reactivation-instead-of-crash]]
 - [[decisions/utc-timestamps-consistency]]
+- [[decisions/sqlite-wal-busy-timeout]]
