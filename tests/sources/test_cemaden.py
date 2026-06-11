@@ -273,6 +273,24 @@ class TestColetarFalhaDeColeta:
         assert exc_info.value.fonte == FonteDado.CEMADEN
         assert isinstance(exc_info.value.original, UnicodeDecodeError)
 
+    def test_levanta_falha_quando_dict_sem_chave_conhecida(self, monkeypatch):
+        opener = _opener_de_payload(b'{"widgets":[]}')
+        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        source = CemadenSource(opener=opener)
+        with pytest.raises(FalhaDeColeta) as exc_info:
+            source.coletar()
+        assert exc_info.value.fonte == FonteDado.CEMADEN
+        assert "não reconhecido" in exc_info.value.causa
+
+    def test_levanta_falha_quando_payload_nao_e_list_nem_dict(self, monkeypatch):
+        opener = _opener_de_payload(b'"string isolada"')
+        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        source = CemadenSource(opener=opener)
+        with pytest.raises(FalhaDeColeta) as exc_info:
+            source.coletar()
+        assert exc_info.value.fonte == FonteDado.CEMADEN
+        assert "inesperado" in exc_info.value.causa
+
 
 # ============================================================
 # coletar — contrato parametrizado (B.1.a)

@@ -164,7 +164,16 @@ class CemadenSource(DataSource):
                 value = payload.get(key)
                 if isinstance(value, list):
                     return value
-        return []
+            raise FalhaDeColeta(
+                fonte=self.fonte,
+                causa="formato de payload não reconhecido: dict sem chave "
+                "conhecida ('alertas', 'data', 'items', 'results') contendo uma lista",
+            )
+        raise FalhaDeColeta(
+            fonte=self.fonte,
+            causa=f"formato de payload inesperado: esperado list ou dict, "
+            f"recebido {type(payload).__name__}",
+        )
 
     def _montar_alerta(self, item: dict) -> Alerta:
         """Converte item bruto do CEMADEN em Alerta de domínio.
