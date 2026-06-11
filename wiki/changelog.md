@@ -42,3 +42,4 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | 2026-06-11 | fix: restaura reconfigure UTF-8 e config de logging no entrypoint monitor |
 | 2026-06-11 | fix: padroniza processado_em da outbox em UTC-aware |
 | 2026-06-11 | feat: habilita WAL e busy_timeout no SQLite para concorrencia ingestao/dispatcher |
+| 2026-06-11 | feat: scheduler loga relatorio por rodada via reporting.py compartilhado |

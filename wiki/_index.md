@@ -40,6 +40,7 @@ updated: 2026-06-11
 - [[components/domain-detector]]
 - [[components/domain-geographic]]
 - [[components/domain-cobrade]]
+- [[components/reporting]]
 
 ### Patterns
 - [[patterns/code-conventions]]
@@ -64,3 +65,4 @@ updated: 2026-06-11
 - [[decisions/alert-reactivation-instead-of-crash]]
 - [[decisions/utc-timestamps-consistency]]
 - [[decisions/sqlite-wal-busy-timeout]]
+- [[decisions/shared-report-formatter]]

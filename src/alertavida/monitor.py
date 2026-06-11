@@ -13,29 +13,9 @@ import os
 import sys
 
 from alertavida.database import criar_banco
-from alertavida.ingestion.orquestrador import RelatorioIngestao, executar_ingestao
+from alertavida.ingestion.orquestrador import executar_ingestao
+from alertavida.reporting import formatar_relatorio
 from alertavida.sources.cemaden import CemadenSource
-
-
-def _formatar_relatorio(relatorio: RelatorioIngestao) -> str:
-    """Formata RelatorioIngestao para saída em terminal."""
-    linhas = [f"{relatorio.agora.isoformat()}: rodada concluída"]
-    for rf in relatorio.por_fonte:
-        if rf.falha_coleta:
-            linhas.append(
-                f"  {rf.fonte.value}: FALHA de coleta "
-                f"({rf.duracao_segundos:.2f}s)"
-            )
-        else:
-            linhas.append(
-                f"  {rf.fonte.value}: {rf.coletados} coletados "
-                f"({rf.novos} novos, {rf.atualizados} atualizados, "
-                f"{rf.reativados} reativados, {rf.inalterados} inalterados, "
-                f"{rf.descartados} descartados) "
-                f"em {rf.duracao_segundos:.2f}s"
-            )
-    linhas.append(f"Total: {relatorio.total} alertas")
-    return "\n".join(linhas)
 
 
 def main() -> int:
@@ -43,7 +23,7 @@ def main() -> int:
     criar_banco()
     sources = [CemadenSource()]
     relatorio = executar_ingestao(sources)
-    print(_formatar_relatorio(relatorio))
+    print(formatar_relatorio(relatorio))
     return 0
 
 
