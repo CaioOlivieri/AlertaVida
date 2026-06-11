@@ -57,6 +57,6 @@ This repo maintains a wiki in `./wiki/` (LLM-Wiki format). Before any architectu
 2. `wiki/_schema.md` — discipline rules for this wiki
 
 Before touching the ingestion pipeline (`sources/`, `ingestion/`, `monitor.py`, `scheduler.py`, `database.py`):
-3. `wiki/patterns/resilience-invariants.md` — 21 invariants, must not break any
+3. `wiki/patterns/resilience-invariants.md` — 23 invariants, must not break any
 
 Discipline rules: only assert test/pipeline behavior based on real execution output (`uv run pytest`, logs in `wiki/raw/`) — never by inference. Every new architectural decision requires a page in `wiki/decisions/` + updating `_integration-state.md` when wiring changes. When learning something durable, do ingest: update the page.

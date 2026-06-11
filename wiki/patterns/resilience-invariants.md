@@ -25,3 +25,5 @@ updated: 2026-06-11
 19. **`CemadenSource.coletar()` captures ONLY `ValueError` when mapping each raw item** — internal bugs propagate.
 20. **Round-level failures wrapped in `FalhaDeColeta(fonte=self.fonte, causa=..., original=exc)` with `from exc`** — do not let raw transport exceptions leak from `coletar()`.
 21. **A RESOLVIDO alert reappearing in the feed MUST emit `AlertaReativado` and reactivate the row** — never INSERT (UNIQUE constraint) and never silently ignore.
+22. **cod_alerta MUST be unique per batch in `executar_ingestao`** — duplicates within the same source response are deduplicated (first occurrence kept, each duplicate increments `descartados`).
+23. **Unknown payload format in `_normalize_payload` MUST raise `FalhaDeColeta`** — a dict without any recognized wrapping key, or a non-list/non-dict payload, must not silently return an empty list.
