@@ -13,8 +13,9 @@ updated: 2026-06-11
 | `domain/detector.py` | `ChangeDetector`, `AlertaSnapshot`, `EventoDetectado`, `ResultadoDeteccao`, `TipoEventoDetectado` | `ingestion/orquestrador.py` | integrated |
 | `domain/cobrade.py` | COBRADE subgroup mapping tables + validators | `sources/cemaden.py` | integrated |
 | `domain/geographic.py` | `FaixaGeografica`, `classificar_escopo()` | `sources/cemaden.py` | integrated |
-| `monitor.py` | Entrypoint: `main()` → `criar_banco()`, `executar_ingestao()`, formatted report | CLI entrypoint | integrated |
-| `scheduler.py` | `agendar_ingestao()`: APScheduler `BackgroundScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs | Production service | integrated |
+| `monitor.py` | Entrypoint: `main()` → `criar_banco()`, `executar_ingestao()`, prints formatted report via `formatar_relatorio()` | CLI entrypoint | integrated |
+| `scheduler.py` | `agendar_ingestao()`: APScheduler `BackgroundScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs; logs per-run report via `formatar_relatorio()` | Production service | integrated |
+| `reporting.py` | `formatar_relatorio()` — shared report formatter for ingestion output | `monitor.py`, `scheduler.py` | integrated |
 | `database.py` | `criar_banco()`, `buscar_snapshots()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
 | `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher` | `scheduler.py` | integrated |
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |

@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from alertavida.database import criar_banco
 from alertavida.events import OutboxDispatcher, bus
 from alertavida.ingestion.orquestrador import executar_ingestao
+from alertavida.reporting import formatar_relatorio
 from alertavida.sources.cemaden import CemadenSource
 
 INTERVALO_MINUTOS = 5
@@ -24,7 +25,8 @@ def _on_job_error(event) -> None:
 def _rodar_rodada() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("[%s] Iniciando rodada de ingestão...", timestamp)
-    executar_ingestao([CemadenSource()])
+    relatorio = executar_ingestao([CemadenSource()])
+    logger.info("Rodada concluída:\n%s", formatar_relatorio(relatorio))
     logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
 
 
