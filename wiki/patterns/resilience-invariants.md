@@ -11,7 +11,7 @@ updated: 2026-06-11
 5. **`ChangeDetector` is pure** — no I/O, no database, no network.
 6. **`BackgroundScheduler` + `time.sleep(1)` loop** — don't switch to `BlockingScheduler`.
 7. **`max_instances=1, coalesce=True, misfire_grace_time=60`** — prevents pile-up.
-8. **UTF-8 stdout reconfigure at top of `monitor.py`** — Windows consoles default to cp1252.
+8. **UTF-8 stdout reconfigure in `monitor.py`'s `__main__` entrypoint block (before `main()`)**, guarded by `hasattr(sys.stdout, 'reconfigure')` — Windows consoles default to cp1252.
 9. **`escopo_geografico` is computed at ingestion time, never at query time** — reclassification requires `scripts/reclassificar_escopos.py`.
 10. **`TipoEvento` values are COBRADE subgroups, not source terminology** — each `DataSource` implements its own mapping to neutral values.
 11. **`cobrade_codigo` and `fonte_classificacao` change atomically** — any UPDATE must change both in the same transaction.
