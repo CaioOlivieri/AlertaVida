@@ -3,7 +3,7 @@
 Invariantes do `Alerta`:
 - `cod_alerta` é string não-vazia. Suporta CEMADEN ("1854") e EONET ("EONET_5421").
 - `coordenadas` é OBRIGATÓRIO. Alerta sem localização geográfica não entra no
-  sistema (princípio §6.10 do CONTEXT.md — honestidade dos dados).
+  sistema (princípio de honestidade dos dados — ver wiki/patterns/code-conventions.md).
 - `municipio` é opcional e descritivo. Pode ser None quando a fonte não fornece.
 - `escopo_geografico` é atributo do domínio mas calculado externamente em
   `monitor.py` via `geographic.classificar_escopo()` (Camada 4 Parte A.1.4).
@@ -87,7 +87,8 @@ class Alerta(BaseModel):
         - cobrade_codigo IS NULL    ⇔ fonte_classificacao == INDETERMINADA
         - cobrade_codigo IS NOT NULL ⇔ fonte_classificacao != INDETERMINADA
 
-        Ver CLAUDE.md "Resilience invariants" e CONTEXT.md §3 Camada 4 A.2.
+        Ver wiki/patterns/resilience-invariants.md e
+        wiki/projects/layer-4-multi-source-ingestion.md.
         """
         tem_codigo = self.cobrade_codigo is not None
         eh_indeterminada = self.fonte_classificacao == FonteClassificacao.INDETERMINADA

@@ -8,7 +8,8 @@ Hierárquica em 5 níveis: Categoria.Grupo.Subgrupo.Tipo.Subtipo.
 
 Na Camada 4 do AlertaVida, classificamos APENAS até subgrupo (Tipo=0,
 Subtipo=0). Distinção entre subtipos exige cruzamento com topografia, série
-temporal de chuva e densidade urbana — escopo da Camada 5. Ver CONTEXT.md §3.
+temporal de chuva e densidade urbana — escopo da Camada 5. Ver
+wiki/decisions/tipoevento-cobrade-classification.md.
 """
 
 import re

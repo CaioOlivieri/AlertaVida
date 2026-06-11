@@ -13,7 +13,7 @@ httpx, ler de disco, etc. Isso permite substituição em testes via
 subclasse-fake (FakeDataSource em tests/fixtures/sources_fake.py),
 sem precisar mockar bibliotecas de rede.
 
-Design decisions registradas em CONTEXT.md §8:
+Design decisions registradas em wiki/decisions/datasource-adapter-falha-de-coleta.md:
 - DataSource como ABC com ResultadoColeta tipado, não list[Alerta]
 - FalhaDeColeta como exceção tipada do domínio
 - Síncrono (não async) — Camada 6 pode usar run_in_threadpool se necessário
@@ -119,8 +119,8 @@ class DataSource(ABC):
       ResultadoColeta.descartados; não sobem como exceção.
     - Falha de rodada inteira sobe como FalhaDeColeta; orquestrador
       captura e continua.
-    - Qualquer outra exceção é bug e propaga (regra de §6 do CLAUDE.md:
-      nunca bare except).
+    - Qualquer outra exceção é bug e propaga (regra de
+      wiki/patterns/resilience-invariants.md: nunca bare except).
     """
 
     @property
