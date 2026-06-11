@@ -4,7 +4,7 @@ import json
 import logging
 import sqlite3
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Callable
 
 from alertavida.database import DB_PATH
@@ -71,7 +71,7 @@ class OutboxDispatcher:
         a falha, mas o evento não é reentregue (evita loop infinito
         em caso de handler com bug permanente).
         """
-        agora = datetime.now().isoformat(timespec="seconds")
+        agora = datetime.now(UTC).isoformat(timespec="seconds")
         processados = 0
 
         with sqlite3.connect(DB_PATH) as conexao:

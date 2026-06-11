@@ -40,3 +40,4 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | 2026-06-11 | Bug 3 fix: `_normalize_payload` raises `FalhaDeColeta` for unknown dict format or non-list/non-dict payload instead of silently returning []. Invariant 23 added |
 | 2026-06-11 | Open-source preparation: Apache-2.0 license, package metadata (PEP 639), README, SECURITY.md, CI hardening (least-privilege permissions + lint), dependabot |
 | 2026-06-11 | fix: restaura reconfigure UTF-8 e config de logging no entrypoint monitor |
+| 2026-06-11 | fix: padroniza processado_em da outbox em UTC-aware |
