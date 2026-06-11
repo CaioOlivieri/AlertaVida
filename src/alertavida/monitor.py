@@ -8,6 +8,10 @@ executa UMA rodada e imprime o relatório no terminal.
 
 from __future__ import annotations
 
+import logging
+import os
+import sys
+
 from alertavida.database import criar_banco
 from alertavida.ingestion.orquestrador import RelatorioIngestao, executar_ingestao
 from alertavida.sources.cemaden import CemadenSource
@@ -44,4 +48,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    if hasattr(sys.stdout, "reconfigure") and (sys.stdout.encoding or "").lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8")
     raise SystemExit(main())
