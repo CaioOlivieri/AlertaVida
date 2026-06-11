@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Sequence
 
-from alertavida.database import aplicar_resultado_deteccao, buscar_snapshots_ativos
+from alertavida.database import aplicar_resultado_deteccao, buscar_snapshots
 from alertavida.domain.detector import TipoEventoDetectado, detectar_mudancas
 from alertavida.domain.enums import FonteDado
 from alertavida.sources.base import DataSource, FalhaDeColeta
@@ -32,15 +32,16 @@ class RelatorioFonte:
     falha_coleta: bool
     coletado_em: datetime | None
     duracao_segundos: float
+    reativados: int = 0
 
     def __post_init__(self) -> None:
         if not self.falha_coleta:
-            soma = self.novos + self.atualizados + self.inalterados + self.descartados
+            soma = self.novos + self.atualizados + self.reativados + self.inalterados + self.descartados
             if soma != self.coletados:
                 raise ValueError(
                     f"Invariante violada para fonte {self.fonte.value}: "
                     f"coletados={self.coletados} mas "
-                    f"novos+atualizados+inalterados+descartados={soma}"
+                    f"novos+atualizados+reativados+inalterados+descartados={soma}"
                 )
             if self.coletado_em is None:
                 raise ValueError(
@@ -52,6 +53,7 @@ class RelatorioFonte:
                 self.coletados,
                 self.novos,
                 self.atualizados,
+                self.reativados,
                 self.inalterados,
                 self.descartados,
             )
@@ -129,7 +131,7 @@ def executar_ingestao(
             )
             continue
 
-        snapshots = buscar_snapshots_ativos(fonte)
+        snapshots = buscar_snapshots(fonte)
         resultado_det = detectar_mudancas(resultado_coleta.alertas, snapshots)
         alertas_por_codigo = {a.cod_alerta: a for a in resultado_coleta.alertas}
         aplicar_resultado_deteccao(
@@ -142,8 +144,11 @@ def executar_ingestao(
         atualizados_count = sum(
             1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.ATUALIZADO
         )
+        reativados_count = sum(
+            1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.REATIVADO
+        )
         inalterados_count = (
-            len(resultado_det.codigos_vistos) - criados_count - atualizados_count
+            len(resultado_det.codigos_vistos) - criados_count - atualizados_count - reativados_count
         )
 
         relatorios.append(
@@ -152,6 +157,7 @@ def executar_ingestao(
                 coletados=len(resultado_coleta.alertas) + resultado_coleta.descartados,
                 novos=criados_count,
                 atualizados=atualizados_count,
+                reativados=reativados_count,
                 inalterados=inalterados_count,
                 descartados=resultado_coleta.descartados,
                 falha_coleta=False,

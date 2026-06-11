@@ -8,6 +8,7 @@ Cobre:
 """
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -211,6 +212,74 @@ class TestIdempotencia:
         colunas_2 = _colunas_de(db_path, "alertas")
 
         assert colunas_1 == colunas_2
+
+class TestReativado:
+    """REATIVADO volta status para ATIVO e zera rodadas_ausente."""
+
+    def test_reativado_reativa_alerta_resolvido(self, db_temporario, monkeypatch):
+        from alertavida.database import aplicar_resultado_deteccao
+        from alertavida.domain.alerta import Alerta
+        from alertavida.domain.coordenadas import Coordenadas
+        from alertavida.domain.detector import (
+            EventoDetectado,
+            ResultadoDeteccao,
+            TipoEventoDetectado,
+        )
+        from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
+
+        with sqlite3.connect(db_temporario) as conexao:
+            conexao.execute(
+                """
+                INSERT INTO alertas (
+                    fonte, cod_alerta, latitude, longitude, detectado_em,
+                    status_interno, rodadas_ausente
+                ) VALUES (?, ?, ?, ?, ?, 'RESOLVIDO', 3)
+                """,
+                ("CEMADEN", "R1", -10.0, -40.0, "2026-06-11T10:00:00"),
+            )
+            conexao.commit()
+
+        alerta = Alerta(
+            cod_alerta="R1",
+            fonte=FonteDado.CEMADEN,
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.ALTO,
+            coordenadas=Coordenadas(latitude=-10.0, longitude=-40.0),
+            data_criacao=datetime(2026, 6, 11, 10, 0, tzinfo=timezone.utc),
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.REATIVADO,
+                    cod_alerta="R1",
+                    fonte=FonteDado.CEMADEN,
+                    payload={"cod_alerta": "R1", "fonte": "CEMADEN"},
+                )
+            ],
+            codigos_vistos={"R1"},
+            codigos_ausentes=set(),
+            codigos_resolvidos=set(),
+            fonte_por_codigo={"R1": FonteDado.CEMADEN},
+        )
+
+        aplicar_resultado_deteccao(resultado, {"R1": alerta}, "2026-06-11T11:00:00")
+
+        with sqlite3.connect(db_temporario) as conexao:
+            row = conexao.execute(
+                "SELECT status_interno, rodadas_ausente, nivel, evento FROM alertas WHERE cod_alerta = 'R1'"
+            ).fetchone()
+
+        assert row[0] == "ATIVO", f"Esperado ATIVO, obtido {row[0]}"
+        assert row[1] == 0, f"Esperado rodadas_ausente=0, obtido {row[1]}"
+        assert row[2] == "ALTO"
+        assert row[3] == "HIDROLOGICO"
+
+        with sqlite3.connect(db_temporario) as conexao:
+            count = conexao.execute(
+                "SELECT COUNT(*) FROM eventos WHERE tipo = 'AlertaReativado'"
+            ).fetchone()[0]
+        assert count == 1
+
 
     def test_criar_banco_preserva_dados(self, tmp_path, monkeypatch):
         db_path = tmp_path / "com_dados.db"

@@ -4,7 +4,7 @@ updated: 2026-06-11
 
 # Resilience Invariants
 
-1. **Counter assertion in `executar_ingestao`** — `novos + atualizados + inalterados + descartados + erros == total_recebido`. If you add a new outcome path, increment the matching counter.
+1. **Counter assertion in `executar_ingestao`** — `novos + atualizados + reativados + inalterados + descartados == coletados` per source. If you add a new outcome path, increment the matching counter.
 2. **Per-item `try/except` in the ingestion loop** — one bad alert must never stop the rest of the batch. Errors are counted, not raised.
 3. **Retry only on 5xx / 408 / 429 / URLError / socket.timeout** — 4xx (other than 408/429) re-raise immediately.
 4. **Transactional outbox** — INSERTs into alerts and outbox events must happen in the same SQLite transaction.
@@ -18,9 +18,10 @@ updated: 2026-06-11
 12. **Schema check before `_migrar_banco()`** — `criar_banco()` calls `_verificar_compatibilidade_schema()` first.
 13. **`Alerta.fonte` is `Annotated[FonteDado, Strict()]`, never a raw string** — strict cirúrgico via `Annotated`, not global `strict=True`.
 14. **`ResultadoDeteccao.fonte_por_codigo` is populated for EVERY code** in `codigos_vistos ∪ codigos_ausentes`.
-15. **`buscar_snapshots_ativos` reads `fonte` from the row via `FonteDado.from_string`** — safety net for corrupt data.
+15. **`buscar_snapshots` reads `fonte` from the row via `FonteDado.from_string`** — safety net for corrupt data. Returns snapshots of all statuses (not only ATIVO) so that RESOLVIDO alerts reappearing in the feed are detected.
 16. **`DataSource.coletar()` is side-effect-free except for network reads** — no print, no database writes, no filesystem.
 17. **Orchestrator isolates failures per source** — each `source.coletar()` call wrapped in `try/except FalhaDeColeta`.
-18. **`RelatorioFonte` counters obey the sanity assertion per source** — `coletados == novos + atualizados + inalterados + descartados + erros`.
+18. **`RelatorioFonte` counters obey the sanity assertion per source** — `coletados == novos + atualizados + reativados + inalterados + descartados`.
 19. **`CemadenSource.coletar()` captures ONLY `ValueError` when mapping each raw item** — internal bugs propagate.
 20. **Round-level failures wrapped in `FalhaDeColeta(fonte=self.fonte, causa=..., original=exc)` with `from exc`** — do not let raw transport exceptions leak from `coletar()`.
+21. **A RESOLVIDO alert reappearing in the feed MUST emit `AlertaReativado` and reactivate the row** — never INSERT (UNIQUE constraint) and never silently ignore.

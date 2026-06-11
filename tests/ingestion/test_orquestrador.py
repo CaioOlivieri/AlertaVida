@@ -346,6 +346,57 @@ def test_alerta_ausente_por_tres_rodadas_emite_resolvido_no_outbox(
     )
 
 
+def test_alerta_resolvido_que_reaparece_reativa_sem_crash(
+    db_temporario: Path,
+) -> None:
+    """Alerta resolvido que reaparece no feed emite AlertaReativado e reativa o row.
+
+    Reprodução do Bug 1: alerta presente na rodada 1, ausente nas rodadas 2-4
+    (vira RESOLVIDO), presente de novo na rodada 5.
+    Antes da correção: IntegrityError (UNIQUE constraint) abortava a rodada.
+    """
+    cod = "C1"
+    ult_at = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    alerta = _alerta(cod, FonteDado.CEMADEN, ult_atualizacao=ult_at)
+
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[
+            [alerta],  # rodada 1 — presente (CRIADO)
+            [],        # rodada 2 — ausente (1ª)
+            [],        # rodada 3 — ausente (2ª)
+            [],        # rodada 4 — ausente (3ª, RESOLVIDO)
+            [alerta],  # rodada 5 — reaparece (REATIVADO)
+        ],
+    )
+
+    relatorios = []
+    for _ in range(5):
+        relatorio = executar_ingestao([source])
+        relatorios.append(relatorio)
+
+    relatorio_5 = relatorios[-1]
+
+    assert relatorio_5.por_fonte[0].novos == 0
+    assert relatorio_5.por_fonte[0].reativados == 1
+
+    with sqlite3.connect(db_temporario) as conn:
+        row = conn.execute(
+            "SELECT status_interno, rodadas_ausente FROM alertas "
+            "WHERE cod_alerta = ? AND fonte = 'CEMADEN'",
+            (cod,),
+        ).fetchone()
+        reativados_count = conn.execute(
+            "SELECT COUNT(*) FROM eventos WHERE tipo = 'AlertaReativado'"
+        ).fetchone()[0]
+
+    assert row[0] == "ATIVO", "Alerta reativado deve ter status_interno ATIVO"
+    assert row[1] == 0, "Alerta reativado deve ter rodadas_ausente zerado"
+    assert reativados_count == 1, (
+        f"Esperado exatamente 1 AlertaReativado no outbox; encontrei {reativados_count}."
+    )
+
+
 def test_persistencia_de_fontes_anteriores_sobrevive_a_falha_posterior(
     db_temporario: Path,
     monkeypatch: pytest.MonkeyPatch,

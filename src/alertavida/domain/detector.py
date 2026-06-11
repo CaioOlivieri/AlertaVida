@@ -21,6 +21,7 @@ class TipoEventoDetectado(StrEnum):
     CRIADO = "AlertaCriado"
     ATUALIZADO = "AlertaAtualizado"
     RESOLVIDO = "AlertaResolvido"
+    REATIVADO = "AlertaReativado"
 
 
 @dataclass(frozen=True)
@@ -109,7 +110,14 @@ def detectar_mudancas(
         else:
             snapshot = snapshots_por_codigo[cod]
             if snapshot.status_interno == "RESOLVIDO":
-                pass
+                eventos.append(
+                    EventoDetectado(
+                        tipo=TipoEventoDetectado.REATIVADO,
+                        cod_alerta=cod,
+                        fonte=alerta.fonte,
+                        payload=_payload_de(alerta),
+                    )
+                )
             else:
                 ult_cur = (
                     alerta.ult_atualizacao.isoformat()

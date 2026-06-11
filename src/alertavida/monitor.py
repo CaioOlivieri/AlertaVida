@@ -26,7 +26,8 @@ def _formatar_relatorio(relatorio: RelatorioIngestao) -> str:
             linhas.append(
                 f"  {rf.fonte.value}: {rf.coletados} coletados "
                 f"({rf.novos} novos, {rf.atualizados} atualizados, "
-                f"{rf.inalterados} inalterados, {rf.descartados} descartados) "
+                f"{rf.reativados} reativados, {rf.inalterados} inalterados, "
+                f"{rf.descartados} descartados) "
                 f"em {rf.duracao_segundos:.2f}s"
             )
     linhas.append(f"Total: {relatorio.total} alertas")
