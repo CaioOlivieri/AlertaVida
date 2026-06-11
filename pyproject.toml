@@ -1,15 +1,30 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "alertavida"
 version = "0.2.0"
+description = "Real-time multi-source ingestion of natural-disaster alerts for the Brazilian public"
+authors = [{ name = "Caio Olivieri", email = "oliviericaio12@gmail.com" }]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+readme = "README.md"
+keywords = ["disaster", "alerts", "cemaden", "monitoring", "civil-defense"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
 requires-python = ">=3.13"
 dependencies = [
     "apscheduler>=3.10.0,<4.0",
     "pydantic>=2.0,<3.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/CaioOlivieri/AlertaVida"
+Issues = "https://github.com/CaioOlivieri/AlertaVida/issues"
 
 [dependency-groups]
 dev = [
