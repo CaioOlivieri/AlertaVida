@@ -30,6 +30,13 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.d
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
+def conectar() -> sqlite3.Connection:
+    """Abre conexão SQLite com busy_timeout para contenção multi-thread."""
+    conexao = sqlite3.connect(DB_PATH)
+    conexao.execute("PRAGMA busy_timeout=5000")
+    return conexao
+
+
 class SchemaIncompativelError(Exception):
     """Banco existente tem schema incompatível com a versão atual do código.
 
@@ -99,7 +106,8 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
 
 
 def criar_banco() -> None:
-    with sqlite3.connect(DB_PATH) as conexao:
+    with conectar() as conexao:
+        conexao.execute("PRAGMA journal_mode=WAL")
         _verificar_compatibilidade_schema(conexao)  # detecta bancos pré-A.1
         conexao.execute(
             """
@@ -175,7 +183,7 @@ def buscar_snapshots(fonte: FonteDado) -> list[AlertaSnapshot]:
     WHERE da query. Removeu filtro `status_interno = 'ATIVO'` para que
     alertas RESOLVIDO que reaparecem sejam detectados corretamente.
     """
-    with sqlite3.connect(DB_PATH) as conexao:
+    with conectar() as conexao:
         cursor = conexao.execute(
             """
             SELECT cod_alerta, fonte, nivel, evento, ult_atualizacao,
@@ -215,7 +223,7 @@ def aplicar_resultado_deteccao(
     permite que rodadas multi-fonte (Camada 5+) sejam tratadas sem
     mudanças nesta função.
     """
-    with sqlite3.connect(DB_PATH) as conexao:
+    with conectar() as conexao:
         eventos: list[EventoDetectado] = resultado.eventos
         for evento in eventos:
             agregado_id: int | None = None

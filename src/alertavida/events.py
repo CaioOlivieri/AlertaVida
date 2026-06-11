@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Callable
 
-from alertavida.database import DB_PATH
+from alertavida.database import conectar
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +73,7 @@ class OutboxDispatcher:
         agora = datetime.now(UTC).isoformat(timespec="seconds")
         processados = 0
 
-        with sqlite3.connect(DB_PATH) as conexao:
+        with conectar() as conexao:
             cursor = conexao.execute(
                 """
                 SELECT id, tipo, agregado_id, payload, schema_versao
