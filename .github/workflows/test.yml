@@ -1,5 +1,8 @@
 name: tests
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -31,6 +34,9 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
 
       - name: Run tests
         run: uv run pytest -v --cov=src --cov-report=term-missing
