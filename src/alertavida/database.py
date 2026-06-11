@@ -26,7 +26,6 @@ from alertavida.domain.detector import (
 )
 from alertavida.domain.enums import FonteDado
 
-
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 

@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.enums import EscopoGeografico
 
-
 BUFFER_PROXIMO_DEFAULT_GRAUS: float = 5.0
 ENV_BUFFER_PROXIMO: str = "ALERTAVIDA_BUFFER_PROXIMO_GRAUS"
 

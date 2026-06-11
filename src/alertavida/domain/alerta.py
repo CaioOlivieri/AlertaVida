@@ -19,11 +19,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, Strict, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    Strict,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from alertavida.domain.cobrade import validar_formato as _validar_formato_cobrade
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, FonteDado, NivelRisco, TipoEvento
+from alertavida.domain.enums import (
+    EscopoGeografico,
+    FonteClassificacao,
+    FonteDado,
+    NivelRisco,
+    TipoEvento,
+)
 from alertavida.domain.municipio import Municipio
 
 

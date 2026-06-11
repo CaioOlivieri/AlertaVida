@@ -14,7 +14,6 @@ from alertavida.domain.geographic import (
     classificar_escopo,
 )
 
-
 # ============================================================
 # Casos do BRASIL — coordenadas dentro do território
 # ============================================================

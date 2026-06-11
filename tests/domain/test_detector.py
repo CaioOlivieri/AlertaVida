@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from alertavida.domain.alerta import Alerta
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.detector import (
-    AlertaSnapshot,
     RODADAS_PARA_RESOLVER,
+    AlertaSnapshot,
     TipoEventoDetectado,
     detectar_mudancas,
 )
