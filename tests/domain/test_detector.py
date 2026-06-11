@@ -118,7 +118,7 @@ def test_alerta_ausente_resolve_apos_limite() -> None:
     assert res.codigos_ausentes == set()
 
 
-def test_alerta_resolvido_no_banco_nao_reativa() -> None:
+def test_alerta_resolvido_que_reaparece_emite_reativado() -> None:
     payload = {
         **_payload_base_cemaden(9006),
         "ult_atualizacao": "2026-05-02T08:00:00+00:00",
@@ -134,7 +134,10 @@ def test_alerta_resolvido_no_banco_nao_reativa() -> None:
         status_interno="RESOLVIDO",
     )
     res = detectar_mudancas([alerta], [snap])
-    assert res.eventos == []
+    assert len(res.eventos) == 1
+    assert res.eventos[0].tipo is TipoEventoDetectado.REATIVADO
+    assert res.eventos[0].cod_alerta == "9006"
+    assert res.eventos[0].payload["fonte"] == "CEMADEN"
 
 
 def test_multiplos_alertas_mix() -> None:

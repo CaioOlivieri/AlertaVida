@@ -168,12 +168,13 @@ def criar_banco() -> None:
         conexao.commit()
 
 
-def buscar_snapshots_ativos(fonte: FonteDado) -> list[AlertaSnapshot]:
-    """Retorna snapshots de alertas ATIVOS da fonte especificada.
+def buscar_snapshots(fonte: FonteDado) -> list[AlertaSnapshot]:
+    """Retorna snapshots de todos os alertas (qualquer status) da fonte.
 
     Cada snapshot carrega sua `fonte` como campo (lido da row, não
     hardcoded do parâmetro) — robustez contra futuras mudanças no
-    WHERE da query.
+    WHERE da query. Removeu filtro `status_interno = 'ATIVO'` para que
+    alertas RESOLVIDO que reaparecem sejam detectados corretamente.
     """
     with sqlite3.connect(DB_PATH) as conexao:
         cursor = conexao.execute(
@@ -181,7 +182,7 @@ def buscar_snapshots_ativos(fonte: FonteDado) -> list[AlertaSnapshot]:
             SELECT cod_alerta, fonte, nivel, evento, ult_atualizacao,
                    rodadas_ausente, status_interno
             FROM alertas
-            WHERE status_interno = 'ATIVO' AND fonte = ?
+            WHERE fonte = ?
             """,
             (fonte.value,),
         )
@@ -270,6 +271,40 @@ def aplicar_resultado_deteccao(
                     UPDATE alertas
                     SET nivel = ?, evento = ?, ult_atualizacao = ?,
                         visto_ultima_vez = ?, rodadas_ausente = 0,
+                        cobrade_codigo = ?, fonte_classificacao = ?
+                    WHERE fonte = ? AND cod_alerta = ?
+                    """,
+                    (
+                        alerta.nivel_risco.value,
+                        alerta.tipo_evento.value,
+                        ult,
+                        agora,
+                        alerta.cobrade_codigo,
+                        alerta.fonte_classificacao.value,
+                        alerta.fonte.value,
+                        evento.cod_alerta,
+                    ),
+                )
+                cur_id = conexao.execute(
+                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
+                    (alerta.fonte.value, evento.cod_alerta),
+                )
+                row = cur_id.fetchone()
+                agregado_id = row[0] if row is not None else None
+
+            elif evento.tipo is TipoEventoDetectado.REATIVADO:
+                alerta = alertas_por_codigo[evento.cod_alerta]
+                ult = (
+                    alerta.ult_atualizacao.isoformat()
+                    if alerta.ult_atualizacao
+                    else None
+                )
+                conexao.execute(
+                    """
+                    UPDATE alertas
+                    SET status_interno = 'ATIVO', nivel = ?, evento = ?,
+                        ult_atualizacao = ?, visto_ultima_vez = ?,
+                        rodadas_ausente = 0,
                         cobrade_codigo = ?, fonte_classificacao = ?
                     WHERE fonte = ? AND cod_alerta = ?
                     """,

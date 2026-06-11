@@ -15,7 +15,7 @@ updated: 2026-06-11
 | `domain/geographic.py` | `FaixaGeografica`, `classificar_escopo()` | `sources/cemaden.py` | integrated |
 | `monitor.py` | Entrypoint: `main()` → `criar_banco()`, `executar_ingestao()`, formatted report | CLI entrypoint | integrated |
 | `scheduler.py` | `agendar_ingestao()`: APScheduler `BackgroundScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs | Production service | integrated |
-| `database.py` | `criar_banco()`, `buscar_snapshots_ativos()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
+| `database.py` | `criar_banco()`, `buscar_snapshots()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
 | `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher` | `scheduler.py` | integrated |
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC, `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
@@ -30,7 +30,7 @@ scheduler.agendar_ingestao()
     → executar_ingestao([CemadenSource()])
       → CemadenSource().coletar() (urllib + 4 attempts, 2/4/8s backoff)
       → ResultadoColeta(alertas, descartados, coletado_em)
-      → buscar_snapshots_ativos(fonte=CEMADEN)
+      → buscar_snapshots(fonte=CEMADEN)
       → detectar_mudancas(alertas, snapshots)
       → aplicar_resultado_deteccao() (single transaction: alerts + outbox events)
 ```

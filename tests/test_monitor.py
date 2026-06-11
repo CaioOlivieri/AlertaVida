@@ -23,6 +23,7 @@ def test_formatar_relatorio_com_sucesso_inclui_contadores() -> None:
         atualizados=1,
         inalterados=10,
         descartados=1,
+        reativados=0,
         falha_coleta=False,
         coletado_em=datetime(2026, 5, 19, 14, 30, tzinfo=UTC),
         duracao_segundos=1.23,
@@ -38,6 +39,7 @@ def test_formatar_relatorio_com_sucesso_inclui_contadores() -> None:
     assert "15 coletados" in saida
     assert "3 novos" in saida
     assert "1 atualizado" in saida
+    assert "0 reativados" in saida
     assert "10 inalterados" in saida
     assert "1 descartado" in saida
     assert "1.23s" in saida

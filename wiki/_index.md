@@ -61,3 +61,4 @@ updated: 2026-06-11
 - [[decisions/schema-incompatibility-pre-a1]]
 - [[decisions/geographic-scope-bbox]]
 - [[decisions/scheduler-background-jobs]]
+- [[decisions/alert-reactivation-instead-of-crash]]
