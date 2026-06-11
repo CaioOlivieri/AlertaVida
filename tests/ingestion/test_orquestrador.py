@@ -346,6 +346,28 @@ def test_alerta_ausente_por_tres_rodadas_emite_resolvido_no_outbox(
     )
 
 
+def test_deduplica_cod_alerta_repetido_no_mesmo_batch(db_temporario: Path) -> None:
+    """cod_alerta duplicado no mesmo batch: 1 alerta, 1 descartado, sem crash."""
+    alerta = _alerta("D1", FonteDado.CEMADEN)
+    source = FakeDataSource(
+        fonte=FonteDado.CEMADEN,
+        alertas=[alerta, alerta],
+        descartados=0,
+    )
+    relatorio = executar_ingestao([source])
+
+    rf = relatorio.por_fonte[0]
+    assert rf.coletados == 2
+    assert rf.novos == 1
+    assert rf.descartados == 1
+
+    with sqlite3.connect(db_temporario) as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM alertas WHERE cod_alerta = 'D1' AND fonte = 'CEMADEN'"
+        ).fetchone()[0]
+    assert rows == 1
+
+
 def test_alerta_resolvido_que_reaparece_reativa_sem_crash(
     db_temporario: Path,
 ) -> None:
