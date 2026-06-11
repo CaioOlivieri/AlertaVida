@@ -5,9 +5,14 @@ from pydantic import ValidationError
 
 from alertavida.domain.alerta import Alerta
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import EscopoGeografico, FonteClassificacao, FonteDado, NivelRisco, TipoEvento
+from alertavida.domain.enums import (
+    EscopoGeografico,
+    FonteClassificacao,
+    FonteDado,
+    NivelRisco,
+    TipoEvento,
+)
 from alertavida.domain.municipio import Municipio
-
 
 # ============================================================
 # Criação direta — invariantes do construtor

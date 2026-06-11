@@ -1,6 +1,7 @@
 import pytest
-from alertavida import database as db_module
+
 import alertavida.events as events_module
+from alertavida import database as db_module
 
 
 @pytest.fixture

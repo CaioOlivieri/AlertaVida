@@ -1,6 +1,5 @@
 from alertavida.domain.cobrade import mapear_cemaden, validar_formato
 
-
 # ============================================================
 # mapear_cemaden
 # ============================================================

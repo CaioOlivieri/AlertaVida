@@ -12,7 +12,6 @@ from alertavida.sources import FalhaDeColeta
 from alertavida.sources.cemaden import CemadenSource
 from tests.sources.contrato import verificar_contrato_data_source
 
-
 # ============================================================
 # Helpers
 # ============================================================
