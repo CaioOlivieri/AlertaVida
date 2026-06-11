@@ -131,9 +131,20 @@ def executar_ingestao(
             )
             continue
 
+        alertas_deduplicados: list[Alerta] = []
+        codigos_vistos_neste_batch: set[str] = set()
+        descartados_dedup = 0
+        for a in resultado_coleta.alertas:
+            if a.cod_alerta in codigos_vistos_neste_batch:
+                descartados_dedup += 1
+            else:
+                codigos_vistos_neste_batch.add(a.cod_alerta)
+                alertas_deduplicados.append(a)
+        descartados_total = resultado_coleta.descartados + descartados_dedup
+
         snapshots = buscar_snapshots(fonte)
-        resultado_det = detectar_mudancas(resultado_coleta.alertas, snapshots)
-        alertas_por_codigo = {a.cod_alerta: a for a in resultado_coleta.alertas}
+        resultado_det = detectar_mudancas(alertas_deduplicados, snapshots)
+        alertas_por_codigo = {a.cod_alerta: a for a in alertas_deduplicados}
         aplicar_resultado_deteccao(
             resultado_det,
             alertas_por_codigo,
@@ -159,7 +170,7 @@ def executar_ingestao(
                 atualizados=atualizados_count,
                 reativados=reativados_count,
                 inalterados=inalterados_count,
-                descartados=resultado_coleta.descartados,
+                descartados=descartados_total,
                 falha_coleta=False,
                 coletado_em=resultado_coleta.coletado_em,
                 duracao_segundos=time.monotonic() - inicio,
