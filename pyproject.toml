@@ -19,6 +19,19 @@ dev = [
     "ruff>=0.6",
 ]
 
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/alertavida/events.py" = ["E501"]
+"src/alertavida/ingestion/orquestrador.py" = ["E501", "F821"]
+"tests/sources/test_cemaden.py" = ["E501"]
+"tests/test_database.py" = ["E501"]
+"tests/test_events.py" = ["E501"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -19,7 +19,7 @@ em DataSource, invariante nova em ResultadoColeta) quebram TODAS as
 sources em uma única definição. Manutenção centralizada.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Callable
 
 from alertavida.domain.enums import FonteDado

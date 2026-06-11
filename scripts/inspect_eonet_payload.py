@@ -221,8 +221,12 @@ def print_report(stats_a: dict[str, Any], stats_b: dict[str, Any]) -> None:
     print(f"  {'events com 1 fix':<25} {stats_a['single_fix']:>10} {stats_b['single_fix']:>12}")
     print(f"  {'events com N>1 fixes':<25} {stats_a['multi_fix']:>10} {stats_b['multi_fix']:>12}")
     print(f"  {'total fixes':<25} {stats_a['total_fixes']:>10} {stats_b['total_fixes']:>12}")
-    print(f"  {'média fixes/event':<25} {stats_a['avg_fixes']:>10.2f} {stats_b['avg_fixes']:>12.2f}")
-    print(f"  {'mediana fixes/event':<25} {stats_a['median_fixes']:>10.1f} {stats_b['median_fixes']:>12.1f}")
+    a, b = stats_a, stats_b
+    print(f"  {'média fixes/event':<25} {a['avg_fixes']:>10.2f} {b['avg_fixes']:>12.2f}")
+    print(
+        f"  {'mediana fixes/event':<25}"
+        f" {a['median_fixes']:>10.1f} {b['median_fixes']:>12.1f}"
+    )
     print(f"  {'máximo fixes/event':<25} {stats_a['max_fixes']:>10} {stats_b['max_fixes']:>12}")
 
     print("\n=== Geometria espacial (tipo do fix) ===")
@@ -237,7 +241,11 @@ def print_report(stats_a: dict[str, Any], stats_b: dict[str, Any]) -> None:
     print("\n=== Magnitudes ===")
     print(f"  {'Métrica':<30} {'open_req':>10} {'all_30d_req':>12}")
     print(f"  {'-'*30} {'-'*10} {'-'*12}")
-    print(f"  {'events com magnitude != null':<30} {stats_a['magnitude_events']:>10} {stats_b['magnitude_events']:>12}")
+    a, b = stats_a, stats_b
+    print(
+        f"  {'events com magnitude != null':<30}"
+        f" {a['magnitude_events']:>10} {b['magnitude_events']:>12}"
+    )
     all_units = set(stats_a["magnitude_unit_counts"]) | set(stats_b["magnitude_unit_counts"])
     for unit in sorted(all_units):
         ca = stats_a["magnitude_unit_counts"].get(unit, 0)
@@ -245,7 +253,10 @@ def print_report(stats_a: dict[str, Any], stats_b: dict[str, Any]) -> None:
         print(f"  {('  unit=' + unit):<30} {ca:>10} {cb:>12}")
 
     print("\n=== Escopo Brasil (bbox simples, primeiro fix) ===")
-    print(f"  bbox: lat [{BRASIL_LAT_MIN}, {BRASIL_LAT_MAX}] lon [{BRASIL_LON_MIN}, {BRASIL_LON_MAX}]")
+    print(
+        f"  bbox: lat [{BRASIL_LAT_MIN}, {BRASIL_LAT_MAX}]"
+        f" lon [{BRASIL_LON_MIN}, {BRASIL_LON_MAX}]"
+    )
     print(f"  {'Req':<15} {'eventos Brasil':>14} {'total':>8}")
     print(f"  {'-'*15} {'-'*14} {'-'*8}")
     print(f"  {'open':<15} {stats_a['brasil_count']:>14} {stats_a['total']:>8}")
@@ -315,8 +326,12 @@ def write_md_report(
     lines.append(f"\n| events com 1 fix | {stats_a['single_fix']} | {stats_b['single_fix']} |")
     lines.append(f"\n| events com N>1 fixes | {stats_a['multi_fix']} | {stats_b['multi_fix']} |")
     lines.append(f"\n| total fixes | {stats_a['total_fixes']} | {stats_b['total_fixes']} |")
-    lines.append(f"\n| média fixes/event | {stats_a['avg_fixes']:.2f} | {stats_b['avg_fixes']:.2f} |")
-    lines.append(f"\n| mediana fixes/event | {stats_a['median_fixes']:.1f} | {stats_b['median_fixes']:.1f} |")
+    sa, sb = stats_a, stats_b
+    lines.append(f"\n| média fixes/event | {sa['avg_fixes']:.2f} | {sb['avg_fixes']:.2f} |")
+    lines.append(
+        f"\n| mediana fixes/event"
+        f" | {sa['median_fixes']:.1f} | {sb['median_fixes']:.1f} |"
+    )
     lines.append(f"\n| máximo fixes/event | {stats_a['max_fixes']} | {stats_b['max_fixes']} |")
 
     # Geometria espacial
