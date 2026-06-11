@@ -3,7 +3,7 @@
 Migra a lógica HTTP+retry+backoff, normalização de payload e mapeamento
 para domínio Alerta que vivia em monitor.py (pré-B.1.b).
 
-Design decisions registradas em CONTEXT.md §8:
+Design decisions registradas em wiki/decisions/decision-record.md:
 - opener injetável via construtor (testes explícitos, sem patch por string)
 - url injetável via construtor (futuro: staging, mock server)
 - timeout_segundos injetável (futuro: ajuste por ambiente)
