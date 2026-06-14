@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-06-11
+updated: 2026-06-14
 
 ## Module wiring table (single source of truth)
 
@@ -21,6 +21,7 @@ updated: 2026-06-11
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC, `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(DataSource)`: HTTP + retry + backoff + payload normalization | `ingestion/orquestrador.py` | integrated |
+| `sources/nasa_eonet.py` | `NasaEonetSource(DataSource)`: EONET v3 `status=open`, builds `Alerta` directly, category→`TipoEvento` map, most-recent-fix selection, `nivel_risco=INDETERMINADO` | not yet wired into orchestrator (C.3) | implemented |
 
 ## Current flow
 
@@ -36,4 +37,7 @@ scheduler.agendar_ingestao()
       → aplicar_resultado_deteccao() (single transaction: alerts + outbox events)
 ```
 
-Layer 4 Part C.1 (NasaEonetSource) is the next planned work.
+Layer 4 Part C.1 (`NasaEonetSource`) is **implemented** but not yet in the orchestrator's
+source list — production still runs `executar_ingestao([CemadenSource()])`. Next planned work:
+C.2 (numeric EONET→COBRADE mapping) and C.3 (wire `NasaEonetSource()` into `monitor.py` /
+`scheduler.py` + multi-source orchestration tests).

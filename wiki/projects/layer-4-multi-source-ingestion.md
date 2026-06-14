@@ -1,6 +1,6 @@
 status: in-progress
 sources: [[raw/context-md-2026-06-11.pt.md]] (§3)
-updated: 2026-06-11
+updated: 2026-06-14
 
 # Layer 4: Multi-Source Ingestion (in progress)
 
@@ -41,13 +41,22 @@ Three chained commits (B.2.a + hardening-1 + hardening-2; all CI green). `ingest
 
 `scripts/inspect_eonet_payload.py` (441 lines) captured real EONET v3 data: 500 open events (497 wildfires), 328 events last 30 days, 0 open in Brazil, 3 in history. Geometry 100% Point. Report in `docs/analise_eonet_2026-05-18.md` (now [[raw/analise-eonet-2026-05-18.md]]).
 
-## C.1 — NasaEonetSource (next)
+## C.1 — NasaEonetSource (DONE 2026-06-14)
 
-Implement `NasaEonetSource(DataSource)` following same pattern as `CemadenSource`: keyword-only injectable constructor, HTTP GET → JSON parse → `events[]` → Alerta mapping. EONET categories → COBRADE subgroups via expanded `domain/cobrade.py`. Synthetic fixtures in `tests/fixtures/eonet/`.
+`NasaEonetSource(DataSource)` in `sources/nasa_eonet.py`. Same pattern as `CemadenSource` (keyword-only injectable `url`/`opener`/`timeout`, HTTP GET + retry/backoff, `_normalize_payload`, `FalhaDeColeta` on round failure), but builds `Alerta` **directly** instead of via `from_dict` because the v3 payload diverges:
 
-## C.2 — EONET COBRADE mapping
+- coordinates from `geometry[].coordinates` `[lon, lat]` (GeoJSON, nested)
+- no severity → `nivel_risco = INDETERMINADO` (data honesty)
+- category `id` (English) → `TipoEvento` via module-local `CATEGORIA_EONET_PARA_TIPO` (invariant 10)
+- `geometry[].date` per fix → uses the **most recent fix by date**, not list order
 
-Expand `domain/cobrade.py` with `EVENTO_EONET_PARA_COBRADE`. Map relevant categories: wildires → CLIMATOLOGICO, severeStorms → METEOROLOGICO, floods → HIDROLOGICO, volcanoes/landslides → GEOLOGICO.
+Production query is `status=open` (active events only). `cobrade_codigo` left None / `FonteClassificacao.INDETERMINADA` — numeric COBRADE deferred to C.2 (atomic invariant respected). Synthetic fixtures in `tests/fixtures/eonet/`. Two chained commits (C.1.a fixtures + C.1.b source). Reuses `verificar_contrato_data_source`. 24 new tests, 252 total, CI green.
+
+**Scope note:** wiki's original C.1 bullet folded COBRADE mapping into C.1; split out to C.2 to avoid assigning numeric COBRADE codes against the official Defesa Civil table under uncertainty ("não inventar mapeamentos baseado em suposição").
+
+## C.2 — EONET COBRADE mapping (next)
+
+Expand `domain/cobrade.py` with `EVENTO_EONET_PARA_COBRADE` + `mapear_eonet`, and wire it into `NasaEonetSource._montar_alerta` (replacing the C.1 `cobrade=None`). Map relevant categories to COBRADE codes: wildfires → CLIMATOLOGICO, severeStorms → METEOROLOGICO, floods → HIDROLOGICO, volcanoes/landslides → GEOLOGICO. `TipoEvento` mapping already exists in the source (C.1).
 
 ## C.3 — Orchestrator integration
 
