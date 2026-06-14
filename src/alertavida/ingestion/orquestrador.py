@@ -11,12 +11,15 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from alertavida.database import aplicar_resultado_deteccao, buscar_snapshots
 from alertavida.domain.detector import TipoEventoDetectado, detectar_mudancas
 from alertavida.domain.enums import FonteDado
 from alertavida.sources.base import DataSource, FalhaDeColeta
+
+if TYPE_CHECKING:
+    from alertavida.domain import Alerta
 
 
 @dataclass(frozen=True, slots=True)

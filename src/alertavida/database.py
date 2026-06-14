@@ -84,12 +84,14 @@ def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
 
 
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
-    """Reservado para migrations futuras.
+    """Aplica migrations aditivas idempotentes ao schema existente.
 
-    A migration de PK composta para surrogate (A.1.4) não foi necessária
-    aqui porque o banco estava vazio quando o refator aconteceu. Mantida
-    como ponto de extensão obrigatório — qualquer mudança de schema futura
-    é registrada nesta função.
+    Hoje cobre as colunas COBRADE da Camada 4 Parte A.2 (`cobrade_codigo`,
+    `fonte_classificacao`), adicionadas via `ALTER TABLE` apenas quando
+    ausentes. A migration de PK composta para surrogate (A.1.4) nunca passou
+    por aqui — o banco estava vazio no refator e rupturas estruturais são
+    barradas antes por `_verificar_compatibilidade_schema`. É o ponto de
+    extensão obrigatório para qualquer mudança de schema aditiva futura.
     """
     # Camada 4 / A.2 — colunas COBRADE
     cursor = conexao.execute("PRAGMA table_info(alertas)")
