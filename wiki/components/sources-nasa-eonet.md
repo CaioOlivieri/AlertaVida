@@ -11,10 +11,10 @@ happens in the domain (`classificar_escopo`), not at the source — see
 
 Encapsulates:
 
-- HTTP GET with 4 attempts (immediate, 2s, 4s, 8s backoff), no retry on 4xx (except 408/429). Shares the retry shape with [[components/sources-cemaden]].
 - Payload normalization (`_normalize_payload`): extracts `events[]`, raises `FalhaDeColeta` on unknown format (invariant 23).
 - Per-event mapping via `_montar_alerta` (catches only `ValueError` — `TypeError`/`AttributeError`/`KeyError` propagate as bugs).
-- Round-level failures wrapped in `FalhaDeColeta(fonte=EONET, ...)` with `from exc`.
+
+HTTP transport (retry/backoff + JSON parse, both raising `FalhaDeColeta(fonte=EONET, ...)`) is shared via [[components/sources-http]] — same module used by [[components/sources-cemaden]].
 
 ## Why direct `Alerta` construction (not `Alerta.from_dict`)
 
@@ -36,8 +36,8 @@ The v3 payload shape diverges from CEMADEN, so `from_dict` does not fit:
 ## Constructor
 
 Keyword-only with injectable `url`, `opener`, `timeout_segundos`. Production query is
-`status=open&limit=500`. Local `_RespostaHTTP` Protocol (PEP 544) for strict-by-contract
-typing of the HTTP response.
+`status=open&limit=500`. The `RespostaHTTP` Protocol and `Opener` type used for
+strict-by-contract typing live in [[components/sources-http]].
 
 ## Not yet wired (C.3)
 

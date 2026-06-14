@@ -20,6 +20,7 @@ updated: 2026-06-14
 | `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher` | `scheduler.py` | integrated |
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC, `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
+| `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener` | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(DataSource)`: HTTP + retry + backoff + payload normalization | `ingestion/orquestrador.py` | integrated |
 | `sources/nasa_eonet.py` | `NasaEonetSource(DataSource)`: EONET v3 `status=open`, builds `Alerta` directly, category→`TipoEvento` map, most-recent-fix selection, `nivel_risco=INDETERMINADO` | not yet wired into orchestrator (C.3) | implemented |
 

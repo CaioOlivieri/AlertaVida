@@ -3,9 +3,9 @@
 EONET (Earth Observatory Natural Event Tracker) entrega eventos naturais
 globais (incêndios, tempestades, vulcões, inundações). Camada 4 Parte C.1.
 
-Segue o mesmo padrão de CemadenSource (HTTP + retry/backoff + normalização +
-mapeamento para domínio), mas constrói o Alerta DIRETAMENTE em vez de usar
-Alerta.from_dict, porque o shape do payload v3 diverge do CEMADEN:
+Compartilha o transporte HTTP (retry/backoff) e o parsing de JSON com
+CemadenSource via `sources/_http.py`, mas constrói o Alerta DIRETAMENTE em vez
+de usar Alerta.from_dict, porque o shape do payload v3 diverge do CEMADEN:
 
 - Coordenadas vivem em geometry[].coordinates = [lon, lat] (ordem GeoJSON,
   aninhada). from_dict espera latitude/longitude escalares no topo.
@@ -22,27 +22,19 @@ INDETERMINADA). O código COBRADE numérico exige bater na tabela oficial da
 Defesa Civil e é trabalho da Parte C.2. O invariante atômico
 (cobrade_codigo IS NULL ⇔ fonte_classificacao == INDETERMINADA) é respeitado.
 
-Invariantes do contrato (espelham CemadenSource):
+Invariantes do contrato:
 - coletar() captura APENAS ValueError ao montar cada evento. Bugs internos
   (TypeError, AttributeError, KeyError) propagam para diagnóstico.
-- Falhas de rodada (URLError, HTTPError 5xx/408/429 após retries,
-  socket.timeout, JSONDecodeError, UnicodeDecodeError) sobem como
-  FalhaDeColeta com fonte=EONET, causa legível, original encadeada.
-- HTTPError 4xx (exceto 408/429) propaga imediatamente sem retry.
+- Falhas de rodada (rede, HTTPError, JSON inválido) sobem como FalhaDeColeta
+  com fonte=EONET — geradas em sources/_http.py.
 """
 
 from __future__ import annotations
 
-import json
-import logging
-import socket
-import time
-from contextlib import AbstractContextManager
 from datetime import datetime, timezone
-from typing import Any, Callable, Final, Protocol
-from urllib.error import HTTPError, URLError
+from typing import Any, Final
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from pydantic import ValidationError
 
@@ -55,6 +47,12 @@ from alertavida.domain.enums import (
     TipoEvento,
 )
 from alertavida.domain.geographic import classificar_escopo
+from alertavida.sources._http import (
+    TIMEOUT_SEGUNDOS,
+    Opener,
+    fetch_com_retry,
+    parse_json,
+)
 from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
 
 EONET_BASE_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
@@ -62,12 +60,7 @@ EONET_BASE_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
 # fechados são histórico, ruído para um sistema de alerta em tempo real.
 EONET_PARAMS: Final[dict[str, str | int]] = {"status": "open", "limit": 500}
 URL_EONET = f"{EONET_BASE_URL}?{urlencode(EONET_PARAMS)}"
-TIMEOUT_SEGUNDOS: float = 30.0
-MAX_TENTATIVAS: int = 4
-BACKOFF_INICIAL: float = 2.0
 USER_AGENT: str = "AlertaVida/1.0 (+https://github.com/CaioOlivieri/AlertaVida)"
-
-logger = logging.getLogger(__name__)
 
 # Mapeamento categoria EONET v3 → TipoEvento (grupo COBRADE neutro).
 # Inclui apenas categorias cuja correspondência de GRUPO é inequívoca, espelhando
@@ -81,20 +74,6 @@ CATEGORIA_EONET_PARA_TIPO: Final[dict[str, TipoEvento]] = {
     "volcanoes": TipoEvento.GEOLOGICO,
     "landslides": TipoEvento.GEOLOGICO,
 }
-
-
-class _RespostaHTTP(Protocol):
-    """Contrato mínimo que NasaEonetSource usa de uma resposta HTTP.
-
-    Strict pelo contrato usado (read() -> bytes), não pela classe
-    http.client.HTTPResponse concreta. Fakes em teste só implementam read().
-    PEP 544.
-    """
-
-    def read(self) -> bytes: ...
-
-
-Opener = Callable[..., AbstractContextManager[_RespostaHTTP]]
 
 
 class NasaEonetSource(DataSource):
@@ -122,35 +101,14 @@ class NasaEonetSource(DataSource):
         return FonteDado.EONET
 
     def coletar(self) -> ResultadoColeta:
-        try:
-            raw = self._fetch_com_retry()
-        except (URLError, socket.timeout) as exc:
-            raise FalhaDeColeta(
-                fonte=self.fonte,
-                causa=f"rede esgotada após {MAX_TENTATIVAS} tentativas",
-                original=exc,
-            ) from exc
-        except HTTPError as exc:
-            raise FalhaDeColeta(
-                fonte=self.fonte,
-                causa=f"HTTPError {exc.code}",
-                original=exc,
-            ) from exc
-
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except UnicodeDecodeError as exc:
-            raise FalhaDeColeta(
-                fonte=self.fonte,
-                causa="response não é UTF-8",
-                original=exc,
-            ) from exc
-        except json.JSONDecodeError as exc:
-            raise FalhaDeColeta(
-                fonte=self.fonte,
-                causa="response não é JSON válido",
-                original=exc,
-            ) from exc
+        raw = fetch_com_retry(
+            self._url,
+            fonte=self.fonte,
+            opener=self._opener,
+            user_agent=USER_AGENT,
+            timeout_segundos=self._timeout_segundos,
+        )
+        payload = parse_json(raw, fonte=self.fonte)
 
         eventos = self._normalize_payload(payload)
         alertas: list[Alerta] = []
@@ -167,31 +125,6 @@ class NasaEonetSource(DataSource):
             descartados=descartados,
             coletado_em=datetime.now(timezone.utc),
         )
-
-    def _fetch_com_retry(self) -> bytes:
-        ultima_excecao: Exception | None = None
-        request = Request(self._url, headers={"User-Agent": USER_AGENT})
-
-        for tentativa in range(MAX_TENTATIVAS):
-            tentativa_humana = tentativa + 1
-            logger.info("[Tentativa %s/%s]", tentativa_humana, MAX_TENTATIVAS)
-            try:
-                with self._opener(request, timeout=self._timeout_segundos) as response:  # type: ignore[call-arg]
-                    return response.read()
-            except HTTPError as exc:
-                ultima_excecao = exc
-                if 400 <= exc.code < 500 and exc.code not in (408, 429):
-                    raise
-            except (URLError, socket.timeout) as exc:
-                ultima_excecao = exc
-
-            if tentativa_humana < MAX_TENTATIVAS:
-                espera = BACKOFF_INICIAL * (2**tentativa)
-                logger.warning("Aguardando %gs antes da próxima tentativa...", espera)
-                time.sleep(espera)
-
-        assert ultima_excecao is not None
-        raise ultima_excecao
 
     def _normalize_payload(self, payload: object) -> list[dict]:
         """Extrai a lista events[] do envelope EONET v3.

@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone
 from unittest.mock import Mock
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 
 import pytest
 
@@ -137,51 +137,6 @@ class TestMontarAlerta:
 
 
 # ============================================================
-# _fetch_com_retry
-# ============================================================
-
-
-class TestFetchComRetry:
-    def test_sucesso_primeira_tentativa(self, monkeypatch):
-        payload_bytes = b'{"events": []}'
-        opener = _opener_de_payload(payload_bytes)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
-        source = NasaEonetSource(opener=opener)
-        assert source._fetch_com_retry() == payload_bytes
-        assert opener.call_count == 1
-
-    def test_sucesso_apos_falhas_temporarias(self, monkeypatch):
-        ctx_ok = _opener_de_payload(b"ok").return_value
-        opener = Mock(side_effect=[URLError("timeout"), URLError("conexao"), ctx_ok])
-        sleeps = []
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda s: sleeps.append(s))
-        source = NasaEonetSource(opener=opener)
-        assert source._fetch_com_retry() == b"ok"
-        assert opener.call_count == 3
-        assert len(sleeps) == 2
-
-    def test_falha_4xx_nao_faz_retry(self, monkeypatch):
-        err = HTTPError(url="https://exemplo", code=404, msg="Not Found", hdrs=None, fp=None)
-        opener = Mock(side_effect=err)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
-        source = NasaEonetSource(opener=opener)
-        with pytest.raises(HTTPError) as exc_info:
-            source._fetch_com_retry()
-        assert exc_info.value.code == 404
-        assert opener.call_count == 1
-
-    def test_esgota_tentativas_e_propaga(self, monkeypatch):
-        opener = Mock(side_effect=URLError("falha"))
-        sleeps = []
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda s: sleeps.append(s))
-        source = NasaEonetSource(opener=opener)
-        with pytest.raises(URLError):
-            source._fetch_com_retry()
-        assert opener.call_count == 4
-        assert len(sleeps) == 3
-
-
-# ============================================================
 # coletar — invariantes
 # ============================================================
 
@@ -189,27 +144,27 @@ class TestFetchComRetry:
 class TestColetar:
     def test_coletado_em_e_aware(self, monkeypatch):
         opener = _opener_de_eventos()
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         resultado = NasaEonetSource(opener=opener).coletar()
         assert resultado.coletado_em.tzinfo is not None
 
     def test_alertas_tem_fonte_eonet(self, monkeypatch):
         opener = _opener_de_eventos(INCENDIO_BRASIL)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         resultado = NasaEonetSource(opener=opener).coletar()
         assert len(resultado.alertas) == 1
         assert resultado.alertas[0].fonte == FonteDado.EONET
 
     def test_evento_sem_geometry_conta_como_descartado(self, monkeypatch):
         opener = _opener_de_eventos(INCENDIO_BRASIL, EVENTO_SEM_GEOMETRY)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         resultado = NasaEonetSource(opener=opener).coletar()
         assert len(resultado.alertas) == 1
         assert resultado.descartados == 1
 
     def test_propaga_typeerror_como_bug(self, monkeypatch):
         opener = _opener_de_eventos(INCENDIO_BRASIL)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
 
         def montar_que_levanta_typeerror(self, evento):
             raise TypeError("bug interno simulado")
@@ -227,7 +182,7 @@ class TestColetar:
 class TestColetarFalhaDeColeta:
     def test_levanta_falha_em_rede_esgotada(self, monkeypatch):
         opener = Mock(side_effect=URLError("falha persistente"))
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         with pytest.raises(FalhaDeColeta) as exc_info:
             NasaEonetSource(opener=opener).coletar()
         assert exc_info.value.fonte == FonteDado.EONET
@@ -235,28 +190,28 @@ class TestColetarFalhaDeColeta:
 
     def test_levanta_falha_em_json_invalido(self, monkeypatch):
         opener = _opener_de_payload(b"{ nao eh json valido")
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         with pytest.raises(FalhaDeColeta) as exc_info:
             NasaEonetSource(opener=opener).coletar()
         assert isinstance(exc_info.value.original, json.JSONDecodeError)
 
     def test_levanta_falha_em_unicode_invalido(self, monkeypatch):
         opener = _opener_de_payload(b"\xff\xfe invalido utf-8")
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         with pytest.raises(FalhaDeColeta) as exc_info:
             NasaEonetSource(opener=opener).coletar()
         assert isinstance(exc_info.value.original, UnicodeDecodeError)
 
     def test_levanta_falha_quando_dict_sem_events(self, monkeypatch):
         opener = _opener_de_payload(b'{"items": []}')
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         with pytest.raises(FalhaDeColeta) as exc_info:
             NasaEonetSource(opener=opener).coletar()
         assert "não reconhecido" in exc_info.value.causa
 
     def test_levanta_falha_quando_payload_nao_e_dict(self, monkeypatch):
         opener = _opener_de_payload(b'["lista no topo"]')
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         with pytest.raises(FalhaDeColeta) as exc_info:
             NasaEonetSource(opener=opener).coletar()
         assert "inesperado" in exc_info.value.causa
@@ -270,5 +225,5 @@ class TestColetarFalhaDeColeta:
 class TestContrato:
     def test_obedece_contrato_data_source(self, monkeypatch):
         opener = _opener_de_eventos(INCENDIO_BRASIL, INCENDIO_EXTERIOR)
-        monkeypatch.setattr("alertavida.sources.nasa_eonet.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         verificar_contrato_data_source(lambda: NasaEonetSource(opener=opener))
