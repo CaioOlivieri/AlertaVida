@@ -138,18 +138,10 @@ def criar_banco() -> None:
             )
             """
         )
-        conexao.execute(
-            "CREATE INDEX IF NOT EXISTS idx_uf ON alertas (uf)"
-        )
-        conexao.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evento ON alertas (evento)"
-        )
-        conexao.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nivel ON alertas (nivel)"
-        )
-        conexao.execute(
-            "CREATE INDEX IF NOT EXISTS idx_fonte ON alertas (fonte)"
-        )
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_uf ON alertas (uf)")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_evento ON alertas (evento)")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_nivel ON alertas (nivel)")
+        conexao.execute("CREATE INDEX IF NOT EXISTS idx_fonte ON alertas (fonte)")
         conexao.execute(
             "CREATE INDEX IF NOT EXISTS idx_escopo_geografico ON alertas (escopo_geografico)"
         )
@@ -209,6 +201,16 @@ def buscar_snapshots(fonte: FonteDado) -> list[AlertaSnapshot]:
         ]
 
 
+def _executar_retornando_id(conexao: sqlite3.Connection, sql: str, params: tuple) -> int | None:
+    """Executa um UPDATE ... RETURNING id e devolve o id (None se 0 linhas).
+
+    Substitui o par UPDATE + SELECT id por uma única query. RETURNING exige
+    SQLite >= 3.35 (Python 3.13 embute >= 3.40).
+    """
+    row = conexao.execute(sql, params).fetchone()
+    return row[0] if row is not None else None
+
+
 def aplicar_resultado_deteccao(
     resultado: ResultadoDeteccao,
     alertas_por_codigo: dict[str, "Alerta"],
@@ -232,11 +234,7 @@ def aplicar_resultado_deteccao(
 
             if evento.tipo is TipoEventoDetectado.CRIADO:
                 alerta = alertas_por_codigo[evento.cod_alerta]
-                ult = (
-                    alerta.ult_atualizacao.isoformat()
-                    if alerta.ult_atualizacao
-                    else None
-                )
+                ult = alerta.ult_atualizacao.isoformat() if alerta.ult_atualizacao else None
                 cursor = conexao.execute(
                     """
                     INSERT INTO alertas (
@@ -268,20 +266,29 @@ def aplicar_resultado_deteccao(
                 )
                 agregado_id = cursor.lastrowid
 
-            elif evento.tipo is TipoEventoDetectado.ATUALIZADO:
+            elif evento.tipo in (
+                TipoEventoDetectado.ATUALIZADO,
+                TipoEventoDetectado.REATIVADO,
+            ):
                 alerta = alertas_por_codigo[evento.cod_alerta]
-                ult = (
-                    alerta.ult_atualizacao.isoformat()
-                    if alerta.ult_atualizacao
-                    else None
+                ult = alerta.ult_atualizacao.isoformat() if alerta.ult_atualizacao else None
+                # REATIVADO reativa a linha (status volta a ATIVO); ATUALIZADO
+                # mantém o status. set_status é literal constante (não entrada
+                # externa) — sem risco de injeção SQL.
+                set_status = (
+                    "status_interno = 'ATIVO', "
+                    if evento.tipo is TipoEventoDetectado.REATIVADO
+                    else ""
                 )
-                conexao.execute(
-                    """
+                agregado_id = _executar_retornando_id(
+                    conexao,
+                    f"""
                     UPDATE alertas
-                    SET nivel = ?, evento = ?, ult_atualizacao = ?,
+                    SET {set_status}nivel = ?, evento = ?, ult_atualizacao = ?,
                         visto_ultima_vez = ?, rodadas_ausente = 0,
                         cobrade_codigo = ?, fonte_classificacao = ?
                     WHERE fonte = ? AND cod_alerta = ?
+                    RETURNING id
                     """,
                     (
                         alerta.nivel_risco.value,
@@ -294,62 +301,18 @@ def aplicar_resultado_deteccao(
                         evento.cod_alerta,
                     ),
                 )
-                cur_id = conexao.execute(
-                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
-                    (alerta.fonte.value, evento.cod_alerta),
-                )
-                row = cur_id.fetchone()
-                agregado_id = row[0] if row is not None else None
-
-            elif evento.tipo is TipoEventoDetectado.REATIVADO:
-                alerta = alertas_por_codigo[evento.cod_alerta]
-                ult = (
-                    alerta.ult_atualizacao.isoformat()
-                    if alerta.ult_atualizacao
-                    else None
-                )
-                conexao.execute(
-                    """
-                    UPDATE alertas
-                    SET status_interno = 'ATIVO', nivel = ?, evento = ?,
-                        ult_atualizacao = ?, visto_ultima_vez = ?,
-                        rodadas_ausente = 0,
-                        cobrade_codigo = ?, fonte_classificacao = ?
-                    WHERE fonte = ? AND cod_alerta = ?
-                    """,
-                    (
-                        alerta.nivel_risco.value,
-                        alerta.tipo_evento.value,
-                        ult,
-                        agora,
-                        alerta.cobrade_codigo,
-                        alerta.fonte_classificacao.value,
-                        alerta.fonte.value,
-                        evento.cod_alerta,
-                    ),
-                )
-                cur_id = conexao.execute(
-                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
-                    (alerta.fonte.value, evento.cod_alerta),
-                )
-                row = cur_id.fetchone()
-                agregado_id = row[0] if row is not None else None
 
             elif evento.tipo is TipoEventoDetectado.RESOLVIDO:
-                conexao.execute(
+                agregado_id = _executar_retornando_id(
+                    conexao,
                     """
                     UPDATE alertas
                     SET status_interno = 'RESOLVIDO', visto_ultima_vez = ?
                     WHERE fonte = ? AND cod_alerta = ?
+                    RETURNING id
                     """,
                     (agora, evento.fonte.value, evento.cod_alerta),
                 )
-                cur_id = conexao.execute(
-                    "SELECT id FROM alertas WHERE fonte = ? AND cod_alerta = ?",
-                    (evento.fonte.value, evento.cod_alerta),
-                )
-                row = cur_id.fetchone()
-                agregado_id = row[0] if row is not None else None
 
             if agregado_id is not None:
                 conexao.execute(
