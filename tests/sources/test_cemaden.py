@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone
 from unittest.mock import Mock
-from urllib.error import HTTPError, URLError
+from urllib.error import URLError
 
 import pytest
 
@@ -16,6 +16,7 @@ from tests.sources.contrato import verificar_contrato_data_source
 # Helpers
 # ============================================================
 
+
 def _opener_de_payload(payload_bytes: bytes):
     """Cria um opener fake que retorna o payload dado em todas as chamadas."""
     response = Mock()
@@ -24,11 +25,6 @@ def _opener_de_payload(payload_bytes: bytes):
     context.__enter__ = Mock(return_value=response)
     context.__exit__ = Mock(return_value=False)
     return Mock(return_value=context)
-
-
-def _opener_que_falha(*excecoes):
-    """Cria um opener fake que levanta cada exceção em sequência."""
-    return Mock(side_effect=list(excecoes))
 
 
 _ITEM_VALIDO = {
@@ -46,6 +42,7 @@ _ITEM_VALIDO = {
 # ============================================================
 # _montar_alerta — migrados de test_monitor.py (7 testes)
 # ============================================================
+
 
 class TestMontarAlerta:
     def test_mapeia_nomes_padrao_cemaden(self):
@@ -87,8 +84,11 @@ class TestMontarAlerta:
     def test_lanca_sem_coordenadas(self):
         source = CemadenSource()
         item = {
-            "cod_alerta": 100, "municipio": "X", "uf": "SP",
-            "tipoevento": "Risco Hidrológico", "nivel": "ALTO",
+            "cod_alerta": 100,
+            "municipio": "X",
+            "uf": "SP",
+            "tipoevento": "Risco Hidrológico",
+            "nivel": "ALTO",
             "datahoracriacao": "2026-04-29T10:00:00",
         }
         with pytest.raises(ValueError):
@@ -116,11 +116,16 @@ class TestMontarAlerta:
 # _montar_alerta — COBRADE (3 testes migrados de A.2)
 # ============================================================
 
+
 class TestMontarAlertaCobrade:
     _BASE = {
-        "codigoalerta": "1001", "nivel": "MODERADO", "estado": "PE",
-        "municipio": "Recife", "datahoracriacao": "2026-05-01T10:00:00",
-        "latitude": -8.05, "longitude": -34.88,
+        "codigoalerta": "1001",
+        "nivel": "MODERADO",
+        "estado": "PE",
+        "municipio": "Recife",
+        "datahoracriacao": "2026-05-01T10:00:00",
+        "latitude": -8.05,
+        "longitude": -34.88,
     }
 
     def test_risco_hidrologico_popula_cobrade(self):
@@ -131,7 +136,9 @@ class TestMontarAlertaCobrade:
 
     def test_movimentos_de_massa_popula_cobrade(self):
         source = CemadenSource()
-        alerta = source._montar_alerta({**self._BASE, "tipoevento": "Movimentos de Massa", "nivel": "ALTO"})
+        alerta = source._montar_alerta(
+            {**self._BASE, "tipoevento": "Movimentos de Massa", "nivel": "ALTO"}
+        )
         assert alerta.cobrade_codigo == "1.1.3.0.0"
         assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
 
@@ -143,60 +150,14 @@ class TestMontarAlertaCobrade:
 
 
 # ============================================================
-# _fetch_com_retry — migrados de test_monitor.py (4 testes)
-# ============================================================
-
-class TestFetchComRetry:
-    def test_sucesso_primeira_tentativa(self, monkeypatch):
-        payload = b'{"ok": true}'
-        opener = _opener_de_payload(payload)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
-        source = CemadenSource(opener=opener)
-        out = source._fetch_com_retry()
-        assert out == payload
-        assert opener.call_count == 1
-
-    def test_sucesso_apos_falhas_temporarias(self, monkeypatch):
-        payload = b"ok"
-        ctx_ok = _opener_de_payload(payload).return_value
-        opener = Mock(side_effect=[URLError("timeout"), URLError("conexao"), ctx_ok])
-        sleeps = []
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda s: sleeps.append(s))
-        source = CemadenSource(opener=opener)
-        out = source._fetch_com_retry()
-        assert out == payload
-        assert opener.call_count == 3
-        assert len(sleeps) == 2
-
-    def test_falha_4xx_nao_faz_retry(self, monkeypatch):
-        err = HTTPError(url="https://exemplo", code=404, msg="Not Found", hdrs=None, fp=None)
-        opener = Mock(side_effect=err)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
-        source = CemadenSource(opener=opener)
-        with pytest.raises(HTTPError) as exc_info:
-            source._fetch_com_retry()
-        assert exc_info.value.code == 404
-        assert opener.call_count == 1
-
-    def test_esgota_tentativas_e_propaga(self, monkeypatch):
-        opener = Mock(side_effect=URLError("falha"))
-        sleeps = []
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda s: sleeps.append(s))
-        source = CemadenSource(opener=opener)
-        with pytest.raises(URLError):
-            source._fetch_com_retry()
-        assert opener.call_count == 4
-        assert len(sleeps) == 3
-
-
-# ============================================================
 # coletar — invariantes de B.1 (testes NOVOS)
 # ============================================================
+
 
 class TestColetarInvariantes:
     def test_coletado_em_e_aware(self, monkeypatch):
         opener = _opener_de_payload(b'{"alertas":[]}')
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         resultado = source.coletar()
         assert resultado.coletado_em.tzinfo is not None
@@ -204,7 +165,7 @@ class TestColetarInvariantes:
     def test_alertas_retornados_tem_fonte_cemaden(self, monkeypatch):
         payload = json.dumps({"alertas": [_ITEM_VALIDO]}).encode("utf-8")
         opener = _opener_de_payload(payload)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         resultado = source.coletar()
         assert len(resultado.alertas) == 1
@@ -216,7 +177,7 @@ class TestColetarInvariantes:
         """
         payload = json.dumps({"alertas": [_ITEM_VALIDO]}).encode("utf-8")
         opener = _opener_de_payload(payload)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
 
         def montar_que_levanta_typeerror(self, item):
             raise TypeError("bug interno simulado")
@@ -229,7 +190,7 @@ class TestColetarInvariantes:
     def test_propaga_attributeerror_como_bug(self, monkeypatch):
         payload = json.dumps({"alertas": [_ITEM_VALIDO]}).encode("utf-8")
         opener = _opener_de_payload(payload)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
 
         def montar_que_levanta_attributeerror(self, item):
             raise AttributeError("bug interno simulado")
@@ -244,10 +205,11 @@ class TestColetarInvariantes:
 # coletar — FalhaDeColeta (testes NOVOS)
 # ============================================================
 
+
 class TestColetarFalhaDeColeta:
     def test_levanta_falha_em_rede_esgotada(self, monkeypatch):
         opener = Mock(side_effect=URLError("falha persistente"))
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         with pytest.raises(FalhaDeColeta) as exc_info:
             source.coletar()
@@ -256,7 +218,7 @@ class TestColetarFalhaDeColeta:
 
     def test_levanta_falha_em_json_invalido(self, monkeypatch):
         opener = _opener_de_payload(b"{ nao eh json valido")
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         with pytest.raises(FalhaDeColeta) as exc_info:
             source.coletar()
@@ -265,7 +227,7 @@ class TestColetarFalhaDeColeta:
 
     def test_levanta_falha_em_unicode_invalido(self, monkeypatch):
         opener = _opener_de_payload(b"\xff\xfe invalido utf-8")
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         with pytest.raises(FalhaDeColeta) as exc_info:
             source.coletar()
@@ -274,7 +236,7 @@ class TestColetarFalhaDeColeta:
 
     def test_levanta_falha_quando_dict_sem_chave_conhecida(self, monkeypatch):
         opener = _opener_de_payload(b'{"widgets":[]}')
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         with pytest.raises(FalhaDeColeta) as exc_info:
             source.coletar()
@@ -283,7 +245,7 @@ class TestColetarFalhaDeColeta:
 
     def test_levanta_falha_quando_payload_nao_e_list_nem_dict(self, monkeypatch):
         opener = _opener_de_payload(b'"string isolada"')
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         source = CemadenSource(opener=opener)
         with pytest.raises(FalhaDeColeta) as exc_info:
             source.coletar()
@@ -295,9 +257,10 @@ class TestColetarFalhaDeColeta:
 # coletar — contrato parametrizado (B.1.a)
 # ============================================================
 
+
 class TestContrato:
     def test_obedece_contrato_data_source(self, monkeypatch):
         payload = json.dumps({"alertas": [_ITEM_VALIDO]}).encode("utf-8")
         opener = _opener_de_payload(payload)
-        monkeypatch.setattr("alertavida.sources.cemaden.time.sleep", lambda _: None)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         verificar_contrato_data_source(lambda: CemadenSource(opener=opener))

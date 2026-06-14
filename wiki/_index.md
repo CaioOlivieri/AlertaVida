@@ -35,6 +35,7 @@ updated: 2026-06-11
 - [[components/events]]
 - [[components/ingestion-orquestrador]]
 - [[components/sources-base]]
+- [[components/sources-http]]
 - [[components/sources-cemaden]]
 - [[components/sources-nasa-eonet]]
 - [[components/domain-models]]
