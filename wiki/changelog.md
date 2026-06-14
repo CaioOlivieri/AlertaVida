@@ -1,6 +1,6 @@
 status: verified
 sources: [[raw/context-md-2026-06-11.pt.md]] (§10)
-updated: 2026-06-11
+updated: 2026-06-14
 
 # Changelog
 
@@ -43,3 +43,4 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | 2026-06-11 | fix: padroniza processado_em da outbox em UTC-aware |
 | 2026-06-11 | feat: habilita WAL e busy_timeout no SQLite para concorrencia ingestao/dispatcher |
 | 2026-06-11 | feat: scheduler loga relatorio por rodada via reporting.py compartilhado |
+| 2026-06-14 | Camada 4 Parte C.1 complete — `NasaEonetSource` (second `DataSource`). Builds `Alerta` directly (not `from_dict`) due to v3 payload shape: GeoJSON `[lon, lat]`, no severity (`nivel_risco=INDETERMINADO`), category→`TipoEvento` via `CATEGORIA_EONET_PARA_TIPO`, most-recent-fix selection by date. Production query `status=open`. `cobrade_codigo` left None/INDETERMINADA (numeric COBRADE deferred to C.2). Synthetic fixtures in `tests/fixtures/eonet/`. Two chained commits (C.1.a fixtures + C.1.b source), reuses parametrized contract test. 252 tests, CI green |
