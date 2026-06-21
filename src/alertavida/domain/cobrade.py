@@ -27,6 +27,26 @@ EVENTO_CEMADEN_PARA_COBRADE: Final[dict[str, str]] = {
     "Movimentos de Massa": "1.1.3.0.0",
 }
 
+# Mapeamento de categorias EONET v3 (id em inglês) para código COBRADE.
+# Cada categoria é mapeada ao nível mais específico que a terminologia
+# EONET determina SEM inferência. Quando a categoria não distingue entre
+# subgrupos, paramos no grupo (Tipo=Subtipo=0):
+#   - floods → grupo Hidrológico (1.2.0.0.0): categoria não distingue entre
+#     inundação gradual, enxurrada, alagamento etc.
+#   - severeStorms → grupo Meteorológico (1.3.0.0.0): categoria não distingue
+#     entre ciclone, tornado, tempestade etc.
+#   - wildfires → subgrupo Seca (1.4.1.0.0): incêndio florestal é tipo dentro
+#     do subgrupo Seca (1.4.1.3), paramos no subgrupo (Tipo=Subtipo=0).
+#   - volcanoes → subgrupo Emanação Vulcânica (1.1.2.0.0).
+#   - landslides → subgrupo Movimento de Massa (1.1.3.0.0).
+EVENTO_EONET_PARA_COBRADE: Final[dict[str, str]] = {
+    "wildfires": "1.4.1.0.0",
+    "floods": "1.2.0.0.0",
+    "severeStorms": "1.3.0.0.0",
+    "volcanoes": "1.1.2.0.0",
+    "landslides": "1.1.3.0.0",
+}
+
 # Formato COBRADE: 5 níveis numéricos separados por ponto.
 _FORMATO_COBRADE: Final[re.Pattern[str]] = re.compile(r"^\d+\.\d+\.\d+\.\d+\.\d+$")
 
@@ -42,3 +62,9 @@ def mapear_cemaden(tipo_evento: str) -> str | None:
     Retorna None se o tipo não está no mapeamento conhecido.
     """
     return EVENTO_CEMADEN_PARA_COBRADE.get(tipo_evento)
+
+
+def mapear_eonet(categoria: str) -> str | None:
+    """Mapeia uma categoria EONET v3 (id em inglês) para código COBRADE.
+    Retorna None se a categoria não está no mapeamento conhecido."""
+    return EVENTO_EONET_PARA_COBRADE.get(categoria)

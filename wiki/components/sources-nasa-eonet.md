@@ -1,6 +1,6 @@
-status: implemented
+status: integrated
 sources: `src/alertavida/sources/nasa_eonet.py`
-updated: 2026-06-14
+updated: 2026-06-21
 
 # sources-nasa-eonet
 
@@ -27,7 +27,7 @@ The v3 payload shape diverges from CEMADEN, so `from_dict` does not fit:
 | Type | `categories[].id` (English) → `TipoEvento` via `CATEGORIA_EONET_PARA_TIPO` |
 | Date | `geometry[].date` per fix → **most recent fix by date** (`_fix_mais_recente`), not list order |
 | Municipality | not provided → `None` |
-| COBRADE | `cobrade_codigo=None` / `INDETERMINADA` in C.1 — numeric mapping is C.2 |
+| COBRADE | via `mapear_eonet` (C.2): `cobrade_codigo` from `EVENTO_EONET_PARA_COBRADE` dict; `fonte_classificacao` = `MAPEADA_POR_NOME` if mapped, `INDETERMINADA` otherwise |
 
 `CATEGORIA_EONET_PARA_TIPO` maps only categories with an unambiguous COBRADE group
 (`wildfires`, `floods`, `severeStorms`, `volcanoes`, `landslides`); anything else falls to
@@ -39,8 +39,8 @@ Keyword-only with injectable `url`, `opener`, `timeout_segundos`. Production que
 `status=open&limit=500`. The `RespostaHTTP` Protocol and `Opener` type used for
 strict-by-contract typing live in [[components/sources-http]].
 
-## Not yet wired (C.3)
+## Integrated (C.3)
 
-The orchestrator still runs `executar_ingestao([CemadenSource()])`. Adding
-`NasaEonetSource()` to the source list in `monitor.py` / `scheduler.py` (plus multi-source
-orchestration tests) is [[projects/layer-4-multi-source-ingestion]] Part C.3.
+The orchestrator now runs `executar_ingestao([CemadenSource(), NasaEonetSource()])` in
+both `monitor.py` and `scheduler.py`. Multi-source orchestration tests cover the
+two-source configuration.

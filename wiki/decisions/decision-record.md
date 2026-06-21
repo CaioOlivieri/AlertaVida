@@ -1,6 +1,6 @@
 status: verified
 sources: [[raw/context-md-2026-06-11.pt.md]] (§8)
-updated: 2026-06-14
+updated: 2026-06-21
 
 # Architectural Decision Record
 
@@ -93,3 +93,5 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | EONET numeric COBRADE deferred to C.2; C.1 ships `cobrade_codigo=None` | The wiki's original C.1 bullet folded COBRADE mapping into C.1. Assigning numeric COBRADE codes (1.x.y.0.0) requires matching the official Defesa Civil table; doing it under uncertainty would violate "não inventar mapeamentos baseado em suposição". C.1 ships category→`TipoEvento` (unambiguous group level) with `cobrade_codigo=None` / `INDETERMINADA` (atomic invariant respected); the numeric mapping is C.2's focused, researched commit |
 | EONET production query is `status=open` | Active/open events only (matches the empirical inspection's Requisição A). `status=all&days=30` is mostly closed historical events — noise for a real-time alert system. `url` is injectable for alternative environments |
 | `UPDATE … RETURNING id` instead of UPDATE-then-SELECT (review A2) | Each UPDATE branch in `aplicar_resultado_deteccao` previously ran a second `SELECT id` to fetch the outbox `agregado_id`. `RETURNING id` (SQLite >= 3.35; Python 3.13 embeds >= 3.40) returns it in the same statement, halving the queries per updated/reactivated/resolved event. Wrapped in `_executar_retornando_id`. ATUALIZADO and REATIVADO merged into one branch (REATIVADO only adds `status_interno = 'ATIVO'`, injected as a constant SQL fragment — no user input) |
+| EONET COBRADE mapping granularity (C.2) | `EVENTO_EONET_PARA_COBRADE` maps each category to the most specific level EONET terminology determines without inference. `floods`/`severeStorms` stay at group level (`1.2.0.0.0`/`1.3.0.0.0`) because the category does not distinguish subgroups; `wildfires` at subgrupo Seca (`1.4.1.0.0`); `volcanoes` at subgrupo Emanação Vulcânica (`1.1.2.0.0`); `landslides` at subgrupo Movimento de Massa (`1.1.3.0.0`) |
+| NasaEonetSource wired into orchestrator (C.3) | Both `monitor.py` and `scheduler.py` now include `NasaEonetSource()` in the source list: `executar_ingestao([CemadenSource(), NasaEonetSource()])`. Multi-source orchestration tests updated |

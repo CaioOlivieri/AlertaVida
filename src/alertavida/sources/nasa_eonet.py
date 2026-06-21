@@ -1,7 +1,7 @@
 """NasaEonetSource — DataSource concreta para a NASA EONET v3.
 
 EONET (Earth Observatory Natural Event Tracker) entrega eventos naturais
-globais (incêndios, tempestades, vulcões, inundações). Camada 4 Parte C.1.
+globais (incêndios, tempestades, vulcões, inundações). Camada 4 Partes C.1+C.2.
 
 Compartilha o transporte HTTP (retry/backoff) e o parsing de JSON com
 CemadenSource via `sources/_http.py`, mas constrói o Alerta DIRETAMENTE em vez
@@ -17,10 +17,10 @@ de usar Alerta.from_dict, porque o shape do payload v3 diverge do CEMADEN:
 - Data vive em geometry[].date por fix; um evento tem 1..N fixes → usa o fix
   MAIS RECENTE (maior date) como posição/momento corrente do alerta.
 
-Parte C.1 NÃO atribui cobrade_codigo (fica None / FonteClassificacao
-INDETERMINADA). O código COBRADE numérico exige bater na tabela oficial da
-Defesa Civil e é trabalho da Parte C.2. O invariante atômico
-(cobrade_codigo IS NULL ⇔ fonte_classificacao == INDETERMINADA) é respeitado.
+Parte C.2 atribui cobrade_codigo via mapear_eonet, que retorna código COBRADE
+para categorias EONET mapeadas. Categorias não mapeadas mantêm None /
+FonteClassificacao.INDETERMINADA, respeitando o invariante atômico
+(cobrade_codigo IS NULL ⇔ fonte_classificacao == INDETERMINADA).
 
 Invariantes do contrato:
 - coletar() captura APENAS ValueError ao montar cada evento. Bugs internos
@@ -39,6 +39,7 @@ from urllib.request import urlopen
 from pydantic import ValidationError
 
 from alertavida.domain import Alerta
+from alertavida.domain.cobrade import mapear_eonet
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.enums import (
     FonteClassificacao,
@@ -63,10 +64,9 @@ URL_EONET = f"{EONET_BASE_URL}?{urlencode(EONET_PARAMS)}"
 USER_AGENT: str = "AlertaVida/1.0 (+https://github.com/CaioOlivieri/AlertaVida)"
 
 # Mapeamento categoria EONET v3 → TipoEvento (grupo COBRADE neutro).
-# Inclui apenas categorias cuja correspondência de GRUPO é inequívoca, espelhando
-# a decisão registrada em wiki/projects/layer-4-multi-source-ingestion.md (C.2).
+# Inclui apenas categorias cuja correspondência de GRUPO é inequívoca.
 # Categoria fora deste dict cai em TipoEvento.INDETERMINADO — não inventar.
-# O código COBRADE numérico (1.x.y.0.0) é trabalho da Parte C.2.
+# O código COBRADE numérico é atribuído por mapear_eonet (C.2).
 CATEGORIA_EONET_PARA_TIPO: Final[dict[str, TipoEvento]] = {
     "wildfires": TipoEvento.CLIMATOLOGICO,
     "floods": TipoEvento.HIDROLOGICO,
@@ -151,6 +151,10 @@ class NasaEonetSource(DataSource):
     def _montar_alerta(self, evento: dict) -> Alerta:
         """Converte um evento bruto da EONET em Alerta de domínio.
 
+        Atribui cobrade_codigo via mapear_eonet (C.2) e fonte_classificacao
+        como MAPEADA_POR_NOME se o mapeamento for conhecido, ou INDETERMINADA
+        para categorias não mapeadas (invariante atômico respeitado).
+
         Levanta ValueError se o evento não tiver os campos mínimos (id,
         geometry Point com coordenadas e data válidas). Captura em coletar()
         conta como descartado; bugs internos (TypeError etc.) propagam.
@@ -165,6 +169,12 @@ class NasaEonetSource(DataSource):
 
         categoria = self._categoria_principal(evento)
         tipo_evento = CATEGORIA_EONET_PARA_TIPO.get(categoria, TipoEvento.INDETERMINADO)
+        cobrade = mapear_eonet(categoria)
+        fonte_classificacao = (
+            FonteClassificacao.MAPEADA_POR_NOME
+            if cobrade is not None
+            else FonteClassificacao.INDETERMINADA
+        )
 
         longitude, latitude, data_criacao = self._fix_mais_recente(evento.get("geometry"))
         try:
@@ -186,8 +196,8 @@ class NasaEonetSource(DataSource):
             data_criacao=data_criacao,
             ult_atualizacao=None,
             descricao=None if titulo is None else str(titulo),
-            cobrade_codigo=None,
-            fonte_classificacao=FonteClassificacao.INDETERMINADA,
+            cobrade_codigo=cobrade,
+            fonte_classificacao=fonte_classificacao,
         )
 
     @staticmethod

@@ -1,6 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import alertavida.scheduler as scheduler
 
@@ -62,3 +62,26 @@ def test_keyboard_interrupt_encerra_limpo():
 
     scheduler_mock.shutdown.assert_called_once_with(wait=False)
     mock_exit.assert_called_once_with(0)
+
+
+def test_rodar_rodada_chama_ambas_as_fontes():
+    """_rodar_rodada deve executar ingestão com CemadenSource e NasaEonetSource."""
+    mock_executar = MagicMock()
+    mock_relatorio = MagicMock()
+    mock_executar.return_value = mock_relatorio
+    mock_formatar = MagicMock()
+    mock_cemaden = MagicMock()
+    mock_nasa = MagicMock()
+
+    with patch("alertavida.scheduler.executar_ingestao", mock_executar):
+        with patch("alertavida.scheduler.formatar_relatorio", mock_formatar):
+            with patch("alertavida.scheduler.CemadenSource", mock_cemaden):
+                with patch("alertavida.scheduler.NasaEonetSource", mock_nasa):
+                    scheduler._rodar_rodada()
+
+    mock_cemaden.assert_called_once()
+    mock_nasa.assert_called_once()
+    mock_executar.assert_called_once_with(
+        [mock_cemaden.return_value, mock_nasa.return_value]
+    )
+    mock_formatar.assert_called_once_with(mock_relatorio)

@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-06-14
+updated: 2026-06-21
 
 ## Module wiring table (single source of truth)
 
@@ -22,7 +22,7 @@ updated: 2026-06-14
 | `sources/base.py` | `DataSource` ABC, `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener` | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(DataSource)`: HTTP + retry + backoff + payload normalization | `ingestion/orquestrador.py` | integrated |
-| `sources/nasa_eonet.py` | `NasaEonetSource(DataSource)`: EONET v3 `status=open`, builds `Alerta` directly, category→`TipoEvento` map, most-recent-fix selection, `nivel_risco=INDETERMINADO` | not yet wired into orchestrator (C.3) | implemented |
+| `sources/nasa_eonet.py` | `NasaEonetSource(DataSource)`: EONET v3 `status=open`, builds `Alerta` directly, category→`TipoEvento` map, `mapear_eonet` for COBRADE (C.2), most-recent-fix selection, `nivel_risco=INDETERMINADO` | `monitor.py`, `scheduler.py` | integrated |
 
 ## Current flow
 
@@ -30,15 +30,11 @@ updated: 2026-06-14
 scheduler.agendar_ingestao()
   → APScheduler (ingestao job every 5min + dispatcher job every 30s)
   → monitor.main()
-    → executar_ingestao([CemadenSource()])
+    → executar_ingestao([CemadenSource(), NasaEonetSource()])
       → CemadenSource().coletar() (urllib + 4 attempts, 2/4/8s backoff)
-      → ResultadoColeta(alertas, descartados, coletado_em)
+      → NasaEonetSource().coletar() (urllib + 4 attempts, 2/4/8s backoff)
       → buscar_snapshots(fonte=CEMADEN)
-      → detectar_mudancas(alertas, snapshots)
-      → aplicar_resultado_deteccao() (single transaction: alerts + outbox events)
+      → buscar_snapshots(fonte=EONET)
+      → detectar_mudancas(alertas, snapshots) per source
+      → aplicar_resultado_deteccao() (single transaction: alerts + outbox events) per source
 ```
-
-Layer 4 Part C.1 (`NasaEonetSource`) is **implemented** but not yet in the orchestrator's
-source list — production still runs `executar_ingestao([CemadenSource()])`. Next planned work:
-C.2 (numeric EONET→COBRADE mapping) and C.3 (wire `NasaEonetSource()` into `monitor.py` /
-`scheduler.py` + multi-source orchestration tests).

@@ -12,6 +12,7 @@ from alertavida.events import OutboxDispatcher, bus
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
 from alertavida.sources.cemaden import CemadenSource
+from alertavida.sources.nasa_eonet import NasaEonetSource
 
 INTERVALO_MINUTOS = 5
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ def _on_job_error(event) -> None:
 def _rodar_rodada() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("[%s] Iniciando rodada de ingestão...", timestamp)
-    relatorio = executar_ingestao([CemadenSource()])
+    relatorio = executar_ingestao([CemadenSource(), NasaEonetSource()])
     logger.info("Rodada concluída:\n%s", formatar_relatorio(relatorio))
     logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
 
