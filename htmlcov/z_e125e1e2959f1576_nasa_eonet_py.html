@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/alertavida/sources/nasa_eonet.py: 92%</title>
+    <title>Coverage for src/alertavida/sources/nasa_eonet.py: 100%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src<span class="sep">/</span>alertavida<span class="sep">/</span>sources<span class="sep">/</span>nasa_eonet.py</b>:
-            <span class="pc_cov">92%</span>
+            <span class="pc_cov">100%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,8 +55,8 @@
         </aside>
         <h2>
             <span class="text">105 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">97<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">8<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">105<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
         </h2>
         <p class="text">
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="index.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.2">coverage.py v7.14.2</a>,
-            created at 2026-06-21 22:39 +0000
+            created at 2026-06-21 23:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -292,7 +292,7 @@
     <p class="run"><span class="n"><a id="t210" href="#t210">210</a></span><span class="t">                    <span class="nam">cat_id</span> <span class="op">=</span> <span class="nam">cat</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"id"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t211" href="#t211">211</a></span><span class="t">                    <span class="key">if</span> <span class="nam">cat_id</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span> <span class="key">and</span> <span class="nam">str</span><span class="op">(</span><span class="nam">cat_id</span><span class="op">)</span><span class="op">.</span><span class="nam">strip</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t212" href="#t212">212</a></span><span class="t">                        <span class="key">return</span> <span class="nam">str</span><span class="op">(</span><span class="nam">cat_id</span><span class="op">)</span><span class="op">.</span><span class="nam">strip</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t">        <span class="key">return</span> <span class="str">""</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t">        <span class="key">return</span> <span class="str">""</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t">    <span class="op">@</span><span class="nam">staticmethod</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t">    <span class="key">def</span> <span class="nam">_fix_mais_recente</span><span class="op">(</span><span class="nam">geometry</span><span class="op">:</span> <span class="nam">Any</span><span class="op">)</span> <span class="op">-></span> <span class="nam">tuple</span><span class="op">[</span><span class="nam">float</span><span class="op">,</span> <span class="nam">float</span><span class="op">,</span> <span class="nam">datetime</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -314,21 +314,21 @@
     <p class="run"><span class="n"><a id="t232" href="#t232">232</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t233" href="#t233">233</a></span><span class="t">            <span class="nam">coords</span> <span class="op">=</span> <span class="nam">fix</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"coordinates"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t234" href="#t234">234</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">coords</span><span class="op">,</span> <span class="nam">list</span><span class="op">)</span> <span class="key">or</span> <span class="nam">len</span><span class="op">(</span><span class="nam">coords</span><span class="op">)</span> <span class="op">&lt;</span> <span class="num">2</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t">            <span class="nam">data_raw</span> <span class="op">=</span> <span class="nam">fix</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">"date"</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t237" href="#t237">237</a></span><span class="t">            <span class="key">if</span> <span class="nam">data_raw</span> <span class="key">is</span> <span class="key">None</span> <span class="key">or</span> <span class="key">not</span> <span class="nam">str</span><span class="op">(</span><span class="nam">data_raw</span><span class="op">)</span><span class="op">.</span><span class="nam">strip</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t">            <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t">                <span class="nam">data</span> <span class="op">=</span> <span class="nam">datetime</span><span class="op">.</span><span class="nam">fromisoformat</span><span class="op">(</span><span class="nam">str</span><span class="op">(</span><span class="nam">data_raw</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">            <span class="key">except</span> <span class="nam">ValueError</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">            <span class="key">except</span> <span class="nam">ValueError</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t243" href="#t243">243</a></span><span class="t">            <span class="key">if</span> <span class="nam">data</span><span class="op">.</span><span class="nam">tzinfo</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t244" href="#t244">244</a></span><span class="t">                <span class="nam">data</span> <span class="op">=</span> <span class="nam">data</span><span class="op">.</span><span class="nam">replace</span><span class="op">(</span><span class="nam">tzinfo</span><span class="op">=</span><span class="nam">timezone</span><span class="op">.</span><span class="nam">utc</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t244" href="#t244">244</a></span><span class="t">                <span class="nam">data</span> <span class="op">=</span> <span class="nam">data</span><span class="op">.</span><span class="nam">replace</span><span class="op">(</span><span class="nam">tzinfo</span><span class="op">=</span><span class="nam">timezone</span><span class="op">.</span><span class="nam">utc</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t245" href="#t245">245</a></span><span class="t">            <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t246" href="#t246">246</a></span><span class="t">                <span class="nam">longitude</span> <span class="op">=</span> <span class="nam">float</span><span class="op">(</span><span class="nam">coords</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t247" href="#t247">247</a></span><span class="t">                <span class="nam">latitude</span> <span class="op">=</span> <span class="nam">float</span><span class="op">(</span><span class="nam">coords</span><span class="op">[</span><span class="num">1</span><span class="op">]</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t248" href="#t248">248</a></span><span class="t">            <span class="key">except</span> <span class="op">(</span><span class="nam">TypeError</span><span class="op">,</span> <span class="nam">ValueError</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t249" href="#t249">249</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t248" href="#t248">248</a></span><span class="t">            <span class="key">except</span> <span class="op">(</span><span class="nam">TypeError</span><span class="op">,</span> <span class="nam">ValueError</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t249" href="#t249">249</a></span><span class="t">                <span class="key">continue</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t250" href="#t250">250</a></span><span class="t">            <span class="key">if</span> <span class="nam">melhor</span> <span class="key">is</span> <span class="key">None</span> <span class="key">or</span> <span class="nam">data</span> <span class="op">></span> <span class="nam">melhor</span><span class="op">[</span><span class="num">0</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t251" href="#t251">251</a></span><span class="t">                <span class="nam">melhor</span> <span class="op">=</span> <span class="op">(</span><span class="nam">data</span><span class="op">,</span> <span class="nam">longitude</span><span class="op">,</span> <span class="nam">latitude</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t252" href="#t252">252</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -345,7 +345,7 @@
             <a class="nav" href="index.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.14.2">coverage.py v7.14.2</a>,
-            created at 2026-06-21 22:39 +0000
+            created at 2026-06-21 23:28 +0000
         </p>
     </div>
 </footer>
