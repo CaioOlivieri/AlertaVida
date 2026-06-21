@@ -63,3 +63,10 @@ addopts = ["-m", "not integration", "-v"]
 # casar os arquivos do repo (requisito da action). source: mede só o pacote.
 relative_files = true
 source = ["src"]
+
+[tool.coverage.report]
+# Exclui da medição os guardas de entrypoint CLI (não testáveis por unit test):
+# os blocos `if __name__ == "__main__"` em monitor.py e scheduler.py.
+exclude_also = [
+    "if __name__ == .__main__.:",
+]

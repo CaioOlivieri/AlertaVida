@@ -104,7 +104,7 @@ class TipoEvento(str, Enum):
             return cls.METEOROLOGICO
         if normalized in climatologico:
             return cls.CLIMATOLOGICO
-        if normalized in biologico:
+        if normalized in biologico:  # pragma: no cover - set vazio (placeholder)
             return cls.BIOLOGICO
         return cls.INDETERMINADO
 
