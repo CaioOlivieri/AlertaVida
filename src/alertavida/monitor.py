@@ -1,4 +1,4 @@
-"""Entrypoint manual para uma rodada única de ingestão CEMADEN.
+"""Entrypoint manual para uma rodada única de ingestão multi-fonte.
 
 Em produção, o scheduler (`agendar_ingestao` em
 `alertavida.scheduler`) orquestra rodadas periódicas. Este módulo
@@ -16,12 +16,13 @@ from alertavida.database import criar_banco
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
 from alertavida.sources.cemaden import CemadenSource
+from alertavida.sources.nasa_eonet import NasaEonetSource
 
 
 def main() -> int:
     """Executa uma rodada de ingestão e imprime o relatório."""
     criar_banco()
-    sources = [CemadenSource()]
+    sources = [CemadenSource(), NasaEonetSource()]
     relatorio = executar_ingestao(sources)
     print(formatar_relatorio(relatorio))
     return 0

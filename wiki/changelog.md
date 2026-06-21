@@ -1,6 +1,6 @@
 status: verified
 sources: [[raw/context-md-2026-06-11.pt.md]] (§10)
-updated: 2026-06-14
+updated: 2026-06-21
 
 # Changelog
 
@@ -47,3 +47,5 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | 2026-06-14 | Maintainability review Fase 1 — low-risk cleanup: `Alerta` imported under TYPE_CHECKING in orquestrador (dropped F821 ignore), dead `backports.zoneinfo` fallback removed, `_migrar_banco` docstring corrected, test-data layout documented. No behavior change |
 | 2026-06-14 | Maintainability review Fase 2 / A1 — extracted shared HTTP transport to `sources/_http.py` (`fetch_com_retry` raising `FalhaDeColeta`, `parse_json`, `RespostaHTTP`/`Opener`). `CemadenSource`/`NasaEonetSource` lost ~50 duplicated lines each; retry tests consolidated into `tests/sources/test_http.py`. 253 tests |
 | 2026-06-14 | Maintainability review Fase 2 / A2 — `aplicar_resultado_deteccao` uses `UPDATE … RETURNING id` via `_executar_retornando_id` (eliminates the per-event SELECT); ATUALIZADO and REATIVADO branches merged (REATIVADO adds `status_interno='ATIVO'`). No behavior change. 253 tests |
+| 2026-06-21 | Camada 4 Parte C.2 complete — `EVENTO_EONET_PARA_COBRADE` dict + `mapear_eonet` in `domain/cobrade.py`; wired into `NasaEonetSource._montar_alerta`; `cobrade_codigo` / `fonte_classificacao` set per EONET category. 262 tests |
+| 2026-06-21 | Camada 4 Parte C.3 complete — `NasaEonetSource()` added to source list in `monitor.py` and `scheduler.py`; two-source orchestration tests updated. 263 tests |

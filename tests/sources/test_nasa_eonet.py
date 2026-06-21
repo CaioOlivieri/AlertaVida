@@ -67,6 +67,8 @@ class TestMontarAlerta:
         assert out.municipio is None
         assert out.descricao == "Wildfire - Amazonas, Brazil"
         assert out.data_criacao == datetime(2026, 5, 18, tzinfo=timezone.utc)
+        assert out.cobrade_codigo == "1.4.1.0.0"
+        assert out.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
 
     def test_evento_no_exterior_e_internacional(self):
         source = NasaEonetSource()
@@ -83,10 +85,17 @@ class TestMontarAlerta:
         assert out.coordenadas.latitude == -22.0
         assert out.data_criacao == datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
 
-    def test_cobrade_fica_indeterminado_em_c1(self):
-        """C.1 não atribui código COBRADE — isso é Parte C.2."""
+    def test_montar_alerta_wildfires_mapeia_cobrade(self):
+        """C.2 mapeia wildfires → 1.4.1.0.0 com MAPEADA_POR_NOME."""
         source = NasaEonetSource()
         out = source._montar_alerta(INCENDIO_BRASIL)
+        assert out.cobrade_codigo == "1.4.1.0.0"
+        assert out.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
+
+    def test_montar_alerta_categoria_desconhecida_mantem_indeterminado(self):
+        """Categoria não mapeada (waterColor) mantém cobrade=None e INDETERMINADA."""
+        source = NasaEonetSource()
+        out = source._montar_alerta(CATEGORIA_DESCONHECIDA)
         assert out.cobrade_codigo is None
         assert out.fonte_classificacao == FonteClassificacao.INDETERMINADA
 

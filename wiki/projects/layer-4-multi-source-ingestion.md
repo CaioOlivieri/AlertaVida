@@ -1,10 +1,12 @@
-status: in-progress
+status: done
 sources: [[raw/context-md-2026-06-11.pt.md]] (§3)
-updated: 2026-06-14
+updated: 2026-06-21
 
-# Layer 4: Multi-Source Ingestion (in progress)
+# Layer 4: Multi-Source Ingestion (complete)
 
 Adapter pattern with `DataSource` interface. Parallel ingestion of independent sources coexisting in the `alertas` table with `fonte` column as discriminator. No cross-source correlation — that belongs to Camada 5.
+
+**Camada 4 complete as of 2026-06-21.** Two `DataSource` implementations (CEMADEN + EONET), COBRADE mapping for both, orchestrator with isolated per-source collection/detection/persistence, transactional outbox, scheduled ingestion every 5 minutes, multi-source report.
 
 ## A.1 — Destructive domain + database refactor (DONE 2026-05-09)
 
@@ -54,13 +56,13 @@ Production query is `status=open` (active events only). `cobrade_codigo` left No
 
 **Scope note:** wiki's original C.1 bullet folded COBRADE mapping into C.1; split out to C.2 to avoid assigning numeric COBRADE codes against the official Defesa Civil table under uncertainty ("não inventar mapeamentos baseado em suposição").
 
-## C.2 — EONET COBRADE mapping (next)
+## C.2 — EONET COBRADE mapping (DONE 2026-06-21)
 
-Expand `domain/cobrade.py` with `EVENTO_EONET_PARA_COBRADE` + `mapear_eonet`, and wire it into `NasaEonetSource._montar_alerta` (replacing the C.1 `cobrade=None`). Map relevant categories to COBRADE codes: wildfires → CLIMATOLOGICO, severeStorms → METEOROLOGICO, floods → HIDROLOGICO, volcanoes/landslides → GEOLOGICO. `TipoEvento` mapping already exists in the source (C.1).
+`EVENTO_EONET_PARA_COBRADE` dict (5 entries: wildfires, floods, severeStorms, volcanoes, landslides) + `mapear_eonet` in `domain/cobrade.py`. Wired into `NasaEonetSource._montar_alerta`: `cobrade_codigo` set via `mapear_eonet(categoria)`, `fonte_classificacao` = `MAPEADA_POR_NOME` if mapped, `INDETERMINADA` otherwise. Granularity: `floods`/`severeStorms` at group level (category does not distinguish subgroups); `wildfires` at subgrupo Seca; `volcanoes` at subgrupo Emanação Vulcânica; `landslides` at subgrupo Movimento de Massa. 262 tests.
 
-## C.3 — Orchestrator integration
+## C.3 — Orchestrator integration (DONE 2026-06-21)
 
-`monitor.py` and `scheduler.py` include `NasaEonetSource()` in sources list. Multi-source orchestration tests.
+`monitor.py` and `scheduler.py` include `NasaEonetSource()` in sources list: `executar_ingestao([CemadenSource(), NasaEonetSource()])`. Multi-source orchestration tests cover two-source configuration. 263 tests.
 
 ## COBRADE granularity note
 

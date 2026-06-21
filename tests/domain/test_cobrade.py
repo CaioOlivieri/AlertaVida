@@ -1,4 +1,9 @@
-from alertavida.domain.cobrade import mapear_cemaden, validar_formato
+from alertavida.domain.cobrade import (
+    EVENTO_EONET_PARA_COBRADE,
+    mapear_cemaden,
+    mapear_eonet,
+    validar_formato,
+)
 
 # ============================================================
 # mapear_cemaden
@@ -19,6 +24,44 @@ def test_mapear_cemaden_desconhecido_retorna_none() -> None:
 
 def test_mapear_cemaden_string_vazia_retorna_none() -> None:
     assert mapear_cemaden("") is None
+
+
+# ============================================================
+# mapear_eonet
+# ============================================================
+
+
+def test_mapear_eonet_wildfires() -> None:
+    assert mapear_eonet("wildfires") == "1.4.1.0.0"
+
+
+def test_mapear_eonet_floods() -> None:
+    assert mapear_eonet("floods") == "1.2.0.0.0"
+
+
+def test_mapear_eonet_severe_storms() -> None:
+    assert mapear_eonet("severeStorms") == "1.3.0.0.0"
+
+
+def test_mapear_eonet_volcanoes() -> None:
+    assert mapear_eonet("volcanoes") == "1.1.2.0.0"
+
+
+def test_mapear_eonet_landslides() -> None:
+    assert mapear_eonet("landslides") == "1.1.3.0.0"
+
+
+def test_mapear_eonet_desconhecido_retorna_none() -> None:
+    assert mapear_eonet("waterColor") is None
+
+
+def test_mapear_eonet_string_vazia_retorna_none() -> None:
+    assert mapear_eonet("") is None
+
+
+def test_mapear_eonet_todos_valores_validos() -> None:
+    for codigo in EVENTO_EONET_PARA_COBRADE.values():
+        assert validar_formato(codigo), f"{codigo} não é um código COBRADE válido"
 
 
 # ============================================================

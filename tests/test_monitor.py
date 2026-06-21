@@ -35,11 +35,13 @@ def test_main_executa_ingestao_e_imprime_relatorio(
     mock_executar_ingestao = MagicMock(return_value=dummy_report)
     mock_print = MagicMock()
     mock_cemaden_source = MagicMock()
+    mock_nasa_source = MagicMock()
 
     monkeypatch.setattr("alertavida.monitor.criar_banco", mock_criar_banco)
     monkeypatch.setattr("alertavida.monitor.executar_ingestao", mock_executar_ingestao)
     monkeypatch.setattr("builtins.print", mock_print)
     monkeypatch.setattr("alertavida.monitor.CemadenSource", mock_cemaden_source)
+    monkeypatch.setattr("alertavida.monitor.NasaEonetSource", mock_nasa_source)
 
     # Act
     result = main()
@@ -47,7 +49,10 @@ def test_main_executa_ingestao_e_imprime_relatorio(
     # Assert
     mock_criar_banco.assert_called_once()
     mock_cemaden_source.assert_called_once()
-    mock_executar_ingestao.assert_called_once_with([mock_cemaden_source.return_value])
+    mock_nasa_source.assert_called_once()
+    mock_executar_ingestao.assert_called_once_with(
+        [mock_cemaden_source.return_value, mock_nasa_source.return_value]
+    )
     mock_print.assert_called_once()
     assert "CEMADEN: 5 coletados" in mock_print.call_args[0][0]
     assert "Total: 5 alertas" in mock_print.call_args[0][0]
