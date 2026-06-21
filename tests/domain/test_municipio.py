@@ -49,3 +49,13 @@ def test_immutabilidade() -> None:
     m = Municipio(nome="Recife", uf="PE")
     with pytest.raises(ValidationError):
         m.nome = "Outro"
+
+
+def test_uf_none_lanca() -> None:
+    with pytest.raises(ValidationError):
+        Municipio(nome="Recife", uf=None)  # type: ignore[arg-type]
+
+
+def test_nome_nao_string_lanca() -> None:
+    with pytest.raises(ValidationError):
+        Municipio(nome=123, uf="PE")  # type: ignore[arg-type]

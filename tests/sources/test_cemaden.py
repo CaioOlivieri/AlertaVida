@@ -150,6 +150,37 @@ class TestMontarAlertaCobrade:
 
 
 # ============================================================
+# coletar — _normalize_payload / descartados
+# ============================================================
+
+
+class TestColetarNormalize:
+    def test_payload_lista_no_topo_funciona(self, monkeypatch):
+        """Payload como lista JSON no topo é aceito por CemadenSource."""
+        itens = [
+            _ITEM_VALIDO,
+            {"codigoalerta": "99999", "tipoevento": "Risco Hidrológico", "nivel": "ALTO",
+             "datahoracriacao": "2026-04-29T10:00:00", "latitude": -10.0, "longitude": -40.0},
+        ]
+        payload_bytes = json.dumps(itens).encode("utf-8")
+        opener = _opener_de_payload(payload_bytes)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        resultado = CemadenSource(opener=opener).coletar()
+        assert len(resultado.alertas) == 2
+
+    def test_item_invalido_conta_descartado(self, monkeypatch):
+        """Item que levanta ValueError em _montar_alerta conta como descartado."""
+        item_invalido = {"id": 999}  # sem campos mínimos → ValueError em from_dict
+        itens = [_ITEM_VALIDO, item_invalido]
+        payload_bytes = json.dumps({"alertas": itens}).encode("utf-8")
+        opener = _opener_de_payload(payload_bytes)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        resultado = CemadenSource(opener=opener).coletar()
+        assert len(resultado.alertas) == 1
+        assert resultado.descartados == 1
+
+
+# ============================================================
 # coletar — invariantes de B.1 (testes NOVOS)
 # ============================================================
 

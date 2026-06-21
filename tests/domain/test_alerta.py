@@ -14,6 +14,18 @@ from alertavida.domain.enums import (
 )
 from alertavida.domain.municipio import Municipio
 
+_BASE_PAYLOAD = {
+    "codigoalerta": "12345",
+    "tipoevento": "Risco Hidrológico",
+    "nivel": "MODERADO",
+    "estado": "PE",
+    "municipio": "Recife",
+    "codibge": 2611606,
+    "datahoracriacao": "2026-04-29T10:00:00",
+    "latitude": -8.05,
+    "longitude": -34.88,
+}
+
 # ============================================================
 # Criação direta — invariantes do construtor
 # ============================================================
@@ -439,6 +451,54 @@ def test_from_dict_data_criacao_com_timezone_preserva() -> None:
     }
     alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     assert alerta.data_criacao.utcoffset() == timedelta(hours=-3)
+
+
+# ============================================================
+# from_dict — bordas: campos obrigatórios inválidos
+# ============================================================
+
+
+def test_from_dict_codigo_apenas_espacos() -> None:
+    payload = {**_BASE_PAYLOAD, "codigoalerta": "   "}
+    with pytest.raises(ValueError, match="Alerta sem cod_alerta válido"):
+        Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+
+
+def test_from_dict_nivel_xpto_lanca() -> None:
+    payload = {**_BASE_PAYLOAD, "nivel": "XPTO"}
+    with pytest.raises(ValueError, match="XPTO"):
+        Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+
+
+def test_from_dict_sem_data_criacao_lanca() -> None:
+    payload = {k: v for k, v in _BASE_PAYLOAD.items() if k != "datahoracriacao"}
+    with pytest.raises(ValueError, match="Alerta sem data_criacao"):
+        Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+
+
+def test_from_dict_data_criacao_invalida_lanca() -> None:
+    payload = {**_BASE_PAYLOAD, "datahoracriacao": "não-data"}
+    with pytest.raises(ValueError, match="Alerta sem data_criacao"):
+        Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+
+
+def test_from_dict_ult_atualizacao_invalido_vira_none() -> None:
+    payload = {**_BASE_PAYLOAD, "ult_atualizacao": "não-data"}
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+    assert alerta.ult_atualizacao is None
+
+
+def test_from_dict_codibge_nao_inteiro_ignora() -> None:
+    payload = {**_BASE_PAYLOAD, "codibge": "abc"}
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+    assert alerta.municipio is not None
+    assert alerta.municipio.codigo_ibge is None
+
+
+def test_from_dict_uf_curta_municipio_none() -> None:
+    payload = {**_BASE_PAYLOAD, "uf": "A"}
+    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
+    assert alerta.municipio is None
 
 
 # ============================================================

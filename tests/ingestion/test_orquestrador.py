@@ -11,6 +11,7 @@ from alertavida.domain.alerta import Alerta
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
 from alertavida.ingestion import executar_ingestao
+from alertavida.ingestion.orquestrador import RelatorioFonte, RelatorioIngestao
 from alertavida.sources.base import DataSource, ResultadoColeta
 from tests.fixtures.sources_fake import FakeDataSource
 
@@ -35,6 +36,94 @@ def _alerta(
         data_criacao=_DATA_CRIACAO,
         ult_atualizacao=ult_atualizacao,
     )
+
+
+# ---------------------------------------------------------------------------
+# Invariantes de RelatorioFonte / RelatorioIngestao
+# ---------------------------------------------------------------------------
+
+
+def test_relatorio_fonte_soma_incorreta_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioFonte(
+            fonte=FonteDado.CEMADEN,
+            coletados=5,
+            novos=2,
+            atualizados=1,
+            inalterados=1,
+            descartados=0,
+            falha_coleta=False,
+            coletado_em=datetime(2026, 1, 1, tzinfo=UTC),
+            duracao_segundos=0.5,
+        )
+
+
+def test_relatorio_fonte_sucesso_sem_coletado_em_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioFonte(
+            fonte=FonteDado.CEMADEN,
+            coletados=0,
+            novos=0,
+            atualizados=0,
+            inalterados=0,
+            descartados=0,
+            falha_coleta=False,
+            coletado_em=None,
+            duracao_segundos=0.5,
+        )
+
+
+def test_relatorio_fonte_falha_com_contador_nao_zero_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioFonte(
+            fonte=FonteDado.CEMADEN,
+            coletados=1,
+            novos=0,
+            atualizados=0,
+            inalterados=0,
+            descartados=0,
+            falha_coleta=True,
+            coletado_em=None,
+            duracao_segundos=0.5,
+        )
+
+
+def test_relatorio_fonte_falha_com_coletado_em_nao_none_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioFonte(
+            fonte=FonteDado.CEMADEN,
+            coletados=0,
+            novos=0,
+            atualizados=0,
+            inalterados=0,
+            descartados=0,
+            falha_coleta=True,
+            coletado_em=datetime(2026, 1, 1, tzinfo=UTC),
+            duracao_segundos=0.5,
+        )
+
+
+def test_relatorio_fonte_duracao_negativa_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioFonte(
+            fonte=FonteDado.CEMADEN,
+            coletados=0,
+            novos=0,
+            atualizados=0,
+            inalterados=0,
+            descartados=0,
+            falha_coleta=False,
+            coletado_em=datetime(2026, 1, 1, tzinfo=UTC),
+            duracao_segundos=-0.1,
+        )
+
+
+def test_relatorio_ingestao_agora_naive_lanca() -> None:
+    with pytest.raises(ValueError):
+        RelatorioIngestao(
+            por_fonte=(),
+            agora=datetime(2026, 1, 1),  # sem tzinfo
+        )
 
 
 # ---------------------------------------------------------------------------

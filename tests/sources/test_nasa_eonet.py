@@ -144,6 +144,84 @@ class TestMontarAlerta:
         with pytest.raises(ValueError):
             source._montar_alerta(ev)
 
+    # ------------------------------------------------------------------
+    # _categoria_principal — line 213
+    # ------------------------------------------------------------------
+
+    def test_categoria_ausente_vira_indeterminado(self):
+        """categories vazia → _categoria_principal retorna '' → INDETERMINADO."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_NOCAT",
+            categoria="wildfires",
+            geometry=[fix_point((-50.0, -10.0), "2026-05-18T00:00:00Z")],
+        )
+        ev["categories"] = []  # override para lista vazia
+        out = source._montar_alerta(ev)
+        assert out.tipo_evento == TipoEvento.INDETERMINADO
+        assert out.cobrade_codigo is None
+        assert out.fonte_classificacao == FonteClassificacao.INDETERMINADA
+
+    # ------------------------------------------------------------------
+    # _fix_mais_recente — ramos que pulam fix inválido
+    # ------------------------------------------------------------------
+
+    def test_fix_coordenadas_curtas_pulado(self):
+        """Fix com coordinates de tamanho < 2 é pulado; sem fix válido → ValueError."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_SHORT",
+            categoria="wildfires",
+            geometry=[{"type": "Point", "coordinates": [10.0], "date": "2026-05-18T00:00:00Z"}],
+        )
+        with pytest.raises(ValueError):
+            source._montar_alerta(ev)
+
+    def test_fix_sem_date_pulado(self):
+        """Fix sem chave 'date' é pulado; sem fix válido → ValueError."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_NODATE",
+            categoria="wildfires",
+            geometry=[{"type": "Point", "coordinates": [10.0, 20.0]}],
+        )
+        with pytest.raises(ValueError):
+            source._montar_alerta(ev)
+
+    def test_fix_date_invalida_pulado(self):
+        """Fix com date não parseável é pulado; sem fix válido → ValueError."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_BADDATE",
+            categoria="wildfires",
+            geometry=[fix_point((10.0, 20.0), "não-data")],
+        )
+        with pytest.raises(ValueError):
+            source._montar_alerta(ev)
+
+    def test_fix_date_sem_timezone_normaliza_utc(self):
+        """Fix com date naive (sem timezone) normaliza para UTC."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_NAIVE",
+            categoria="wildfires",
+            geometry=[fix_point((10.0, 20.0), "2026-05-18T00:00:00")],
+        )
+        out = source._montar_alerta(ev)
+        assert out.data_criacao == datetime(2026, 5, 18, tzinfo=timezone.utc)
+        assert out.cobrade_codigo == "1.4.1.0.0"
+
+    def test_fix_coordenadas_nao_numericas_pulado(self):
+        """Fix com coordinates não numéricas é pulado; sem fix válido → ValueError."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_STRCOORDS",
+            categoria="wildfires",
+            geometry=[{"type": "Point", "coordinates": ["x", "y"], "date": "2026-05-18T00:00:00Z"}],
+        )
+        with pytest.raises(ValueError):
+            source._montar_alerta(ev)
+
 
 # ============================================================
 # coletar — invariantes
