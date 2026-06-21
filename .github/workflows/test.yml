@@ -41,6 +41,41 @@ jobs:
       - name: Run tests
         run: uv run pytest -v --cov=src --cov-report=term-missing
 
+  coverage:
+    name: coverage comment
+    runs-on: ubuntu-latest
+    # Roda em push na main e em PRs do próprio repo (dependabot incluso).
+    # PRs de forks são pulados: lá o GITHUB_TOKEN é read-only e o comentário
+    # exigiria o padrão workflow_run separado. A cobertura segue sendo medida
+    # no job `test` (term-missing no log) de qualquer forma.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python from .python-version
+        run: uv python install
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Run tests with coverage
+        run: uv run pytest --cov=src --cov-report=
+
+      - name: Coverage comment
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+
   contrato:
     name: contrato CEMADEN
     runs-on: ubuntu-latest
