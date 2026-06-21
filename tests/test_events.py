@@ -1,6 +1,7 @@
+import logging
 import sqlite3
 
-from alertavida.events import EventBus, OutboxDispatcher
+from alertavida.events import EventBus, OutboxDispatcher, log_handler
 
 
 def test_subscribe_e_publish_chama_handler() -> None:
@@ -139,3 +140,36 @@ def test_dispatcher_respeita_batch_size(db_temporario) -> None:
 
     assert processados == 3
     assert preenchidos == 3
+
+
+def test_dispatcher_payload_json_invalido_nao_quebra(db_temporario) -> None:
+    db_path = db_temporario
+
+    with sqlite3.connect(db_path) as conexao:
+        conexao.execute(
+            """
+            INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
+            VALUES ('AlertaCriado', 99, '{quebrado', 1, '2026-05-02T07:00:00', NULL, 0)
+            """
+        )
+        conexao.commit()
+
+    bus = EventBus()
+    dispatcher = OutboxDispatcher(bus)
+    processados = dispatcher.processar_pendentes()
+
+    with sqlite3.connect(db_path) as conexao:
+        row = conexao.execute(
+            "SELECT processado_em, payload FROM eventos WHERE agregado_id = 99"
+        ).fetchone()
+
+    assert processados == 1
+    assert row is not None and row[0] is not None
+    assert row[1] == "{quebrado", "payload original preservado no banco"
+
+
+def test_log_handler_loga_evento(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="alertavida.events")
+    log_handler({"tipo": "AlertaCriado", "agregado_id": "C1", "payload": {}})
+    assert "AlertaCriado" in caplog.text
+    assert "C1" in caplog.text
