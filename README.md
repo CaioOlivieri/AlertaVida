@@ -1,6 +1,7 @@
 # AlertaVida
 
 [![tests](https://github.com/CaioOlivieri/AlertaVida/actions/workflows/test.yml/badge.svg)](https://github.com/CaioOlivieri/AlertaVida/actions/workflows/test.yml)
+[![Coverage badge](https://raw.githubusercontent.com/CaioOlivieri/AlertaVida/python-coverage-comment-action-data/badge.svg)](https://github.com/CaioOlivieri/AlertaVida/tree/python-coverage-comment-action-data)
 
 🇧🇷 **[Leia em português](#português)**
 
