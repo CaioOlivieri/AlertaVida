@@ -88,9 +88,12 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
 
     Cobre as colunas COBRADE da Camada 4 Parte A.2 (`cobrade_codigo`,
     `fonte_classificacao`), adicionadas via `ALTER TABLE` apenas quando
-    ausentes, e a remoção de `assinatura` (revisão de manutenibilidade,
-    issue #8 B1 — coluna nunca lida nem escrita com valor real, resquício
-    da abordagem de hash pré-`ult_atualizacao`). A migration de PK composta
+    ausentes; a remoção de `assinatura` (issue #8 B1 — coluna nunca lida
+    nem escrita com valor real, resquício da abordagem de hash pré-
+    `ult_atualizacao`); e a remoção dos índices especulativos `idx_uf`,
+    `idx_evento`, `idx_nivel` (issue #11 D3 — sem query real hoje, custo
+    de escrita sem benefício até a Camada 6 definir os filtros reais).
+    A migration de PK composta
     para surrogate (A.1.4) nunca passou por aqui — o banco estava vazio no
     refator e rupturas estruturais são barradas antes por
     `_verificar_compatibilidade_schema`. É o ponto de extensão obrigatório
@@ -113,6 +116,13 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     # inserida como NULL literal); DROP seguro, sem dado a preservar.
     if "assinatura" in colunas_existentes:
         conexao.execute("ALTER TABLE alertas DROP COLUMN assinatura")
+
+    # Manutenibilidade #11 D3 — idx_uf/idx_evento/idx_nivel eram especulativos
+    # (nenhuma query atual filtra por essas colunas; Camada 6 ainda não
+    # existe). DROP INDEX não afeta dados, apenas remove custo de escrita.
+    conexao.execute("DROP INDEX IF EXISTS idx_uf")
+    conexao.execute("DROP INDEX IF EXISTS idx_evento")
+    conexao.execute("DROP INDEX IF EXISTS idx_nivel")
 
 
 def criar_banco() -> None:
@@ -145,9 +155,6 @@ def criar_banco() -> None:
             )
             """
         )
-        conexao.execute("CREATE INDEX IF NOT EXISTS idx_uf ON alertas (uf)")
-        conexao.execute("CREATE INDEX IF NOT EXISTS idx_evento ON alertas (evento)")
-        conexao.execute("CREATE INDEX IF NOT EXISTS idx_nivel ON alertas (nivel)")
         conexao.execute("CREATE INDEX IF NOT EXISTS idx_fonte ON alertas (fonte)")
         conexao.execute(
             "CREATE INDEX IF NOT EXISTS idx_escopo_geografico ON alertas (escopo_geografico)"
