@@ -9,8 +9,10 @@ e `tests/sources/test_nasa_eonet.py`).
 ## O que NÃO está aqui
 
 Amostras reais capturadas da API EONET **não** ficam versionadas no git.
-São geradas pelo script `scripts/inspect_eonet_payload.py` e salvas em
-`data/samples/eonet/` (gitignored).
+Foram geradas pelo script exploratório `scripts/inspect_eonet_payload.py`
+(removido após a Camada 4 C.1-C.3 completar — propósito cumprido, ver
+`wiki/decisions/decision-record.md`) e salvas em `data/samples/eonet/`
+(gitignored).
 
 Motivo: padrão estabelecido pelo projeto para fixtures de inspeção exploratória.
 A fonte CEMADEN segue o mesmo padrão (`data/samples/cemaden_raw_*.json`).
@@ -21,7 +23,6 @@ do repo sem benefício de auditoria (git delta não compacta JSON pretty-printed
 
 | Tipo | Localização | Versionado? |
 |---|---|---|
-| Script de captura | `scripts/inspect_eonet_payload.py` | sim |
 | Amostras brutas | `data/samples/eonet/eonet_open_*.json`, `eonet_all_30d_*.json` | não |
 | Relatório consolidado | `wiki/raw/analise-eonet-2026-05-18.md` | sim |
 | Fixtures sintéticas para testes | `__init__.py` (este diretório) | sim |

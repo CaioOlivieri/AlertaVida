@@ -10,9 +10,9 @@ casos que NasaEonetSource precisa tratar:
 - evento sem geometry             → descartado (sem coordenadas)
 - categoria fora do mapeamento    → tipo_evento INDETERMINADO
 
-Shape fiel ao payload v3 confirmado em scripts/inspect_eonet_payload.py
-(_first_geometry_point, _category_ids) e no relatório empírico
-tests/fixtures/eonet/README.md / wiki/raw/analise-eonet-2026-05-18.md:
+Shape fiel ao payload v3 confirmado no relatório empírico
+wiki/raw/analise-eonet-2026-05-18.md (script de captura removido após
+Camada 4 C.1-C.3 completar — ver wiki/decisions/decision-record.md):
 
     {"events": [
         {"id": "EONET_...", "title": ..., "closed": null,
