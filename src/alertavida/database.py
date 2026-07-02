@@ -90,10 +90,12 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     `fonte_classificacao`), adicionadas via `ALTER TABLE` apenas quando
     ausentes; a remoção de `assinatura` (issue #8 B1 — coluna nunca lida
     nem escrita com valor real, resquício da abordagem de hash pré-
-    `ult_atualizacao`); e a remoção dos índices especulativos `idx_uf`,
+    `ult_atualizacao`); a remoção dos índices especulativos `idx_uf`,
     `idx_evento`, `idx_nivel` (issue #11 D3 — sem query real hoje, custo
-    de escrita sem benefício até a Camada 6 definir os filtros reais).
-    A migration de PK composta
+    de escrita sem benefício até a Camada 6 definir os filtros reais); e
+    a coluna aditiva `descricao` (issue #11 D4 — write-only no domínio
+    até aqui, `NasaEonetSource` já populava com o título do evento mas o
+    dado morria na ingestão). A migration de PK composta
     para surrogate (A.1.4) nunca passou por aqui — o banco estava vazio no
     refator e rupturas estruturais são barradas antes por
     `_verificar_compatibilidade_schema`. É o ponto de extensão obrigatório
@@ -124,6 +126,11 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     conexao.execute("DROP INDEX IF EXISTS idx_evento")
     conexao.execute("DROP INDEX IF EXISTS idx_nivel")
 
+    # Manutenibilidade #11 D4 — descricao era write-only no domínio (NasaEonetSource
+    # já a populava com o título do evento, mas o dado morria na ingestão).
+    if "descricao" not in colunas_existentes:
+        conexao.execute("ALTER TABLE alertas ADD COLUMN descricao TEXT NULL")
+
 
 def criar_banco() -> None:
     with conectar() as conexao:
@@ -151,6 +158,7 @@ def criar_banco() -> None:
                 rodadas_ausente     INTEGER NOT NULL DEFAULT 0,
                 cobrade_codigo      TEXT NULL,
                 fonte_classificacao TEXT NOT NULL DEFAULT 'INDETERMINADA',
+                descricao           TEXT NULL,
                 UNIQUE (fonte, cod_alerta)
             )
             """
@@ -254,8 +262,8 @@ def aplicar_resultado_deteccao(
                         datahoracriacao, detectado_em, codibge,
                         latitude, longitude, escopo_geografico, ult_atualizacao,
                         status_interno, visto_ultima_vez, rodadas_ausente,
-                        cobrade_codigo, fonte_classificacao
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, ?, ?)
+                        cobrade_codigo, fonte_classificacao, descricao
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, ?, ?, ?)
                     """,
                     (
                         alerta.fonte.value,
@@ -274,6 +282,7 @@ def aplicar_resultado_deteccao(
                         agora,
                         alerta.cobrade_codigo,
                         alerta.fonte_classificacao.value,
+                        alerta.descricao,
                     ),
                 )
                 agregado_id = cursor.lastrowid

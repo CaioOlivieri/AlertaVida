@@ -80,6 +80,7 @@ def _payload_de(alerta: Alerta) -> dict:
             "longitude": alerta.coordenadas.longitude,
         },
         "escopo_geografico": alerta.escopo_geografico.value,
+        "descricao": alerta.descricao,
     }
 
 

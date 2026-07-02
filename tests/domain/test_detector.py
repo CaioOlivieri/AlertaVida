@@ -176,6 +176,23 @@ def test_multiplos_alertas_mix() -> None:
 # ============================================================
 
 
+def test_payload_de_inclui_descricao():
+    """Manutenibilidade #11 D4: descricao propaga no payload do evento."""
+    alerta = Alerta(
+        cod_alerta="D1",
+        fonte=FonteDado.EONET,
+        tipo_evento=TipoEvento.CLIMATOLOGICO,
+        nivel_risco=NivelRisco.INDETERMINADO,
+        coordenadas=Coordenadas(latitude=-3.0, longitude=-60.0),
+        data_criacao=datetime(2026, 5, 18, tzinfo=timezone.utc),
+        descricao="Wildfire - Amazonas, Brazil",
+    )
+
+    res = detectar_mudancas([alerta], [])
+
+    assert res.eventos[0].payload["descricao"] == "Wildfire - Amazonas, Brazil"
+
+
 def test_detectar_propaga_fonte_em_alerta_criado():
     """EventoDetectado.fonte para AlertaCriado vem do Alerta atual."""
     alerta = Alerta(

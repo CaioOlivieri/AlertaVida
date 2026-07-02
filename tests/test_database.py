@@ -177,6 +177,21 @@ class TestMigrationAditiva:
         assert "idx_fonte" in indices_depois
         assert "idx_escopo_geografico" in indices_depois
 
+    def test_schema_a1_recebe_coluna_descricao(self, tmp_path, monkeypatch):
+        """Manutenibilidade #11 D4: descricao é adicionada por _migrar_banco()."""
+        db_path = tmp_path / "a1_sem_descricao.db"
+        with sqlite3.connect(db_path) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        colunas_antes = _colunas_de(db_path, "alertas")
+        assert "descricao" not in colunas_antes
+
+        db_module.criar_banco()
+
+        colunas_depois = _colunas_de(db_path, "alertas")
+        assert "descricao" in colunas_depois
+
     def test_migrar_banco_e_idempotente_sem_coluna_assinatura(self, tmp_path, monkeypatch):
         """Rodar criar_banco() de novo após o DROP não levanta erro (idempotência)."""
         db_path = tmp_path / "a1_ja_migrado.db"
@@ -239,7 +254,7 @@ class TestCriacaoSchemaAtual:
         # Colunas críticas do schema atual
         esperadas = {
             "id", "fonte", "cod_alerta", "escopo_geografico",
-            "cobrade_codigo", "fonte_classificacao",
+            "cobrade_codigo", "fonte_classificacao", "descricao",
         }
         assert esperadas.issubset(colunas)
 
@@ -272,6 +287,97 @@ class TestIdempotencia:
         colunas_2 = _colunas_de(db_path, "alertas")
 
         assert colunas_1 == colunas_2
+
+class TestPersistenciaDescricao:
+    """Manutenibilidade #11 D4: descricao é persistida no INSERT de AlertaCriado."""
+
+    def test_criado_persiste_descricao(self, db_temporario, monkeypatch):
+        from alertavida.database import aplicar_resultado_deteccao
+        from alertavida.domain.alerta import Alerta
+        from alertavida.domain.coordenadas import Coordenadas
+        from alertavida.domain.detector import (
+            EventoDetectado,
+            ResultadoDeteccao,
+            TipoEventoDetectado,
+        )
+        from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
+
+        alerta = Alerta(
+            cod_alerta="E1",
+            fonte=FonteDado.EONET,
+            tipo_evento=TipoEvento.CLIMATOLOGICO,
+            nivel_risco=NivelRisco.INDETERMINADO,
+            coordenadas=Coordenadas(latitude=-3.0, longitude=-60.0),
+            data_criacao=datetime(2026, 5, 18, tzinfo=timezone.utc),
+            descricao="Wildfire - Amazonas, Brazil",
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.CRIADO,
+                    cod_alerta="E1",
+                    fonte=FonteDado.EONET,
+                    payload={"cod_alerta": "E1", "fonte": "EONET"},
+                )
+            ],
+            codigos_vistos={"E1"},
+            codigos_ausentes=set(),
+            codigos_resolvidos=set(),
+            fonte_por_codigo={"E1": FonteDado.EONET},
+        )
+
+        aplicar_resultado_deteccao(resultado, {"E1": alerta}, "2026-05-18T00:00:00")
+
+        with sqlite3.connect(db_temporario) as conexao:
+            row = conexao.execute(
+                "SELECT descricao FROM alertas WHERE cod_alerta = 'E1'"
+            ).fetchone()
+
+        assert row[0] == "Wildfire - Amazonas, Brazil"
+
+    def test_criado_sem_descricao_persiste_null(self, db_temporario, monkeypatch):
+        from alertavida.database import aplicar_resultado_deteccao
+        from alertavida.domain.alerta import Alerta
+        from alertavida.domain.coordenadas import Coordenadas
+        from alertavida.domain.detector import (
+            EventoDetectado,
+            ResultadoDeteccao,
+            TipoEventoDetectado,
+        )
+        from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
+
+        alerta = Alerta(
+            cod_alerta="C1",
+            fonte=FonteDado.CEMADEN,
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.MODERADO,
+            coordenadas=Coordenadas(latitude=-8.0, longitude=-34.0),
+            data_criacao=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.CRIADO,
+                    cod_alerta="C1",
+                    fonte=FonteDado.CEMADEN,
+                    payload={"cod_alerta": "C1", "fonte": "CEMADEN"},
+                )
+            ],
+            codigos_vistos={"C1"},
+            codigos_ausentes=set(),
+            codigos_resolvidos=set(),
+            fonte_por_codigo={"C1": FonteDado.CEMADEN},
+        )
+
+        aplicar_resultado_deteccao(resultado, {"C1": alerta}, "2026-05-01T00:00:00")
+
+        with sqlite3.connect(db_temporario) as conexao:
+            row = conexao.execute(
+                "SELECT descricao FROM alertas WHERE cod_alerta = 'C1'"
+            ).fetchone()
+
+        assert row[0] is None
+
 
 class TestReativado:
     """REATIVADO volta status para ATIVO e zera rodadas_ausente."""
