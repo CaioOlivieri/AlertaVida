@@ -2,8 +2,9 @@
 
 ## Propósito
 
-Espaço reservado para **fixtures sintéticas mínimas** da fonte NASA EONET v3,
-a serem criadas durante a implementação da `NasaEonetSource` (Camada 4 Parte C.1+).
+**Fixtures sintéticas mínimas** da fonte NASA EONET v3, usadas pelos testes
+de `NasaEonetSource` (Camada 4 Parte C.1+, ver `__init__.py` neste diretório
+e `tests/sources/test_nasa_eonet.py`).
 
 ## O que NÃO está aqui
 
@@ -22,8 +23,8 @@ do repo sem benefício de auditoria (git delta não compacta JSON pretty-printed
 |---|---|---|
 | Script de captura | `scripts/inspect_eonet_payload.py` | sim |
 | Amostras brutas | `data/samples/eonet/eonet_open_*.json`, `eonet_all_30d_*.json` | não |
-| Relatório consolidado | `docs/analise_eonet_<YYYY-MM-DD>.md` | sim |
-| Fixtures sintéticas para testes | (este diretório, quando Parte C.1 chegar) | sim |
+| Relatório consolidado | `wiki/raw/analise-eonet-2026-05-18.md` | sim |
+| Fixtures sintéticas para testes | `__init__.py` (este diretório) | sim |
 
 ## Categorias EONET v3 (13 categorias, IDs string)
 
