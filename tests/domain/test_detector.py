@@ -52,8 +52,6 @@ def test_alerta_inalterado_nao_gera_evento() -> None:
     snap = AlertaSnapshot(
         cod_alerta="9002",
         fonte=FonteDado.CEMADEN,
-        nivel_risco=alerta.nivel_risco.value,
-        tipo_evento=alerta.tipo_evento.value,
         ult_atualizacao=ult,
         rodadas_ausente=0,
         status_interno="ATIVO",
@@ -71,8 +69,6 @@ def test_alerta_atualizado_gera_evento_atualizado() -> None:
     snap = AlertaSnapshot(
         cod_alerta="9003",
         fonte=FonteDado.CEMADEN,
-        nivel_risco=alerta.nivel_risco.value,
-        tipo_evento=alerta.tipo_evento.value,
         ult_atualizacao="2026-04-29T09:00:00+00:00",
         rodadas_ausente=0,
         status_interno="ATIVO",
@@ -88,8 +84,6 @@ def test_alerta_ausente_incrementa_ausente() -> None:
     snap = AlertaSnapshot(
         cod_alerta=cod,
         fonte=FonteDado.CEMADEN,
-        nivel_risco="MODERADO",
-        tipo_evento="HIDROLOGICO",
         ult_atualizacao="2026-04-29T09:00:00+00:00",
         rodadas_ausente=0,
         status_interno="ATIVO",
@@ -104,8 +98,6 @@ def test_alerta_ausente_resolve_apos_limite() -> None:
     snap = AlertaSnapshot(
         cod_alerta=cod,
         fonte=FonteDado.CEMADEN,
-        nivel_risco="ALTO",
-        tipo_evento="HIDROLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=2,
         status_interno="ATIVO",
@@ -127,8 +119,6 @@ def test_alerta_resolvido_que_reaparece_emite_reativado() -> None:
     snap = AlertaSnapshot(
         cod_alerta="9006",
         fonte=FonteDado.CEMADEN,
-        nivel_risco="BAIXO",
-        tipo_evento="INDETERMINADO",
         ult_atualizacao=None,
         rodadas_ausente=0,
         status_interno="RESOLVIDO",
@@ -156,8 +146,6 @@ def test_multiplos_alertas_mix() -> None:
     snap_igual = AlertaSnapshot(
         cod_alerta="9200",
         fonte=FonteDado.CEMADEN,
-        nivel_risco=alerta_igual.nivel_risco.value,
-        tipo_evento=alerta_igual.tipo_evento.value,
         ult_atualizacao=ult_existente,
         rodadas_ausente=0,
         status_interno="ATIVO",
@@ -165,8 +153,6 @@ def test_multiplos_alertas_mix() -> None:
     snap_ausente = AlertaSnapshot(
         cod_alerta="9300",
         fonte=FonteDado.CEMADEN,
-        nivel_risco="MODERADO",
-        tipo_evento="GEOLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=0,
         status_interno="ATIVO",
@@ -222,8 +208,6 @@ def test_detectar_propaga_fonte_em_alerta_resolvido():
     snapshot = AlertaSnapshot(
         cod_alerta="Y1",
         fonte=FonteDado.EONET,
-        nivel_risco="ALTO",
-        tipo_evento="HIDROLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=2,
         status_interno="ATIVO",
@@ -280,8 +264,6 @@ def test_resultado_inclui_fonte_por_codigo_de_snapshots_ausentes():
     snapshot = AlertaSnapshot(
         cod_alerta="Z1",
         fonte=FonteDado.CEMADEN,
-        nivel_risco="ALTO",
-        tipo_evento="HIDROLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=1,
         status_interno="ATIVO",
@@ -311,8 +293,6 @@ def test_resultado_fonte_por_codigo_alerta_vence_snapshot():
     snapshot = AlertaSnapshot(
         cod_alerta="W1",
         fonte=FonteDado.CEMADEN,
-        nivel_risco="ALTO",
-        tipo_evento="HIDROLOGICO",
         ult_atualizacao=None,
         rodadas_ausente=0,
         status_interno="ATIVO",
