@@ -52,12 +52,16 @@ class ResultadoDeteccao:
     Princípio Tell, Don't Ask: o detector "diz" tudo que aconteceu (eventos,
     códigos vistos, códigos ausentes, e o mapa de fonte por código);
     a infra "executa" sem precisar adivinhar.
+
+    Não carrega `codigos_resolvidos` separado — por construção é sempre
+    exatamente o conjunto de `cod_alerta` dos eventos com
+    `tipo is TipoEventoDetectado.RESOLVIDO` em `eventos`, então expô-lo à
+    parte seria redundante (manutenibilidade #18 A).
     """
 
     eventos: list[EventoDetectado]
     codigos_vistos: set[str]
     codigos_ausentes: set[str]
-    codigos_resolvidos: set[str]
     fonte_por_codigo: dict[str, FonteDado]
 
 
@@ -172,6 +176,5 @@ def detectar_mudancas(
         eventos=eventos,
         codigos_vistos=codigos_vistos,
         codigos_ausentes=codigos_ausentes_final,
-        codigos_resolvidos=codigos_resolvidos,
         fonte_por_codigo=fonte_por_codigo,
     )
