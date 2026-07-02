@@ -32,6 +32,13 @@ def _colunas_de(db_path: Path, tabela: str) -> set[str]:
         return {row[1] for row in cursor.fetchall()}
 
 
+def _indices_de(db_path: Path, tabela: str) -> set[str]:
+    """Retorna o conjunto de nomes de índice de uma tabela."""
+    with sqlite3.connect(db_path) as conexao:
+        cursor = conexao.execute(f"PRAGMA index_list({tabela})")
+        return {row[1] for row in cursor.fetchall()}
+
+
 def _patch_db_path(monkeypatch, db_path: Path) -> None:
     """Aponta DB_PATH para o caminho temporário no módulo database."""
     monkeypatch.setattr(db_module, "DB_PATH", db_path)
@@ -150,6 +157,26 @@ class TestMigrationAditiva:
         colunas_depois = _colunas_de(db_path, "alertas")
         assert "assinatura" not in colunas_depois
 
+    def test_schema_a1_perde_indices_especulativos(self, tmp_path, monkeypatch):
+        """Manutenibilidade #11 D3: idx_uf/idx_evento/idx_nivel são removidos;
+        idx_fonte/idx_escopo_geografico permanecem (uso plausível)."""
+        db_path = tmp_path / "a1_com_indices.db"
+        with sqlite3.connect(db_path) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        indices_antes = _indices_de(db_path, "alertas")
+        assert {"idx_uf", "idx_evento", "idx_nivel"}.issubset(indices_antes)
+
+        db_module.criar_banco()
+
+        indices_depois = _indices_de(db_path, "alertas")
+        assert "idx_uf" not in indices_depois
+        assert "idx_evento" not in indices_depois
+        assert "idx_nivel" not in indices_depois
+        assert "idx_fonte" in indices_depois
+        assert "idx_escopo_geografico" in indices_depois
+
     def test_migrar_banco_e_idempotente_sem_coluna_assinatura(self, tmp_path, monkeypatch):
         """Rodar criar_banco() de novo após o DROP não levanta erro (idempotência)."""
         db_path = tmp_path / "a1_ja_migrado.db"
@@ -215,6 +242,11 @@ class TestCriacaoSchemaAtual:
             "cobrade_codigo", "fonte_classificacao",
         }
         assert esperadas.issubset(colunas)
+
+        indices = _indices_de(db_path, "alertas")
+        # Índices especulativos nunca criados (manutenibilidade #11 D3)
+        assert not {"idx_uf", "idx_evento", "idx_nivel"} & indices
+        assert {"idx_fonte", "idx_escopo_geografico"}.issubset(indices)
 
     def test_cria_tabela_eventos(self, tmp_path, monkeypatch):
         db_path = tmp_path / "novo.db"
