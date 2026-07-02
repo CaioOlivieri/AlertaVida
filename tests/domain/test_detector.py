@@ -90,7 +90,7 @@ def test_alerta_ausente_incrementa_ausente() -> None:
     )
     res = detectar_mudancas([], [snap])
     assert res.codigos_ausentes == {cod}
-    assert res.codigos_resolvidos == set()
+    assert res.eventos == []  # ainda não resolvido (rodadas_ausente abaixo do limite)
 
 
 def test_alerta_ausente_resolve_apos_limite() -> None:
@@ -103,9 +103,9 @@ def test_alerta_ausente_resolve_apos_limite() -> None:
         status_interno="ATIVO",
     )
     res = detectar_mudancas([], [snap], rodadas_para_resolver=3)
-    assert res.codigos_resolvidos == {cod}
     assert len(res.eventos) == 1
     assert res.eventos[0].tipo is TipoEventoDetectado.RESOLVIDO
+    assert res.eventos[0].cod_alerta == cod
     assert res.eventos[0].payload["fonte"] == "CEMADEN"
     assert res.codigos_ausentes == set()
 
@@ -167,8 +167,8 @@ def test_multiplos_alertas_mix() -> None:
     tipos = [e.tipo for e in res.eventos]
     assert tipos.count(TipoEventoDetectado.CRIADO) == 1
     assert tipos.count(TipoEventoDetectado.ATUALIZADO) == 0
+    assert tipos.count(TipoEventoDetectado.RESOLVIDO) == 0
     assert res.codigos_ausentes == {"9300"}
-    assert res.codigos_resolvidos == set()
 
 
 # ============================================================

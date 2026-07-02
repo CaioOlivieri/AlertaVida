@@ -322,7 +322,6 @@ class TestPersistenciaDescricao:
             ],
             codigos_vistos={"E1"},
             codigos_ausentes=set(),
-            codigos_resolvidos=set(),
             fonte_por_codigo={"E1": FonteDado.EONET},
         )
 
@@ -365,7 +364,6 @@ class TestPersistenciaDescricao:
             ],
             codigos_vistos={"C1"},
             codigos_ausentes=set(),
-            codigos_resolvidos=set(),
             fonte_por_codigo={"C1": FonteDado.CEMADEN},
         )
 
@@ -424,7 +422,6 @@ class TestReativado:
             ],
             codigos_vistos={"R1"},
             codigos_ausentes=set(),
-            codigos_resolvidos=set(),
             fonte_por_codigo={"R1": FonteDado.CEMADEN},
         )
 
