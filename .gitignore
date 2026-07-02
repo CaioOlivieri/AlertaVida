@@ -90,6 +90,11 @@ secrets/
 *.bak
 diff.txt
 tmp_*
+
+# ==========================================
+# Exports de contexto (scripts/export_context.py)
+# ==========================================
+reports/
 # ==========================================
 # Configs locais de IDE (Cursor / Claude)
 # ==========================================

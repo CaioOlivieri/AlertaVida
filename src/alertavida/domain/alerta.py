@@ -8,10 +8,11 @@ Invariantes do `Alerta`:
 - `escopo_geografico` é atributo do domínio mas calculado externamente em
   `monitor.py` via `geographic.classificar_escopo()` (Camada 4 Parte A.1.4).
   Default `INDETERMINADO` é o valor seguro até a classificação acontecer.
-- `descricao` é opcional. Atualmente write-only — entra no domínio mas não é
-  persistido nem propagado em eventos. Quando fontes que entreguem descrições
-  estruturadas (EONET, INMET) forem integradas (Parte C+), o campo passa a
-  ser usado downstream.
+- `descricao` é opcional. Atualmente write-only — `NasaEonetSource` já o
+  popula com o título do evento, mas a persistência (`database.py`) e o
+  payload de eventos (`detector._payload_de`) ainda não o incluem, então o
+  dado é descartado ao final da ingestão. Decisão de persistir ou não
+  pendente (issue #11 D4).
 """
 
 from __future__ import annotations
