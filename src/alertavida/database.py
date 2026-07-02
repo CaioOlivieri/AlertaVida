@@ -84,14 +84,17 @@ def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
 
 
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
-    """Aplica migrations aditivas idempotentes ao schema existente.
+    """Aplica migrations aditivas/de limpeza idempotentes ao schema existente.
 
-    Hoje cobre as colunas COBRADE da Camada 4 Parte A.2 (`cobrade_codigo`,
+    Cobre as colunas COBRADE da Camada 4 Parte A.2 (`cobrade_codigo`,
     `fonte_classificacao`), adicionadas via `ALTER TABLE` apenas quando
-    ausentes. A migration de PK composta para surrogate (A.1.4) nunca passou
-    por aqui — o banco estava vazio no refator e rupturas estruturais são
-    barradas antes por `_verificar_compatibilidade_schema`. É o ponto de
-    extensão obrigatório para qualquer mudança de schema aditiva futura.
+    ausentes, e a remoção de `assinatura` (revisão de manutenibilidade,
+    issue #8 B1 — coluna nunca lida nem escrita com valor real, resquício
+    da abordagem de hash pré-`ult_atualizacao`). A migration de PK composta
+    para surrogate (A.1.4) nunca passou por aqui — o banco estava vazio no
+    refator e rupturas estruturais são barradas antes por
+    `_verificar_compatibilidade_schema`. É o ponto de extensão obrigatório
+    para qualquer mudança de schema aditiva ou de limpeza futura.
     """
     # Camada 4 / A.2 — colunas COBRADE
     cursor = conexao.execute("PRAGMA table_info(alertas)")
@@ -105,6 +108,11 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
             "ALTER TABLE alertas ADD COLUMN fonte_classificacao "
             "TEXT NOT NULL DEFAULT 'INDETERMINADA'"
         )
+
+    # Manutenibilidade #8 B1 — assinatura nunca teve valor real (sempre
+    # inserida como NULL literal); DROP seguro, sem dado a preservar.
+    if "assinatura" in colunas_existentes:
+        conexao.execute("ALTER TABLE alertas DROP COLUMN assinatura")
 
 
 def criar_banco() -> None:
@@ -131,7 +139,6 @@ def criar_banco() -> None:
                 status_interno      TEXT NOT NULL DEFAULT 'ATIVO',
                 visto_ultima_vez    TEXT NOT NULL DEFAULT '',
                 rodadas_ausente     INTEGER NOT NULL DEFAULT 0,
-                assinatura          TEXT,
                 cobrade_codigo      TEXT NULL,
                 fonte_classificacao TEXT NOT NULL DEFAULT 'INDETERMINADA',
                 UNIQUE (fonte, cod_alerta)
@@ -240,8 +247,8 @@ def aplicar_resultado_deteccao(
                         datahoracriacao, detectado_em, codibge,
                         latitude, longitude, escopo_geografico, ult_atualizacao,
                         status_interno, visto_ultima_vez, rodadas_ausente,
-                        assinatura, cobrade_codigo, fonte_classificacao
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, NULL, ?, ?)
+                        cobrade_codigo, fonte_classificacao
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ATIVO', ?, 0, ?, ?)
                     """,
                     (
                         alerta.fonte.value,

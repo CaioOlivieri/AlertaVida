@@ -135,6 +135,34 @@ class TestMigrationAditiva:
         assert "cobrade_codigo" in colunas_depois
         assert "fonte_classificacao" in colunas_depois
 
+    def test_schema_a1_perde_coluna_assinatura(self, tmp_path, monkeypatch):
+        """Manutenibilidade #8 B1: assinatura é removida por _migrar_banco()."""
+        db_path = tmp_path / "a1_com_assinatura.db"
+        with sqlite3.connect(db_path) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        colunas_antes = _colunas_de(db_path, "alertas")
+        assert "assinatura" in colunas_antes
+
+        db_module.criar_banco()
+
+        colunas_depois = _colunas_de(db_path, "alertas")
+        assert "assinatura" not in colunas_depois
+
+    def test_migrar_banco_e_idempotente_sem_coluna_assinatura(self, tmp_path, monkeypatch):
+        """Rodar criar_banco() de novo após o DROP não levanta erro (idempotência)."""
+        db_path = tmp_path / "a1_ja_migrado.db"
+        with sqlite3.connect(db_path) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        db_module.criar_banco()
+        db_module.criar_banco()  # segunda rodada — não deve tentar DROP de novo
+
+        colunas = _colunas_de(db_path, "alertas")
+        assert "assinatura" not in colunas
+
     def test_fonte_classificacao_tem_default_correto(self, tmp_path, monkeypatch):
         """Linhas A.1 pré-existentes recebem 'INDETERMINADA' como default."""
         db_path = tmp_path / "a1_com_dados.db"
@@ -180,6 +208,7 @@ class TestCriacaoSchemaAtual:
         db_module.criar_banco()
 
         colunas = _colunas_de(db_path, "alertas")
+        assert "assinatura" not in colunas  # removida na manutenibilidade #8 B1
         # Colunas críticas do schema atual
         esperadas = {
             "id", "fonte", "cod_alerta", "escopo_geografico",
