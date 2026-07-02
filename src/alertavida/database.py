@@ -180,7 +180,7 @@ def buscar_snapshots(fonte: FonteDado) -> list[AlertaSnapshot]:
     with conectar() as conexao:
         cursor = conexao.execute(
             """
-            SELECT cod_alerta, fonte, nivel, evento, ult_atualizacao,
+            SELECT cod_alerta, fonte, ult_atualizacao,
                    rodadas_ausente, status_interno
             FROM alertas
             WHERE fonte = ?
@@ -191,11 +191,9 @@ def buscar_snapshots(fonte: FonteDado) -> list[AlertaSnapshot]:
             AlertaSnapshot(
                 cod_alerta=row[0],
                 fonte=FonteDado.from_string(row[1]),
-                nivel_risco=row[2],
-                tipo_evento=row[3],
-                ult_atualizacao=row[4],
-                rodadas_ausente=row[5],
-                status_interno=row[6],
+                ult_atualizacao=row[2],
+                rodadas_ausente=row[3],
+                status_interno=row[4],
             )
             for row in cursor.fetchall()
         ]

@@ -28,8 +28,6 @@ class TipoEventoDetectado(StrEnum):
 class AlertaSnapshot:
     cod_alerta: str
     fonte: FonteDado
-    nivel_risco: str
-    tipo_evento: str
     ult_atualizacao: str | None
     rodadas_ausente: int
     status_interno: str
@@ -41,7 +39,6 @@ class EventoDetectado:
     cod_alerta: str
     fonte: FonteDado
     payload: dict
-    schema_versao: int = 1
 
 
 @dataclass
