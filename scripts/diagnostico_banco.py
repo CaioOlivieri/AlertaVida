@@ -1,8 +1,7 @@
 """Diagnóstico do banco local: qual versão do schema rodou aqui?"""
 import sqlite3
-from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "alertavida.db"
+from alertavida.database import DB_PATH
 
 if not DB_PATH.exists():
     print(f"Banco não existe em {DB_PATH}")
