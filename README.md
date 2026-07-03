@@ -7,7 +7,7 @@
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
 | src/alertavida/database.py               |       82 |        0 |    100% |           |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
-| src/alertavida/domain/alerta.py          |      108 |        1 |     99% |       111 |
+| src/alertavida/domain/alerta.py          |      107 |        1 |     99% |       121 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
 | src/alertavida/domain/coordenadas.py     |        5 |        0 |    100% |           |
 | src/alertavida/domain/detector.py        |       64 |        0 |    100% |           |
@@ -23,9 +23,9 @@
 | src/alertavida/sources/\_\_init\_\_.py   |        4 |        0 |    100% |           |
 | src/alertavida/sources/\_http.py         |       48 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
-| src/alertavida/sources/cemaden.py        |       62 |        0 |    100% |           |
+| src/alertavida/sources/cemaden.py        |       59 |        1 |     98% |       160 |
 | src/alertavida/sources/nasa\_eonet.py    |      105 |        0 |    100% |           |
-| **TOTAL**                                |  **837** |    **1** | **99%** |           |
+| **TOTAL**                                |  **833** |    **2** | **99%** |           |
 
 
 ## Setup coverage badge
