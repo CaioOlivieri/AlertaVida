@@ -23,9 +23,9 @@
 | src/alertavida/sources/\_\_init\_\_.py   |        4 |        0 |    100% |           |
 | src/alertavida/sources/\_http.py         |       48 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
-| src/alertavida/sources/cemaden.py        |       52 |        0 |    100% |           |
+| src/alertavida/sources/cemaden.py        |       62 |        0 |    100% |           |
 | src/alertavida/sources/nasa\_eonet.py    |      105 |        0 |    100% |           |
-| **TOTAL**                                |  **827** |    **1** | **99%** |           |
+| **TOTAL**                                |  **837** |    **1** | **99%** |           |
 
 
 ## Setup coverage badge
