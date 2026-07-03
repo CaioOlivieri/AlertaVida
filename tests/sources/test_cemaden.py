@@ -58,7 +58,13 @@ class TestMontarAlerta:
         assert out.escopo_geografico.value == "BRASIL"
         assert out.data_criacao == datetime(2025, 12, 20, 14, 30, tzinfo=timezone.utc)
 
-    def test_mapeia_nomes_alternativos(self):
+    def test_aliases_especulativos_nao_sao_mais_reconhecidos(self):
+        """Regressão (issue #19): antes da poda, from_dict aceitava nomes
+        alternativos (cidade/estado/tipo_evento/data_criacao) especulativos
+        que o CEMADEN nunca emitiu (confirmado empiricamente na issue #30).
+        Item com essas chaves em vez das reais (municipio/uf/evento/
+        datahoracriacao) agora é descartado — sem `evento`, from_dict
+        levanta antes até de chegar nas coordenadas."""
         item = {
             "cod_alerta": 99,
             "cidade": "Curitiba",
@@ -70,10 +76,8 @@ class TestMontarAlerta:
             "longitude": -49.27,
         }
         source = CemadenSource()
-        out = source._montar_alerta(item)
-        assert out.cod_alerta == "99"
-        assert out.tipo_evento.value == "GEOLOGICO"
-        assert out.nivel_risco.value == "ALTO"
+        with pytest.raises(ValueError, match="Alerta sem tipo_evento"):
+            source._montar_alerta(item)
 
     def test_lanca_sem_cod_alerta(self):
         source = CemadenSource()
@@ -87,11 +91,11 @@ class TestMontarAlerta:
             "cod_alerta": 100,
             "municipio": "X",
             "uf": "SP",
-            "tipoevento": "Risco Hidrológico",
+            "evento": "Risco Hidrológico",
             "nivel": "ALTO",
             "datahoracriacao": "2026-04-29T10:00:00",
         }
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Alerta sem coordenadas válidas"):
             source._montar_alerta(item)
 
     def test_lanca_quando_obrigatorios_ausentes(self):
@@ -160,15 +164,16 @@ class TestMontarAlertaCobrade:
         assert alerta.cobrade_codigo is None
         assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
 
-    def test_evento_sem_chave_real_preserva_tipo_evento_do_from_dict(self):
-        """Sem a chave `evento`, cai no fallback: preserva o tipo_evento que
-        Alerta.from_dict já resolveu via seus próprios aliases (ex.: chave
-        `tipo_evento`), mas não popula cobrade (sem categoria granular)."""
+    def test_evento_sem_chave_real_descarta_item(self):
+        """Issue #19: from_dict só reconhece a chave real `evento` — sem ela
+        (ex.: usando o alias especulativo `tipo_evento`), from_dict levanta
+        ValueError antes de _montar_alerta chegar na extração de categoria.
+        O fallback que existia antes da poda (preservar tipo_evento resolvido
+        por outro alias) foi removido junto: não havia mais alias nenhum
+        capaz de acioná-lo."""
         source = CemadenSource()
-        alerta = source._montar_alerta({**self._BASE, "tipo_evento": "Deslizamento"})
-        assert alerta.tipo_evento.value == "GEOLOGICO"
-        assert alerta.cobrade_codigo is None
-        assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
+        with pytest.raises(ValueError, match="Alerta sem tipo_evento"):
+            source._montar_alerta({**self._BASE, "tipo_evento": "Deslizamento"})
 
 
 # ============================================================
@@ -240,7 +245,7 @@ class TestColetarNormalize:
         """Payload como lista JSON no topo é aceito por CemadenSource."""
         itens = [
             _ITEM_VALIDO,
-            {"codigoalerta": "99999", "tipoevento": "Risco Hidrológico", "nivel": "ALTO",
+            {"cod_alerta": "99999", "evento": "Risco Hidrológico", "nivel": "ALTO",
              "datahoracriacao": "2026-04-29T10:00:00", "latitude": -10.0, "longitude": -40.0},
         ]
         payload_bytes = json.dumps(itens).encode("utf-8")

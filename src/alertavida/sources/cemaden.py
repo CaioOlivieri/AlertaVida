@@ -112,6 +112,14 @@ class CemadenSource(DataSource):
 
         Levanta ValueError se item não tiver campos obrigatórios. Captura em
         coletar() conta como descartado; bugs internos (TypeError etc.) propagam.
+
+        Nota (issue #19): `Alerta.from_dict` só reconhece a chave real `evento`
+        para tipo_evento — sem ela, já levanta ValueError antes desta função
+        continuar. Por isso `categoria`/`tipo_evento`/`cobrade` abaixo não
+        precisam de fallback: se chegamos aqui, `item["evento"]` existe e é
+        não-vazio (o pior caso, sufixo sem categoria, já cai em INDETERMINADO/
+        None sozinho — `_categoria_do_evento` e os mapeamentos tratam string
+        vazia sem lançar).
         """
         if not isinstance(item, dict):
             raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
@@ -119,15 +127,8 @@ class CemadenSource(DataSource):
         escopo = classificar_escopo(alerta.coordenadas)
 
         categoria = self._categoria_do_evento(item)
-        if categoria:
-            tipo_evento = TipoEvento.from_string(categoria)
-            cobrade = mapear_cemaden(categoria)
-        else:
-            # Sem a chave real `evento`: preserva o que from_dict já resolveu
-            # via seus próprios aliases (fallback defensivo). Sem `evento`,
-            # não há categoria granular o bastante pra mapear COBRADE.
-            tipo_evento = alerta.tipo_evento
-            cobrade = None
+        tipo_evento = TipoEvento.from_string(categoria)
+        cobrade = mapear_cemaden(categoria)
         if cobrade is not None:
             fonte_classificacao = FonteClassificacao.MAPEADA_POR_NOME
         else:
