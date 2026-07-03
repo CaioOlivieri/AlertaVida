@@ -28,10 +28,10 @@ def _opener_de_payload(payload_bytes: bytes):
 
 
 _ITEM_VALIDO = {
-    "codigoalerta": "12345",
+    "cod_alerta": "12345",
     "municipio": "Rio de Janeiro",
-    "estado": "RJ",
-    "tipoevento": "Alagamento",
+    "uf": "RJ",
+    "evento": "Risco Hidrológico - Moderado",
     "nivel": "MODERADO",
     "datahoracriacao": "2025-12-20T14:30:00",
     "latitude": -22.91,
@@ -118,10 +118,15 @@ class TestMontarAlerta:
 
 
 class TestMontarAlertaCobrade:
+    """Issue #30: payload real usa a chave `evento` com valor composto
+    "<categoria> - <nível>" (ex.: "Risco Hidrológico - Moderado"), não
+    `tipoevento` com categoria pura como estes testes assumiam antes da
+    correção — o que mascarava o bug (cobrade sempre None em produção)."""
+
     _BASE = {
-        "codigoalerta": "1001",
+        "cod_alerta": "1001",
         "nivel": "MODERADO",
-        "estado": "PE",
+        "uf": "PE",
         "municipio": "Recife",
         "datahoracriacao": "2026-05-01T10:00:00",
         "latitude": -8.05,
@@ -130,23 +135,99 @@ class TestMontarAlertaCobrade:
 
     def test_risco_hidrologico_popula_cobrade(self):
         source = CemadenSource()
-        alerta = source._montar_alerta({**self._BASE, "tipoevento": "Risco Hidrológico"})
+        alerta = source._montar_alerta(
+            {**self._BASE, "evento": "Risco Hidrológico - Moderado"}
+        )
+        assert alerta.tipo_evento.value == "HIDROLOGICO"
         assert alerta.cobrade_codigo == "1.2.0.0.0"
         assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
 
     def test_movimentos_de_massa_popula_cobrade(self):
         source = CemadenSource()
         alerta = source._montar_alerta(
-            {**self._BASE, "tipoevento": "Movimentos de Massa", "nivel": "ALTO"}
+            {**self._BASE, "evento": "Movimentos de Massa - Alto", "nivel": "ALTO"}
         )
+        assert alerta.tipo_evento.value == "GEOLOGICO"
         assert alerta.cobrade_codigo == "1.1.3.0.0"
         assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
 
-    def test_tipoevento_desconhecido_cobrade_none(self):
+    def test_evento_desconhecido_cobrade_none(self):
         source = CemadenSource()
-        alerta = source._montar_alerta({**self._BASE, "tipoevento": "Tipo Desconhecido"})
+        alerta = source._montar_alerta(
+            {**self._BASE, "evento": "Tipo Desconhecido - Moderado"}
+        )
+        assert alerta.tipo_evento.value == "INDETERMINADO"
         assert alerta.cobrade_codigo is None
         assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
+
+    def test_evento_sem_chave_real_preserva_tipo_evento_do_from_dict(self):
+        """Sem a chave `evento`, cai no fallback: preserva o tipo_evento que
+        Alerta.from_dict já resolveu via seus próprios aliases (ex.: chave
+        `tipo_evento`), mas não popula cobrade (sem categoria granular)."""
+        source = CemadenSource()
+        alerta = source._montar_alerta({**self._BASE, "tipo_evento": "Deslizamento"})
+        assert alerta.tipo_evento.value == "GEOLOGICO"
+        assert alerta.cobrade_codigo is None
+        assert alerta.fonte_classificacao == FonteClassificacao.INDETERMINADA
+
+
+# ============================================================
+# _montar_alerta — regressão contra payload real (issue #30)
+# ============================================================
+
+
+class TestMontarAlertaPayloadReal:
+    """Itens verbatim de data/samples/cemaden_raw_20260501_234406Z.json
+    (gitignored, não disponível em CI — por isso embutidos aqui). Payload
+    real do CEMADEN, não idealizado: chave `evento` composta, sem
+    `tipoevento`/`codigoalerta`. Regressão do bug da issue #30, onde
+    CemadenSource lia uma chave inexistente e nunca classificava nada."""
+
+    _ITEM_REAL_HIDROLOGICO = {
+        "cod_alerta": 1854,
+        "datahoracriacao": "2026-04-09 07:08:15.941",
+        "ult_atualizacao": "2026-04-09 07:08:15.941",
+        "codibge": 1301803,
+        "evento": "Risco Hidrológico - Moderado",
+        "nivel": "Moderado",
+        "status": 1,
+        "uf": "AM",
+        "municipio": "IPIXUNA",
+        "latitude": -7.1811121783502,
+        "longitude": -71.416098582989,
+    }
+
+    _ITEM_REAL_GEOLOGICO = {
+        "cod_alerta": 2001,
+        "datahoracriacao": "2026-04-15 09:00:00.000",
+        "ult_atualizacao": "2026-04-15 09:00:00.000",
+        "codibge": 3106200,
+        "evento": "Movimentos de Massa - Alto",
+        "nivel": "Alto",
+        "status": 1,
+        "uf": "MG",
+        "municipio": "BELO HORIZONTE",
+        "latitude": -19.9167,
+        "longitude": -43.9345,
+    }
+
+    def test_item_real_hidrologico_classifica_corretamente(self):
+        source = CemadenSource()
+        alerta = source._montar_alerta(self._ITEM_REAL_HIDROLOGICO)
+        assert alerta.cod_alerta == "1854"
+        assert alerta.tipo_evento.value == "HIDROLOGICO"
+        assert alerta.nivel_risco.value == "MODERADO"
+        assert alerta.cobrade_codigo == "1.2.0.0.0"
+        assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
+
+    def test_item_real_geologico_classifica_corretamente(self):
+        source = CemadenSource()
+        alerta = source._montar_alerta(self._ITEM_REAL_GEOLOGICO)
+        assert alerta.cod_alerta == "2001"
+        assert alerta.tipo_evento.value == "GEOLOGICO"
+        assert alerta.nivel_risco.value == "ALTO"
+        assert alerta.cobrade_codigo == "1.1.3.0.0"
+        assert alerta.fonte_classificacao == FonteClassificacao.MAPEADA_POR_NOME
 
 
 # ============================================================
