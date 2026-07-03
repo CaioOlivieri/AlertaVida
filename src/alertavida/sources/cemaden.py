@@ -24,7 +24,7 @@ from urllib.request import urlopen
 
 from alertavida.domain import Alerta
 from alertavida.domain.cobrade import mapear_cemaden
-from alertavida.domain.enums import FonteClassificacao, FonteDado
+from alertavida.domain.enums import FonteClassificacao, FonteDado, TipoEvento
 from alertavida.domain.geographic import classificar_escopo
 from alertavida.sources._http import (
     TIMEOUT_SEGUNDOS,
@@ -118,8 +118,16 @@ class CemadenSource(DataSource):
         alerta = Alerta.from_dict(item, fonte=self.fonte)
         escopo = classificar_escopo(alerta.coordenadas)
 
-        tipo_evento_bruto = item.get("tipoevento") or ""
-        cobrade = mapear_cemaden(tipo_evento_bruto)
+        categoria = self._categoria_do_evento(item)
+        if categoria:
+            tipo_evento = TipoEvento.from_string(categoria)
+            cobrade = mapear_cemaden(categoria)
+        else:
+            # Sem a chave real `evento`: preserva o que from_dict já resolveu
+            # via seus próprios aliases (fallback defensivo). Sem `evento`,
+            # não há categoria granular o bastante pra mapear COBRADE.
+            tipo_evento = alerta.tipo_evento
+            cobrade = None
         if cobrade is not None:
             fonte_classificacao = FonteClassificacao.MAPEADA_POR_NOME
         else:
@@ -127,8 +135,26 @@ class CemadenSource(DataSource):
 
         return alerta.model_copy(
             update={
+                "tipo_evento": tipo_evento,
                 "escopo_geografico": escopo,
                 "cobrade_codigo": cobrade,
                 "fonte_classificacao": fonte_classificacao,
             }
         )
+
+    @staticmethod
+    def _categoria_do_evento(item: dict) -> str:
+        """Extrai a categoria bruta do campo `evento` do CEMADEN.
+
+        O payload real entrega `evento` como string composta
+        "<categoria> - <nível>" (ex.: "Risco Hidrológico - Moderado",
+        confirmado em 475 itens reais de data/samples/cemaden_raw_*.json,
+        issue #30). Corta no primeiro " - " e retorna só a categoria — é
+        isso que `TipoEvento.from_string` e `mapear_cemaden` esperam.
+        Retorna "" se `evento` estiver ausente ou vazio (cai em
+        TipoEvento.INDETERMINADO / cobrade None, sem inventar).
+        """
+        evento_bruto = item.get("evento")
+        if not isinstance(evento_bruto, str) or not evento_bruto.strip():
+            return ""
+        return evento_bruto.split(" - ", 1)[0].strip()
