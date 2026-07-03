@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-06-11
+updated: 2026-07-02
 
 # AlertaVida Wiki Index
 
@@ -51,6 +51,8 @@ updated: 2026-06-11
 - [[patterns/ai-agent-workflow]]
 - [[patterns/resilience-invariants]]
 - [[patterns/security]]
+- [[patterns/spec-checklist]] — quality gate against specs ("unit tests for English")
+- [[patterns/layer-convergence]] — end-of-layer declared-vs-real audit
 
 ### Decisions
 - [[decisions/decision-record]] — full table of all decisions
@@ -68,3 +70,4 @@ updated: 2026-06-11
 - [[decisions/utc-timestamps-consistency]]
 - [[decisions/sqlite-wal-busy-timeout]]
 - [[decisions/shared-report-formatter]]
+- [[decisions/sdd-practices-from-spec-kit]] — spec-kit evaluation: 5 practices adopted, tooling rejected

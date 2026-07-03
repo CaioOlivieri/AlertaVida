@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]] (§9)
-updated: 2026-06-11
+updated: 2026-07-02
 
 # AI Agent Workflow
 
@@ -31,3 +31,17 @@ updated: 2026-06-11
 4. **Non-functional requirements:** robustness, tests, conventions
 5. **Success criteria:** how to know it's done
 6. **No-modify scope:** explicit list of untouchable files
+
+## Issue batches: dependency and parallelism markers
+
+When a review or a layer plan generates a batch of issues (e.g., the 2026-07-02
+maintainability review, #17–#24), each issue body declares:
+
+- `Depends on: #N, #M` — issues that must merge first (omit if none).
+- `Parallel-safe: yes|no` — whether it can be worked simultaneously with its
+  siblings without merge conflicts or semantic coupling.
+
+Adapted from spec-kit's `[P]` task markers ([[decisions/sdd-practices-from-spec-kit]]).
+Purpose: make parallelizable work visible so it can be split between agents
+(Claude Code, opencode) and the maintainer instead of defaulting to a serial
+queue.
