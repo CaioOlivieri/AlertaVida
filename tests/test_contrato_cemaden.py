@@ -18,10 +18,17 @@ por CemadenSource. Abaixo disso, a falha pode ter duas causas:
 Após B.1.b, este teste exercita o fluxo completo da CemadenSource (fetch,
 parse, normalize, mapeamento), não apenas Alerta.from_dict isolado.
 Aproxima o teste do contrato real usado em produção.
+
+Issue #30 (2026-07-02): taxa de aceitação sozinha não pega mudanças de
+schema que degradam classificação sem rejeitar o item (o bug corrigido
+aqui deixou TODO alerta CEMADEN com tipo_evento=INDETERMINADO por meses
+sem que este teste falhasse — o item ainda virava Alerta válido, só
+classificado errado). Adicionado critério de taxa de classificação.
 """
 
 import pytest
 
+from alertavida.domain.enums import TipoEvento
 from alertavida.sources import FalhaDeColeta
 from alertavida.sources.cemaden import URL_CEMADEN, CemadenSource
 
@@ -52,4 +59,19 @@ def test_contrato_cemaden_aceita_resposta_real():
         f"scripts/inspect_cemaden_payload.py; "
         f"(2) validador interno ficou mais estrito — verificar git log "
         f"em src/alertavida/domain/alerta.py e domain/enums.py."
+    )
+
+    classificados = sum(
+        1 for a in resultado.alertas if a.tipo_evento is not TipoEvento.INDETERMINADO
+    )
+    taxa_classificacao = classificados / len(resultado.alertas)
+    assert taxa_classificacao > 0.5, (
+        f"Só {taxa_classificacao:.0%} dos alertas aceitos foram classificados "
+        f"({classificados}/{len(resultado.alertas)}). Alertas são aceitos como "
+        f"Alerta válido mesmo com tipo_evento=INDETERMINADO — aceitação sozinha "
+        f"não detecta isto (issue #30: CemadenSource lia uma chave que não "
+        f"existia no payload real, e todo alerta ficou INDETERMINADO por meses "
+        f"sem esta suíte quebrar). Causa provável: CEMADEN mudou o formato do "
+        f"campo `evento` — inspecionar via scripts/inspect_cemaden_payload.py "
+        f"e ajustar CemadenSource._categoria_do_evento."
     )
