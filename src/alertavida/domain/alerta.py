@@ -10,8 +10,9 @@ Invariantes do `Alerta`:
   Default `INDETERMINADO` é o valor seguro até a classificação acontecer.
 - `descricao` é opcional. `NasaEonetSource` popula com o título do evento;
   persistido em `alertas.descricao` e propagado no payload de eventos
-  (`detector._payload_de`) desde a issue #11 D4. `CemadenSource` não
-  fornece descrição hoje (campo fica `None`).
+  (`detector._payload_de`) desde a issue #11 D4. `from_dict` (usado só por
+  `CemadenSource`) não tenta extrair descrição — nenhuma amostra real do
+  CEMADEN jamais teve um campo equivalente (issue #19); campo fica `None`.
 """
 
 from __future__ import annotations
@@ -103,19 +104,28 @@ class Alerta(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, fonte: FonteDado) -> "Alerta":
-        cod_raw = _pick(data, "codigoalerta", "cod_alerta", "id", "codigo")
+        """Parser dedicado ao shape real do CEMADEN — único consumidor hoje.
+
+        Chaves reconhecidas são exatamente as observadas empiricamente em 475
+        itens reais (`data/samples/cemaden_raw_*.json`, issue #19/#30) — sem
+        aliases especulativos para formatos nunca vistos. `NasaEonetSource`
+        não usa este parser (constrói `Alerta` diretamente — shape divergente
+        demais). Quando uma nova fonte chegar (INMET/INPE), o precedente do
+        EONET é o caminho: parser próprio, não estender os aliases daqui.
+        """
+        cod_raw = _pick(data, "cod_alerta")
         if cod_raw is None:
             raise ValueError("Alerta sem cod_alerta válido")
         cod_alerta = str(cod_raw).strip()
         if not cod_alerta:
             raise ValueError("Alerta sem cod_alerta válido")
 
-        tipo_raw = _pick(data, "tipo_evento", "evento", "tipo", "desastre", "tipoevento")
+        tipo_raw = _pick(data, "evento")
         if tipo_raw is None or not str(tipo_raw).strip():
             raise ValueError("Alerta sem tipo_evento")
         tipo_evento = TipoEvento.from_string(str(tipo_raw))
 
-        nivel_raw = _pick(data, "nivel", "nivel_alerta", "severity", "grau")
+        nivel_raw = _pick(data, "nivel")
         try:
             nivel_risco = NivelRisco.from_string(None if nivel_raw is None else str(nivel_raw))
         except ValueError:
@@ -123,8 +133,8 @@ class Alerta(BaseModel):
                 raise ValueError("Alerta sem nivel_risco") from None
             raise
 
-        latitude = _pick(data, "latitude", "lat")
-        longitude = _pick(data, "longitude", "lon", "lng")
+        latitude = _pick(data, "latitude")
+        longitude = _pick(data, "longitude")
         if latitude is None or longitude is None:
             raise ValueError("Alerta sem coordenadas válidas")
         try:
@@ -132,7 +142,7 @@ class Alerta(BaseModel):
         except (TypeError, ValueError, ValidationError):
             raise ValueError("Alerta sem coordenadas válidas") from None
 
-        dt_raw = _pick(data, "datahoracriacao", "data_criacao", "dataCriacao", "dt_criacao")
+        dt_raw = _pick(data, "datahoracriacao")
         if dt_raw is None or not str(dt_raw).strip():
             raise ValueError("Alerta sem data_criacao")
         try:
@@ -142,7 +152,7 @@ class Alerta(BaseModel):
         if data_criacao.tzinfo is None:
             data_criacao = data_criacao.replace(tzinfo=timezone.utc)
 
-        ult_raw = _pick(data, "ult_atualizacao", "ultima_atualizacao", "dataAtualizacao")
+        ult_raw = _pick(data, "ult_atualizacao")
         ult_atualizacao = None
         if ult_raw is not None and str(ult_raw).strip():
             try:
@@ -152,11 +162,11 @@ class Alerta(BaseModel):
             except ValueError:
                 ult_atualizacao = None
 
-        nome = _pick(data, "municipio", "nome_municipio", "cidade")
-        uf = _pick(data, "uf", "estado", "state")
+        nome = _pick(data, "municipio")
+        uf = _pick(data, "uf")
         municipio = None
         if nome is not None and str(nome).strip() and uf is not None and str(uf).strip():
-            ibge_raw = _pick(data, "codibge", "codigo_ibge", "ibge", "codigoIbge")
+            ibge_raw = _pick(data, "codibge")
             codigo_ibge = None
             if ibge_raw is not None:
                 try:
@@ -172,8 +182,6 @@ class Alerta(BaseModel):
             except ValidationError:
                 municipio = None
 
-        descricao = _pick(data, "descricao", "desc", "mensagem")
-
         return cls(
             cod_alerta=cod_alerta,
             fonte=fonte,
@@ -183,5 +191,4 @@ class Alerta(BaseModel):
             municipio=municipio,
             data_criacao=data_criacao,
             ult_atualizacao=ult_atualizacao,
-            descricao=None if descricao is None else str(descricao),
         )

@@ -15,10 +15,10 @@ from alertavida.domain.enums import (
 from alertavida.domain.municipio import Municipio
 
 _BASE_PAYLOAD = {
-    "codigoalerta": "12345",
-    "tipoevento": "Risco Hidrológico",
+    "cod_alerta": "12345",
+    "evento": "Risco Hidrológico",
     "nivel": "MODERADO",
-    "estado": "PE",
+    "uf": "PE",
     "municipio": "Recife",
     "codibge": 2611606,
     "datahoracriacao": "2026-04-29T10:00:00",
@@ -91,16 +91,15 @@ def test_criacao_direta_com_escopo_explicito() -> None:
 
 def test_from_dict_payload_realista_cemaden() -> None:
     payload = {
-        "codigoalerta": "1001",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "1001",
+        "evento": "Risco Hidrológico",
         "nivel": "MODERADO",
-        "estado": "sp",
+        "uf": "sp",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "ult_atualizacao": "2026-04-29T12:00:00",
         "latitude": "-23.55",
         "longitude": "-46.63",
-        "descricao": "Teste",
     }
     alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
     assert alerta.cod_alerta == "1001"
@@ -116,10 +115,10 @@ def test_from_dict_payload_realista_cemaden() -> None:
 
 def test_from_dict_com_codibge_popula_codigo_ibge() -> None:
     payload = {
-        "codigoalerta": "1001",
-        "tipoevento": "Queimada",
+        "cod_alerta": "1001",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "codibge": 3550308,
         "datahoracriacao": "2026-04-29T10:00:00",
@@ -131,7 +130,15 @@ def test_from_dict_com_codibge_popula_codigo_ibge() -> None:
     assert alerta.municipio.codigo_ibge == 3550308
 
 
-def test_from_dict_com_chaves_alternativas() -> None:
+def test_from_dict_aliases_especulativos_nao_sao_reconhecidos() -> None:
+    """Regressão (issue #19): from_dict só reconhece as chaves reais do
+    CEMADEN, confirmadas empiricamente contra 475 itens reais (issue #30).
+
+    Este payload usa exclusivamente aliases especulativos que o CEMADEN
+    nunca emitiu em nenhuma amostra real (`id`, `nivel_alerta`, `state`,
+    `cidade`, `lat`, `lng`, `dataCriacao`, `ultima_atualizacao`) — o
+    fallback multi-alias que existia antes foi removido de propósito.
+    """
     payload = {
         "id": "EONET_42",
         "evento": "Queimada",
@@ -143,14 +150,8 @@ def test_from_dict_com_chaves_alternativas() -> None:
         "dataCriacao": "2026-04-29T10:00:00",
         "ultima_atualizacao": "2026-04-29T14:30:00+00:00",
     }
-    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
-    assert alerta.cod_alerta == "EONET_42"
-    assert alerta.municipio is not None
-    assert alerta.municipio.nome == "Belo Horizonte"
-    assert alerta.tipo_evento == TipoEvento.CLIMATOLOGICO
-    assert alerta.ult_atualizacao == datetime.fromisoformat(
-        "2026-04-29T14:30:00+00:00"
-    )
+    with pytest.raises(ValueError, match="Alerta sem cod_alerta válido"):
+        Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
 
 
 # ============================================================
@@ -160,8 +161,8 @@ def test_from_dict_com_chaves_alternativas() -> None:
 
 def test_from_dict_sem_municipio_apenas_coordenadas() -> None:
     payload = {
-        "codigoalerta": "EONET_5421",
-        "tipoevento": "Wildfires",
+        "cod_alerta": "EONET_5421",
+        "evento": "Wildfires",
         "nivel": "INDETERMINADO",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -10.5,
@@ -175,8 +176,8 @@ def test_from_dict_sem_municipio_apenas_coordenadas() -> None:
 
 def test_from_dict_sem_uf_municipio_fica_none() -> None:
     payload = {
-        "codigoalerta": "999",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "999",
+        "evento": "Risco Hidrológico",
         "nivel": "ALTO",
         "municipio": "Recife",
         "datahoracriacao": "2026-04-29T10:00:00",
@@ -189,10 +190,10 @@ def test_from_dict_sem_uf_municipio_fica_none() -> None:
 
 def test_from_dict_sem_nome_municipio_fica_none() -> None:
     payload = {
-        "codigoalerta": "999",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "999",
+        "evento": "Risco Hidrológico",
         "nivel": "ALTO",
-        "estado": "PE",
+        "uf": "PE",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -8.05,
         "longitude": -34.88,
@@ -208,10 +209,10 @@ def test_from_dict_sem_nome_municipio_fica_none() -> None:
 
 def test_from_dict_sem_coordenadas_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
     }
@@ -221,10 +222,10 @@ def test_from_dict_sem_coordenadas_lanca() -> None:
 
 def test_from_dict_sem_latitude_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "longitude": -46.63,
@@ -235,10 +236,10 @@ def test_from_dict_sem_latitude_lanca() -> None:
 
 def test_from_dict_latitude_invalida_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": 999,
@@ -250,10 +251,10 @@ def test_from_dict_latitude_invalida_lanca() -> None:
 
 def test_from_dict_coordenadas_nao_numericas_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": "não é número",
@@ -270,8 +271,8 @@ def test_from_dict_coordenadas_nao_numericas_lanca() -> None:
 
 def test_from_dict_cod_alerta_alfanumerico_aceita() -> None:
     payload = {
-        "codigoalerta": "EONET_5421",
-        "tipoevento": "Wildfires",
+        "cod_alerta": "EONET_5421",
+        "evento": "Wildfires",
         "nivel": "INDETERMINADO",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -10.5,
@@ -283,10 +284,10 @@ def test_from_dict_cod_alerta_alfanumerico_aceita() -> None:
 
 def test_from_dict_cod_alerta_numerico_aceita_como_string() -> None:
     payload = {
-        "codigoalerta": 1854,
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": 1854,
+        "evento": "Risco Hidrológico",
         "nivel": "MODERADO",
-        "estado": "PE",
+        "uf": "PE",
         "municipio": "Recife",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -8.05,
@@ -298,9 +299,9 @@ def test_from_dict_cod_alerta_numerico_aceita_como_string() -> None:
 
 def test_from_dict_sem_cod_alerta_lanca() -> None:
     payload = {
-        "tipoevento": "Queimada",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -312,10 +313,10 @@ def test_from_dict_sem_cod_alerta_lanca() -> None:
 
 def test_from_dict_cod_alerta_string_vazia_lanca() -> None:
     payload = {
-        "codigoalerta": "",
-        "tipoevento": "Queimada",
+        "cod_alerta": "",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -325,22 +326,6 @@ def test_from_dict_cod_alerta_string_vazia_lanca() -> None:
         Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
 
 
-def test_from_dict_fallback_quando_chave_principal_vazia() -> None:
-    payload = {
-        "codigoalerta": "",
-        "id": "42",
-        "tipoevento": "Queimada",
-        "nivel": "ALTO",
-        "estado": "SP",
-        "municipio": "Sao Paulo",
-        "datahoracriacao": "2026-04-29T10:00:00",
-        "latitude": -23.55,
-        "longitude": -46.63,
-    }
-    alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
-    assert alerta.cod_alerta == "42"
-
-
 # ============================================================
 # from_dict — Outros campos (tipo_evento, nivel, datas, ult_atualizacao)
 # ============================================================
@@ -348,10 +333,10 @@ def test_from_dict_fallback_quando_chave_principal_vazia() -> None:
 
 def test_from_dict_tipo_evento_vazio_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "",
+        "cod_alerta": "10",
+        "evento": "",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -363,10 +348,10 @@ def test_from_dict_tipo_evento_vazio_lanca() -> None:
 
 def test_from_dict_tipo_evento_desconhecido_vira_indeterminado() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Qualquer coisa",
+        "cod_alerta": "10",
+        "evento": "Qualquer coisa",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -378,9 +363,9 @@ def test_from_dict_tipo_evento_desconhecido_vira_indeterminado() -> None:
 
 def test_from_dict_sem_nivel_lanca() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
-        "estado": "SP",
+        "cod_alerta": "10",
+        "evento": "Queimada",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -392,13 +377,13 @@ def test_from_dict_sem_nivel_lanca() -> None:
 
 def test_from_dict_com_ult_atualizacao_popula() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
-        "dataAtualizacao": "2026-05-01T08:30:00-03:00",
+        "ult_atualizacao": "2026-05-01T08:30:00-03:00",
         "latitude": -23.55,
         "longitude": -46.63,
     }
@@ -409,10 +394,10 @@ def test_from_dict_com_ult_atualizacao_popula() -> None:
 
 def test_from_dict_sem_ult_atualizacao_none() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -424,10 +409,10 @@ def test_from_dict_sem_ult_atualizacao_none() -> None:
 
 def test_from_dict_data_criacao_naive_assume_utc() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -23.55,
@@ -440,10 +425,10 @@ def test_from_dict_data_criacao_naive_assume_utc() -> None:
 
 def test_from_dict_data_criacao_com_timezone_preserva() -> None:
     payload = {
-        "codigoalerta": "10",
-        "tipoevento": "Queimada",
+        "cod_alerta": "10",
+        "evento": "Queimada",
         "nivel": "ALTO",
-        "estado": "SP",
+        "uf": "SP",
         "municipio": "Sao Paulo",
         "datahoracriacao": "2026-04-29T10:00:00-03:00",
         "latitude": -23.55,
@@ -459,7 +444,7 @@ def test_from_dict_data_criacao_com_timezone_preserva() -> None:
 
 
 def test_from_dict_codigo_apenas_espacos() -> None:
-    payload = {**_BASE_PAYLOAD, "codigoalerta": "   "}
+    payload = {**_BASE_PAYLOAD, "cod_alerta": "   "}
     with pytest.raises(ValueError, match="Alerta sem cod_alerta válido"):
         Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
 
@@ -649,8 +634,8 @@ def test_cobrade_none_com_fonte_indeterminada_aceita() -> None:
 def test_from_dict_exige_fonte_como_kwarg():
     """from_dict sem fonte deve levantar TypeError (kwarg obrigatório)."""
     payload = {
-        "codigoalerta": "1",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "1",
+        "evento": "Risco Hidrológico",
         "nivel": "ALTO",
         "latitude": -10.0,
         "longitude": -40.0,
@@ -667,8 +652,8 @@ def test_from_dict_rejeita_fonte_como_string_em_strict():
     o parâmetro direto para cls(fonte=fonte), string solta quebra na construção.
     """
     payload = {
-        "codigoalerta": "1",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "1",
+        "evento": "Risco Hidrológico",
         "nivel": "ALTO",
         "latitude": -10.0,
         "longitude": -40.0,
@@ -681,8 +666,8 @@ def test_from_dict_rejeita_fonte_como_string_em_strict():
 def test_from_dict_aceita_fonte_como_enum():
     """from_dict com fonte=FonteDado.CEMADEN constrói Alerta com fonte populada."""
     payload = {
-        "codigoalerta": "1",
-        "tipoevento": "Risco Hidrológico",
+        "cod_alerta": "1",
+        "evento": "Risco Hidrológico",
         "nivel": "ALTO",
         "latitude": -10.0,
         "longitude": -40.0,

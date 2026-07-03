@@ -20,10 +20,10 @@ from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
 
 def _payload_base_cemaden(cod: int | str) -> dict:
     return {
-        "codigoalerta": cod,
+        "cod_alerta": cod,
         "municipio": "Recife",
-        "estado": "PE",
-        "tipoevento": "Risco Hidrológico",
+        "uf": "PE",
+        "evento": "Risco Hidrológico",
         "nivel": "MODERADO",
         "datahoracriacao": "2026-04-29T10:00:00",
         "latitude": -8.05,
