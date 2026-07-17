@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-06-11
+updated: 2026-07-17
 
 # Resilience Invariants
 
@@ -27,3 +27,5 @@ updated: 2026-06-11
 21. **A RESOLVIDO alert reappearing in the feed MUST emit `AlertaReativado` and reactivate the row** — never INSERT (UNIQUE constraint) and never silently ignore.
 22. **cod_alerta MUST be unique per batch in `executar_ingestao`** — duplicates within the same source response are deduplicated (first occurrence kept, each duplicate increments `descartados`).
 23. **Unknown payload format in `_normalize_payload` MUST raise `FalhaDeColeta`** — a dict without any recognized wrapping key, or a non-list/non-dict payload, must not silently return an empty list.
+24. **`fetch_com_retry` reads at most `max_resposta_bytes + 1` bytes and fails immediately (no retry) if the body exceeds `max_resposta_bytes`** — an oversized response is not a transient failure; same treatment as a 4xx `HTTPError`. Default `MAX_RESPOSTA_BYTES = 20 MB`, injectable per call like `timeout_segundos`.
+25. **`opener_padrao` refuses any redirect to a non-https URL** via `_RedirectHTTPSObrigatorioHandler.redirect_request`, surfacing as `FalhaDeColeta` with the original `HTTPError` chained. Both production sources default their `opener` param to `opener_padrao` — never construct a source with a bare `urlopen`.
