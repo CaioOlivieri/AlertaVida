@@ -21,11 +21,11 @@
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
 | src/alertavida/scheduler.py              |       40 |        0 |    100% |           |
 | src/alertavida/sources/\_\_init\_\_.py   |        4 |        0 |    100% |           |
-| src/alertavida/sources/\_http.py         |       48 |        0 |    100% |           |
+| src/alertavida/sources/\_http.py         |       58 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
-| src/alertavida/sources/cemaden.py        |       59 |        1 |     98% |       160 |
-| src/alertavida/sources/nasa\_eonet.py    |      105 |        0 |    100% |           |
-| **TOTAL**                                |  **829** |    **2** | **99%** |           |
+| src/alertavida/sources/cemaden.py        |       58 |        1 |     98% |       160 |
+| src/alertavida/sources/nasa\_eonet.py    |      104 |        0 |    100% |           |
+| **TOTAL**                                |  **837** |    **2** | **99%** |           |
 
 
 ## Setup coverage badge
