@@ -20,7 +20,6 @@ from pathlib import Path
 from alertavida.domain import Alerta
 from alertavida.domain.detector import (
     AlertaSnapshot,
-    EventoDetectado,
     ResultadoDeteccao,
     TipoEventoDetectado,
 )
@@ -248,8 +247,7 @@ def aplicar_resultado_deteccao(
     mudanças nesta função.
     """
     with conectar() as conexao:
-        eventos: list[EventoDetectado] = resultado.eventos
-        for evento in eventos:
+        for evento in resultado.eventos:
             agregado_id: int | None = None
 
             if evento.tipo is TipoEventoDetectado.CRIADO:
