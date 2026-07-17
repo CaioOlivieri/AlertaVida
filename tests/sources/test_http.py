@@ -7,12 +7,18 @@ test_cemaden.py e test_nasa_eonet.py (uma classe TestFetchComRetry em cada).
 import json
 from unittest.mock import Mock
 from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 import pytest
 
 from alertavida.domain.enums import FonteDado
 from alertavida.sources import FalhaDeColeta
-from alertavida.sources._http import fetch_com_retry, parse_json
+from alertavida.sources._http import (
+    _RedirectHTTPSObrigatorioHandler,
+    fetch_com_retry,
+    opener_padrao,
+    parse_json,
+)
 
 
 def _opener_de_payload(payload_bytes: bytes):
@@ -137,6 +143,59 @@ class TestFetchComRetry:
         monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         assert _chamar(opener, max_resposta_bytes=10) == payload
         assert opener.call_count == 1
+
+    def test_redirect_downgrade_vira_falha_sem_retry(self, monkeypatch):
+        """Simula o HTTPError que _RedirectHTTPSObrigatorioHandler levanta.
+
+        302 não está em {5xx, 408, 429}, então falha imediatamente — sem os
+        4 ciclos de retry que o código pré-#39 faria (código 3xx caía no
+        `else` implícito da checagem antiga, só falhando após esgotar).
+        """
+        erro = HTTPError(
+            url="http://exemplo.com/malicioso",
+            code=302,
+            msg="redirect para esquema não-https recusado",
+            hdrs=None,
+            fp=None,
+        )
+        opener = Mock(side_effect=erro)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        with pytest.raises(FalhaDeColeta) as exc_info:
+            _chamar(opener)
+        assert exc_info.value.original is erro
+        assert opener.call_count == 1
+
+
+# ============================================================
+# _RedirectHTTPSObrigatorioHandler / opener_padrao
+# ============================================================
+
+
+class TestRedirectHTTPSObrigatorioHandler:
+    def test_recusa_redirect_para_http(self):
+        handler = _RedirectHTTPSObrigatorioHandler()
+        req = Request("https://exemplo.com/original")
+        with pytest.raises(HTTPError) as exc_info:
+            handler.redirect_request(
+                req, None, 302, "Found", None, "http://exemplo.com/malicioso"
+            )
+        assert exc_info.value.code == 302
+        assert "http://exemplo.com/malicioso" in str(exc_info.value)
+
+    def test_permite_redirect_https_para_https(self):
+        handler = _RedirectHTTPSObrigatorioHandler()
+        req = Request("https://exemplo.com/original")
+        nova = handler.redirect_request(
+            req, None, 302, "Found", None, "https://exemplo.com/novo"
+        )
+        assert nova is not None
+        assert nova.full_url == "https://exemplo.com/novo"
+
+    def test_opener_padrao_usa_o_handler_https_obrigatorio(self):
+        director = opener_padrao.__self__  # type: ignore[attr-defined]
+        assert any(
+            isinstance(h, _RedirectHTTPSObrigatorioHandler) for h in director.handlers
+        )
 
 
 # ============================================================

@@ -20,7 +20,6 @@ Invariantes do contrato CEMADEN:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from urllib.request import urlopen
 
 from alertavida.domain import Alerta
 from alertavida.domain.cobrade import mapear_cemaden
@@ -30,6 +29,7 @@ from alertavida.sources._http import (
     TIMEOUT_SEGUNDOS,
     Opener,
     fetch_com_retry,
+    opener_padrao,
     parse_json,
 )
 from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
@@ -51,7 +51,7 @@ class CemadenSource(DataSource):
         self,
         *,
         url: str = URL_CEMADEN,
-        opener: Opener = urlopen,  # type: ignore[assignment]
+        opener: Opener = opener_padrao,
         timeout_segundos: float = TIMEOUT_SEGUNDOS,
     ) -> None:
         self._url = url
