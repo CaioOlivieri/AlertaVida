@@ -115,7 +115,7 @@ class OutboxDispatcher:
 
 def log_handler(evento: dict) -> None:
     logger.info(
-        "[%s] cod_alerta=%s payload=%s",
+        "[%s] agregado_id=%s payload=%s",
         evento.get("tipo"),
         evento.get("agregado_id"),
         evento.get("payload"),
