@@ -25,16 +25,32 @@ def _opener_de_payload(payload_bytes: bytes):
     return Mock(return_value=context)
 
 
+def _opener_de_payload_truncavel(payload_bytes: bytes):
+    """Opener fake cujo read(n) recorta o payload, como http.client.HTTPResponse.
+
+    Necessário para testar o cap de tamanho: um fake que ignora `n` (como
+    `_opener_de_payload`) nunca provaria que fetch_com_retry passa o limite
+    adiante em vez de bufferizar a resposta inteira.
+    """
+    response = Mock()
+    response.read = Mock(side_effect=lambda n=-1: payload_bytes if n < 0 else payload_bytes[:n])
+    context = Mock()
+    context.__enter__ = Mock(return_value=response)
+    context.__exit__ = Mock(return_value=False)
+    return Mock(return_value=context)
+
+
 def _httperror(code: int) -> HTTPError:
     return HTTPError(url="https://exemplo", code=code, msg="erro", hdrs=None, fp=None)
 
 
-def _chamar(opener):
+def _chamar(opener, **kwargs):
     return fetch_com_retry(
         "https://exemplo",
         fonte=FonteDado.CEMADEN,
         opener=opener,
         user_agent="test/1.0",
+        **kwargs,
     )
 
 
@@ -97,6 +113,30 @@ class TestFetchComRetry:
         assert exc_info.value.fonte == FonteDado.CEMADEN
         assert opener.call_count == 4
         assert len(sleeps) == 3
+
+    def test_resposta_acima_do_limite_falha_sem_retry(self, monkeypatch):
+        """Response maior que max_resposta_bytes vira FalhaDeColeta imediata.
+
+        O fake de opener honra o argumento de read(n) (como http.client.
+        HTTPResponse.read(amt) faz), provando que fetch_com_retry lê apenas
+        limite+1 bytes em vez de bufferizar o corpo inteiro.
+        """
+        payload = b"x" * 15
+        opener = _opener_de_payload_truncavel(payload)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        with pytest.raises(FalhaDeColeta) as exc_info:
+            _chamar(opener, max_resposta_bytes=10)
+        assert "10 bytes" in exc_info.value.causa
+        assert opener.call_count == 1
+        response = opener.return_value.__enter__.return_value
+        response.read.assert_called_once_with(11)
+
+    def test_resposta_dentro_do_limite_sucede(self, monkeypatch):
+        payload = b"x" * 10
+        opener = _opener_de_payload_truncavel(payload)
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        assert _chamar(opener, max_resposta_bytes=10) == payload
+        assert opener.call_count == 1
 
 
 # ============================================================
