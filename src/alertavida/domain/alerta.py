@@ -42,15 +42,13 @@ from alertavida.domain.enums import (
 from alertavida.domain.municipio import Municipio
 
 
-def _pick(data: dict[str, Any], *keys: str) -> Any:
-    for key in keys:
-        val = data.get(key)
-        if val is None:
-            continue
-        if isinstance(val, str) and not val.strip():
-            continue
-        return val
-    return None
+def _pick(data: dict[str, Any], key: str) -> Any:
+    val = data.get(key)
+    if val is None:
+        return None
+    if isinstance(val, str) and not val.strip():
+        return None
+    return val
 
 
 class Alerta(BaseModel):
