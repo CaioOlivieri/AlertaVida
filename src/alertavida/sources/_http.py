@@ -2,10 +2,11 @@
 
 Antes desta extração, CemadenSource e NasaEonetSource duplicavam ~50 linhas
 idênticas de retry/backoff e parsing de JSON. Centralizar aqui garante uma única
-implementação da política de resiliência (invariantes 3, 19, 20, 24):
+implementação da política de resiliência (invariantes 3, 19, 20, 24, 25):
 
 - retry apenas em 5xx / 408 / 429 / URLError / socket.timeout;
-- HTTPError 4xx (exceto 408/429) falha imediatamente, sem retry;
+- HTTPError fora desse conjunto (4xx exceto 408/429, e qualquer redirect
+  recusado por opener_padrao) falha imediatamente, sem retry;
 - response acima de MAX_RESPOSTA_BYTES falha imediatamente, sem retry;
 - toda falha de transporte/parsing vira FalhaDeColeta(fonte=...) com a exceção
   original encadeada — nenhuma exceção crua de rede vaza para o orquestrador.
@@ -20,7 +21,7 @@ import time
 from contextlib import AbstractContextManager
 from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.request import Request
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from alertavida.domain.enums import FonteDado
 from alertavida.sources.base import FalhaDeColeta
@@ -49,6 +50,39 @@ class RespostaHTTP(Protocol):
 Opener = Callable[..., AbstractContextManager[RespostaHTTP]]
 
 
+class _RedirectHTTPSObrigatorioHandler(HTTPRedirectHandler):
+    """Recusa redirect para URL não-https (invariante 25).
+
+    As duas fontes de produção são https; um redirect para http só pode vir de
+    um servidor mal configurado ou de um atacante de rede forjando o downgrade
+    para injetar alertas falsos em texto plano. Nenhum dos dois casos é
+    legítimo, então a recusa vira falha imediata (via HTTPError, tratado como
+    tal por fetch_com_retry) em vez de seguir o redirect.
+    """
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> Request | None:
+        if not newurl.startswith("https://"):
+            raise HTTPError(
+                newurl,
+                code,
+                f"redirect para esquema não-https recusado: {newurl}",
+                headers,
+                fp,
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+opener_padrao: Opener = build_opener(_RedirectHTTPSObrigatorioHandler).open  # type: ignore[assignment]
+
+
 def fetch_com_retry(
     url: str,
     *,
@@ -62,11 +96,12 @@ def fetch_com_retry(
 ) -> bytes:
     """GET com retry/backoff exponencial. Levanta FalhaDeColeta ao esgotar.
 
-    Retry apenas em 5xx / 408 / 429 / URLError / socket.timeout. HTTPError 4xx
-    (exceto 408/429) vira FalhaDeColeta imediatamente, sem retry. Response
-    acima de max_resposta_bytes também vira FalhaDeColeta imediata, sem retry
-    — corpo gigante não é falha transiente. Esgotadas as tentativas, a última
-    exceção vira FalhaDeColeta com `original` encadeada.
+    Retry apenas em 5xx / 408 / 429 / URLError / socket.timeout. Qualquer outro
+    HTTPError (4xx exceto 408/429; redirect recusado por opener_padrao, que
+    surge como HTTPError não-5xx) vira FalhaDeColeta imediatamente, sem retry.
+    Response acima de max_resposta_bytes também vira FalhaDeColeta imediata,
+    sem retry — corpo gigante não é falha transiente. Esgotadas as tentativas,
+    a última exceção vira FalhaDeColeta com `original` encadeada.
     """
     request = Request(url, headers={"User-Agent": user_agent})
     ultima_excecao: Exception | None = None
@@ -79,7 +114,7 @@ def fetch_com_retry(
                 corpo = response.read(max_resposta_bytes + 1)
         except HTTPError as exc:
             ultima_excecao = exc
-            if 400 <= exc.code < 500 and exc.code not in (408, 429):
+            if not (500 <= exc.code < 600 or exc.code in (408, 429)):
                 raise FalhaDeColeta(
                     fonte=fonte, causa=f"HTTPError {exc.code}", original=exc
                 ) from exc

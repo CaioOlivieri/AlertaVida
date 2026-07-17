@@ -34,7 +34,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Final
 from urllib.parse import urlencode
-from urllib.request import urlopen
 
 from pydantic import ValidationError
 
@@ -52,6 +51,7 @@ from alertavida.sources._http import (
     TIMEOUT_SEGUNDOS,
     Opener,
     fetch_com_retry,
+    opener_padrao,
     parse_json,
 )
 from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
@@ -89,7 +89,7 @@ class NasaEonetSource(DataSource):
         self,
         *,
         url: str = URL_EONET,
-        opener: Opener = urlopen,  # type: ignore[assignment]
+        opener: Opener = opener_padrao,
         timeout_segundos: float = TIMEOUT_SEGUNDOS,
     ) -> None:
         self._url = url
