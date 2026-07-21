@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import sqlite3
 
@@ -63,7 +64,7 @@ def test_handler_count() -> None:
 def test_dispatcher_processa_evento_pendente(db_temporario) -> None:
     db_path = db_temporario
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
             INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
@@ -82,7 +83,7 @@ def test_dispatcher_processa_evento_pendente(db_temporario) -> None:
     dispatcher = OutboxDispatcher(bus)
     processados = dispatcher.processar_pendentes()
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         row = conexao.execute(
             "SELECT processado_em FROM eventos WHERE agregado_id = 1"
         ).fetchone()
@@ -95,7 +96,7 @@ def test_dispatcher_processa_evento_pendente(db_temporario) -> None:
 def test_dispatcher_ignora_ja_processados(db_temporario) -> None:
     db_path = db_temporario
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
             INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
@@ -120,7 +121,7 @@ def test_dispatcher_ignora_ja_processados(db_temporario) -> None:
 def test_dispatcher_respeita_batch_size(db_temporario) -> None:
     db_path = db_temporario
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         for idx in range(5):
             conexao.execute(
                 """
@@ -133,7 +134,7 @@ def test_dispatcher_respeita_batch_size(db_temporario) -> None:
 
     processados = OutboxDispatcher(EventBus(), batch_size=3).processar_pendentes()
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         preenchidos = conexao.execute(
             "SELECT COUNT(*) FROM eventos WHERE processado_em IS NOT NULL"
         ).fetchone()[0]
@@ -145,7 +146,7 @@ def test_dispatcher_respeita_batch_size(db_temporario) -> None:
 def test_dispatcher_payload_json_invalido_nao_quebra(db_temporario) -> None:
     db_path = db_temporario
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
             INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
@@ -158,7 +159,7 @@ def test_dispatcher_payload_json_invalido_nao_quebra(db_temporario) -> None:
     dispatcher = OutboxDispatcher(bus)
     processados = dispatcher.processar_pendentes()
 
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         row = conexao.execute(
             "SELECT processado_em, payload FROM eventos WHERE agregado_id = 99"
         ).fetchone()

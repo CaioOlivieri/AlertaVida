@@ -20,10 +20,9 @@ NÃO altera nada além da coluna `escopo_geografico`.
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 
-from alertavida.database import DB_PATH
+from alertavida.database import DB_PATH, conectar
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.geographic import classificar_escopo
 
@@ -37,7 +36,7 @@ def reclassificar() -> int:
     alterados = 0
     inalterados = 0
 
-    with sqlite3.connect(DB_PATH) as conexao:
+    with conectar() as conexao:
         cursor = conexao.execute(
             "SELECT id, latitude, longitude, escopo_geografico FROM alertas"
         )

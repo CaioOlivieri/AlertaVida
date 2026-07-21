@@ -1,5 +1,6 @@
 """Testes do orquestrador de ingestão multi-fonte (Camada 4, Parte B.2.a)."""
 
+import contextlib
 import math
 import sqlite3
 from datetime import UTC, datetime
@@ -319,7 +320,7 @@ def test_persistencia_separada_por_fonte(db_temporario: object) -> None:
 
     relatorio = executar_ingestao([source1, source2])
 
-    with sqlite3.connect(db_temporario) as conn:
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conn:
         rows_cemaden = conn.execute(
             "SELECT COUNT(*) FROM alertas WHERE fonte = 'CEMADEN'"
         ).fetchone()[0]
@@ -420,7 +421,7 @@ def test_alerta_ausente_por_tres_rodadas_emite_resolvido_no_outbox(
     for _ in range(4):
         executar_ingestao([source])
 
-    with sqlite3.connect(db_temporario) as conn:
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conn:
         rows = conn.execute(
             "SELECT COUNT(*) FROM eventos "
             "WHERE tipo = 'AlertaResolvido' "
@@ -450,7 +451,7 @@ def test_deduplica_cod_alerta_repetido_no_mesmo_batch(db_temporario: Path) -> No
     assert rf.novos == 1
     assert rf.descartados == 1
 
-    with sqlite3.connect(db_temporario) as conn:
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conn:
         rows = conn.execute(
             "SELECT COUNT(*) FROM alertas WHERE cod_alerta = 'D1' AND fonte = 'CEMADEN'"
         ).fetchone()[0]
@@ -491,7 +492,7 @@ def test_alerta_resolvido_que_reaparece_reativa_sem_crash(
     assert relatorio_5.por_fonte[0].novos == 0
     assert relatorio_5.por_fonte[0].reativados == 1
 
-    with sqlite3.connect(db_temporario) as conn:
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conn:
         row = conn.execute(
             "SELECT status_interno, rodadas_ausente FROM alertas "
             "WHERE cod_alerta = ? AND fonte = 'CEMADEN'",
@@ -555,7 +556,7 @@ def test_persistencia_de_fontes_anteriores_sobrevive_a_falha_posterior(
     with pytest.raises(sqlite3.OperationalError, match="falha simulada"):
         executar_ingestao([source_a, source_b, source_c])
 
-    with sqlite3.connect(db_temporario) as conn:
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conn:
         rows_a = conn.execute(
             "SELECT COUNT(*) FROM alertas WHERE fonte = 'CEMADEN'"
         ).fetchone()[0]
