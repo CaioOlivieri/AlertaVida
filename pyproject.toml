@@ -57,6 +57,10 @@ markers = [
     "integration: testes que dependem de rede ou recursos externos",
 ]
 addopts = ["-m", "not integration", "-v"]
+# issue #40 — trava regressão de conexões sqlite3 não fechadas (ver
+# wiki/components/database.md e a invariante de rollback transacional
+# em wiki/patterns/resilience-invariants.md #4).
+filterwarnings = ["error::ResourceWarning"]
 
 [tool.coverage.run]
 # relative_files: paths relativos no .coverage para a coverage-comment-action
