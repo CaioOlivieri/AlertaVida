@@ -7,6 +7,7 @@ Cobre:
 - Idempotência: criar_banco() rodado N vezes não altera schema nem dados
 """
 
+import contextlib
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,14 +28,14 @@ from tests.fixtures.schemas_legados import (
 
 def _colunas_de(db_path: Path, tabela: str) -> set[str]:
     """Retorna o conjunto de nomes de coluna de uma tabela."""
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         cursor = conexao.execute(f"PRAGMA table_info({tabela})")
         return {row[1] for row in cursor.fetchall()}
 
 
 def _indices_de(db_path: Path, tabela: str) -> set[str]:
     """Retorna o conjunto de nomes de índice de uma tabela."""
-    with sqlite3.connect(db_path) as conexao:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         cursor = conexao.execute(f"PRAGMA index_list({tabela})")
         return {row[1] for row in cursor.fetchall()}
 
@@ -61,7 +62,7 @@ class TestVerificacaoCompatibilidade:
 
     def test_banco_pre_camada_3_levanta(self, tmp_path, monkeypatch):
         db_path = tmp_path / "legado_c2.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pre_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -70,7 +71,7 @@ class TestVerificacaoCompatibilidade:
 
     def test_banco_pos_camada_3_levanta(self, tmp_path, monkeypatch):
         db_path = tmp_path / "legado_c3.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -80,7 +81,7 @@ class TestVerificacaoCompatibilidade:
     def test_mensagem_erro_lista_colunas_faltantes(self, tmp_path, monkeypatch):
         """Mensagem de erro deve listar as colunas que faltam, não só a primeira."""
         db_path = tmp_path / "legado.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pre_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -103,7 +104,7 @@ class TestVerificacaoCompatibilidade:
         uma quimera C3+A.2 onde queries do código atual quebram em runtime.
         """
         db_path = tmp_path / "quimera_potencial.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -125,7 +126,7 @@ class TestMigrationAditiva:
 
     def test_schema_a1_recebe_colunas_a2(self, tmp_path, monkeypatch):
         db_path = tmp_path / "a1.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -145,7 +146,7 @@ class TestMigrationAditiva:
     def test_schema_a1_perde_coluna_assinatura(self, tmp_path, monkeypatch):
         """Manutenibilidade #8 B1: assinatura é removida por _migrar_banco()."""
         db_path = tmp_path / "a1_com_assinatura.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -161,7 +162,7 @@ class TestMigrationAditiva:
         """Manutenibilidade #11 D3: idx_uf/idx_evento/idx_nivel são removidos;
         idx_fonte/idx_escopo_geografico permanecem (uso plausível)."""
         db_path = tmp_path / "a1_com_indices.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -180,7 +181,7 @@ class TestMigrationAditiva:
     def test_schema_a1_recebe_coluna_descricao(self, tmp_path, monkeypatch):
         """Manutenibilidade #11 D4: descricao é adicionada por _migrar_banco()."""
         db_path = tmp_path / "a1_sem_descricao.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -195,7 +196,7 @@ class TestMigrationAditiva:
     def test_migrar_banco_e_idempotente_sem_coluna_assinatura(self, tmp_path, monkeypatch):
         """Rodar criar_banco() de novo após o DROP não levanta erro (idempotência)."""
         db_path = tmp_path / "a1_ja_migrado.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
         _patch_db_path(monkeypatch, db_path)
 
@@ -208,7 +209,7 @@ class TestMigrationAditiva:
     def test_fonte_classificacao_tem_default_correto(self, tmp_path, monkeypatch):
         """Linhas A.1 pré-existentes recebem 'INDETERMINADA' como default."""
         db_path = tmp_path / "a1_com_dados.db"
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
             # Insere uma linha no schema A.1 (sem colunas A.2 ainda)
             conexao.execute(
@@ -224,7 +225,7 @@ class TestMigrationAditiva:
 
         db_module.criar_banco()  # aplica migration A.2
 
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             row = conexao.execute(
                 "SELECT cobrade_codigo, fonte_classificacao FROM alertas WHERE cod_alerta = ?",
                 ("12345",),
@@ -327,7 +328,7 @@ class TestPersistenciaDescricao:
 
         aplicar_resultado_deteccao(resultado, {"E1": alerta}, "2026-05-18T00:00:00")
 
-        with sqlite3.connect(db_temporario) as conexao:
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             row = conexao.execute(
                 "SELECT descricao FROM alertas WHERE cod_alerta = 'E1'"
             ).fetchone()
@@ -369,7 +370,7 @@ class TestPersistenciaDescricao:
 
         aplicar_resultado_deteccao(resultado, {"C1": alerta}, "2026-05-01T00:00:00")
 
-        with sqlite3.connect(db_temporario) as conexao:
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             row = conexao.execute(
                 "SELECT descricao FROM alertas WHERE cod_alerta = 'C1'"
             ).fetchone()
@@ -391,7 +392,7 @@ class TestReativado:
         )
         from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
 
-        with sqlite3.connect(db_temporario) as conexao:
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             conexao.execute(
                 """
                 INSERT INTO alertas (
@@ -427,7 +428,7 @@ class TestReativado:
 
         aplicar_resultado_deteccao(resultado, {"R1": alerta}, "2026-06-11T11:00:00")
 
-        with sqlite3.connect(db_temporario) as conexao:
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             row = conexao.execute(
                 "SELECT status_interno, rodadas_ausente, nivel, evento FROM alertas WHERE cod_alerta = 'R1'"
             ).fetchone()
@@ -437,7 +438,7 @@ class TestReativado:
         assert row[2] == "ALTO"
         assert row[3] == "HIDROLOGICO"
 
-        with sqlite3.connect(db_temporario) as conexao:
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             count = conexao.execute(
                 "SELECT COUNT(*) FROM eventos WHERE tipo = 'AlertaReativado'"
             ).fetchone()[0]
@@ -449,7 +450,7 @@ class TestReativado:
         _patch_db_path(monkeypatch, db_path)
 
         db_module.criar_banco()
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             conexao.execute(
                 """
                 INSERT INTO alertas (
@@ -462,6 +463,65 @@ class TestReativado:
 
         db_module.criar_banco()  # não pode apagar dados
 
-        with sqlite3.connect(db_path) as conexao:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             n = conexao.execute("SELECT COUNT(*) FROM alertas").fetchone()[0]
         assert n == 1
+
+
+class TestRollbackAtomicidade:
+    """Issue #40: rollback-on-exception de `conectar()` é load-bearing —
+    mantém INSERT em alertas + INSERT em eventos atômicos (outbox pattern,
+    wiki/patterns/resilience-invariants.md #4)."""
+
+    def test_excecao_no_meio_reverte_toda_a_transacao(self, db_temporario):
+        from alertavida.database import aplicar_resultado_deteccao
+        from alertavida.domain.alerta import Alerta
+        from alertavida.domain.coordenadas import Coordenadas
+        from alertavida.domain.detector import (
+            EventoDetectado,
+            ResultadoDeteccao,
+            TipoEventoDetectado,
+        )
+        from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
+
+        alerta_ok = Alerta(
+            cod_alerta="OK1",
+            fonte=FonteDado.CEMADEN,
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.MODERADO,
+            coordenadas=Coordenadas(latitude=-8.0, longitude=-34.0),
+            data_criacao=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.CRIADO,
+                    cod_alerta="OK1",
+                    fonte=FonteDado.CEMADEN,
+                    payload={"cod_alerta": "OK1", "fonte": "CEMADEN"},
+                ),
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.CRIADO,
+                    cod_alerta="FALTANDO",
+                    fonte=FonteDado.CEMADEN,
+                    payload={"cod_alerta": "FALTANDO", "fonte": "CEMADEN"},
+                ),
+            ],
+            codigos_vistos={"OK1", "FALTANDO"},
+            codigos_ausentes=set(),
+            fonte_por_codigo={"OK1": FonteDado.CEMADEN, "FALTANDO": FonteDado.CEMADEN},
+        )
+
+        # alertas_por_codigo só contém OK1 -> KeyError ao processar o segundo
+        # evento, no meio da transação (após o INSERT de OK1 já ter rodado).
+        with pytest.raises(KeyError):
+            aplicar_resultado_deteccao(
+                resultado, {"OK1": alerta_ok}, "2026-05-01T00:00:00"
+            )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            n_alertas = conexao.execute("SELECT COUNT(*) FROM alertas").fetchone()[0]
+            n_eventos = conexao.execute("SELECT COUNT(*) FROM eventos").fetchone()[0]
+
+        assert n_alertas == 0, "INSERT de OK1 deveria ter sido revertido pelo rollback"
+        assert n_eventos == 0, "INSERT em eventos deveria ter sido revertido pelo rollback"

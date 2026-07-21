@@ -13,8 +13,10 @@ O `cod_alerta` original fica preservado dentro do `payload` JSON do evento.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 from alertavida.domain import Alerta
@@ -29,11 +31,25 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.d
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def conectar() -> sqlite3.Connection:
-    """Abre conexão SQLite com busy_timeout para contenção multi-thread."""
+@contextlib.contextmanager
+def conectar() -> Iterator[sqlite3.Connection]:
+    """Abre conexão SQLite com busy_timeout para contenção multi-thread.
+
+    `sqlite3.Connection` usado como context manager controla apenas a
+    *transação* (commit no sucesso / rollback na exceção) — não fecha a
+    conexão. O `yield` abaixo acontece DENTRO de um `with conexao:`, então
+    uma exceção levantada no bloco do chamador (`with conectar() as
+    conexao:`) ainda dispara rollback (issue #40 — invariante da outbox
+    transacional, ver wiki/patterns/resilience-invariants.md #4) antes do
+    `finally` fechar a conexão de fato.
+    """
     conexao = sqlite3.connect(DB_PATH)
     conexao.execute("PRAGMA busy_timeout=5000")
-    return conexao
+    try:
+        with conexao:
+            yield conexao
+    finally:
+        conexao.close()
 
 
 class SchemaIncompativelError(Exception):
