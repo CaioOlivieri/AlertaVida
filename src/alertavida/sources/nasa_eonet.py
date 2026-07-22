@@ -3,9 +3,10 @@
 EONET (Earth Observatory Natural Event Tracker) entrega eventos naturais
 globais (incêndios, tempestades, vulcões, inundações). Camada 4 Partes C.1+C.2.
 
-Compartilha o transporte HTTP (retry/backoff) e o parsing de JSON com
-CemadenSource via `sources/_http.py`, mas constrói o Alerta DIRETAMENTE em vez
-de usar Alerta.from_dict, porque o shape do payload v3 diverge do CEMADEN:
+Compartilha o transporte HTTP (retry/backoff), o parsing de JSON e o skeleton
+de coletar() com CemadenSource via `HttpDataSource` (sources/_http.py, issue
+#20), mas constrói o Alerta DIRETAMENTE em vez de usar Alerta.from_dict,
+porque o shape do payload v3 diverge do CEMADEN:
 
 - Coordenadas vivem em geometry[].coordinates = [lon, lat] (ordem GeoJSON,
   aninhada). from_dict espera latitude/longitude escalares no topo.
@@ -23,15 +24,16 @@ FonteClassificacao.INDETERMINADA, respeitando o invariante atômico
 (cobrade_codigo IS NULL ⇔ fonte_classificacao == INDETERMINADA).
 
 Invariantes do contrato:
-- coletar() captura APENAS ValueError ao montar cada evento. Bugs internos
-  (TypeError, AttributeError, KeyError) propagam para diagnóstico.
+- coletar() (em HttpDataSource) captura APENAS ValueError ao montar cada
+  evento. Bugs internos (TypeError, AttributeError, KeyError) propagam
+  para diagnóstico.
 - Falhas de rodada (rede, HTTPError, JSON inválido) sobem como FalhaDeColeta
   com fonte=EONET — geradas em sources/_http.py.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Final
 from urllib.parse import urlencode
 
@@ -47,21 +49,15 @@ from alertavida.domain.enums import (
     TipoEvento,
 )
 from alertavida.domain.geographic import classificar_escopo
-from alertavida.sources._http import (
-    TIMEOUT_SEGUNDOS,
-    Opener,
-    fetch_com_retry,
-    opener_padrao,
-    parse_json,
-)
-from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
+from alertavida.domain.tempo import parse_iso_utc
+from alertavida.sources._http import HttpDataSource
+from alertavida.sources.base import FalhaDeColeta
 
 EONET_BASE_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
 # Recorte de produção: apenas eventos abertos/ativos (decisão C.1). Eventos
 # fechados são histórico, ruído para um sistema de alerta em tempo real.
 EONET_PARAMS: Final[dict[str, str | int]] = {"status": "open", "limit": 500}
 URL_EONET = f"{EONET_BASE_URL}?{urlencode(EONET_PARAMS)}"
-USER_AGENT: str = "AlertaVida/1.0 (+https://github.com/CaioOlivieri/AlertaVida)"
 
 # Mapeamento categoria EONET v3 → TipoEvento (grupo COBRADE neutro).
 # Inclui apenas categorias cuja correspondência de GRUPO é inequívoca.
@@ -76,55 +72,21 @@ CATEGORIA_EONET_PARA_TIPO: Final[dict[str, TipoEvento]] = {
 }
 
 
-class NasaEonetSource(DataSource):
+class NasaEonetSource(HttpDataSource):
     """DataSource para a API de eventos da NASA EONET v3.
 
-    Construtor keyword-only por legibilidade no call site:
+    Construtor keyword-only herdado de HttpDataSource:
         NasaEonetSource()                # produção
         NasaEonetSource(opener=fake)     # teste
         NasaEonetSource(url=staging_url)  # ambiente alternativo
     """
 
-    def __init__(
-        self,
-        *,
-        url: str = URL_EONET,
-        opener: Opener = opener_padrao,
-        timeout_segundos: float = TIMEOUT_SEGUNDOS,
-    ) -> None:
-        self._url = url
-        self._opener = opener
-        self._timeout_segundos = timeout_segundos
+    URL = URL_EONET
+    USER_AGENT = "AlertaVida/1.0 (+https://github.com/CaioOlivieri/AlertaVida)"
 
     @property
     def fonte(self) -> FonteDado:
         return FonteDado.EONET
-
-    def coletar(self) -> ResultadoColeta:
-        raw = fetch_com_retry(
-            self._url,
-            fonte=self.fonte,
-            opener=self._opener,
-            user_agent=USER_AGENT,
-            timeout_segundos=self._timeout_segundos,
-        )
-        payload = parse_json(raw, fonte=self.fonte)
-
-        eventos = self._normalize_payload(payload)
-        alertas: list[Alerta] = []
-        descartados = 0
-        for evento in eventos:
-            try:
-                alertas.append(self._montar_alerta(evento))
-            except ValueError:
-                descartados += 1
-            # Outras exceções (TypeError, AttributeError, KeyError) propagam: são bug.
-
-        return ResultadoColeta(
-            alertas=alertas,
-            descartados=descartados,
-            coletado_em=datetime.now(timezone.utc),
-        )
 
     def _normalize_payload(self, payload: object) -> list[dict]:
         """Extrai a lista events[] do envelope EONET v3.
@@ -237,11 +199,9 @@ class NasaEonetSource(DataSource):
             if data_raw is None or not str(data_raw).strip():
                 continue
             try:
-                data = datetime.fromisoformat(str(data_raw))
+                data = parse_iso_utc(str(data_raw))
             except ValueError:
                 continue
-            if data.tzinfo is None:
-                data = data.replace(tzinfo=timezone.utc)
             try:
                 longitude = float(coords[0])
                 latitude = float(coords[1])

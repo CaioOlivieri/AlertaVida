@@ -10,6 +10,14 @@ implementação da política de resiliência (invariantes 3, 19, 20, 24, 25):
 - response acima de MAX_RESPOSTA_BYTES falha imediatamente, sem retry;
 - toda falha de transporte/parsing vira FalhaDeColeta(fonte=...) com a exceção
   original encadeada — nenhuma exceção crua de rede vaza para o orquestrador.
+
+`HttpDataSource` (issue #20) vai além do transporte puro: consolida o
+template method inteiro que CemadenSource e NasaEonetSource duplicavam
+byte a byte — fetch_com_retry -> parse_json -> _normalize_payload -> loop
+try/except ValueError -> ResultadoColeta. Vive aqui, e não em sources/base.py,
+porque a ABC DataSource promete não expor transporte; HttpDataSource é
+exatamente o oposto (a extensão concreta para fontes JSON-sobre-HTTP), então
+pertence ao módulo de transporte, não à interface transporte-agnóstica.
 """
 
 from __future__ import annotations
@@ -18,13 +26,16 @@ import json
 import logging
 import socket
 import time
+from abc import abstractmethod
 from contextlib import AbstractContextManager
+from datetime import datetime, timezone
 from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from alertavida.domain.alerta import Alerta
 from alertavida.domain.enums import FonteDado
-from alertavida.sources.base import FalhaDeColeta
+from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
 
 TIMEOUT_SEGUNDOS: float = 30.0
 MAX_TENTATIVAS: int = 4
@@ -149,3 +160,86 @@ def parse_json(raw: bytes, *, fonte: FonteDado) -> object:
         raise FalhaDeColeta(fonte=fonte, causa="response não é UTF-8", original=exc) from exc
     except json.JSONDecodeError as exc:
         raise FalhaDeColeta(fonte=fonte, causa="response não é JSON válido", original=exc) from exc
+
+
+class HttpDataSource(DataSource):
+    """Base intermediária para DataSources JSON-sobre-HTTP (issue #20).
+
+    Deliberadamente FORA da ABC DataSource (sources/base.py) — aquela
+    interface promete não expor transporte. HttpDataSource é o ponto de
+    extensão concreto para fontes que buscam JSON via HTTP com
+    retry/backoff (hoje: CemadenSource, NasaEonetSource; amanhã:
+    INMET/INPE), consolidando o que todas faziam identicamente:
+
+        fetch_com_retry -> parse_json -> _normalize_payload -> loop por item
+        com try/except ValueError (contado em `descartados`) -> ResultadoColeta
+
+    O invariante "só ValueError conta como descarte; qualquer outra exceção
+    é bug e propaga" (wiki/patterns/resilience-invariants.md #19) vira
+    código aqui, em um lugar só, em vez de comentário repetido por subclasse.
+
+    Subclasses declaram duas constantes de classe e implementam dois
+    métodos abstratos:
+
+        URL: str              — URL padrão de requisição
+        USER_AGENT: str        — header User-Agent da requisição
+        _normalize_payload()   — envelope bruto -> lista de itens brutos
+        _montar_alerta()       — item bruto -> Alerta (ValueError descarta)
+
+    Construtor keyword-only, compartilhado por toda subclasse:
+        CemadenSource()                    # produção
+        CemadenSource(opener=fake)         # teste
+        CemadenSource(url=staging_url)     # ambiente alternativo
+    """
+
+    URL: str
+    USER_AGENT: str
+
+    def __init__(
+        self,
+        *,
+        url: str | None = None,
+        opener: Opener = opener_padrao,
+        timeout_segundos: float = TIMEOUT_SEGUNDOS,
+    ) -> None:
+        self._url = self.URL if url is None else url
+        self._opener = opener
+        self._timeout_segundos = timeout_segundos
+
+    def coletar(self) -> ResultadoColeta:
+        raw = fetch_com_retry(
+            self._url,
+            fonte=self.fonte,
+            opener=self._opener,
+            user_agent=self.USER_AGENT,
+            timeout_segundos=self._timeout_segundos,
+        )
+        payload = parse_json(raw, fonte=self.fonte)
+
+        itens_brutos = self._normalize_payload(payload)
+        alertas: list[Alerta] = []
+        descartados = 0
+        for item in itens_brutos:
+            try:
+                alertas.append(self._montar_alerta(item))
+            except ValueError:
+                descartados += 1
+            # Qualquer outra exceção (TypeError, AttributeError, KeyError) é bug: propaga.
+
+        return ResultadoColeta(
+            alertas=alertas,
+            descartados=descartados,
+            coletado_em=datetime.now(timezone.utc),
+        )
+
+    @abstractmethod
+    def _normalize_payload(self, payload: object) -> list[dict]:
+        """Extrai a lista de itens brutos do envelope específico da fonte."""
+
+    @abstractmethod
+    def _montar_alerta(self, item: dict) -> Alerta:
+        """Converte um item bruto em Alerta de domínio.
+
+        Levanta ValueError para item malformado — coletar() conta isso
+        como descartado. Qualquer outra exceção é bug e propaga.
+        """

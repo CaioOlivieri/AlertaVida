@@ -13,6 +13,13 @@ httpx, ler de disco, etc. Isso permite substituição em testes via
 subclasse-fake (FakeDataSource em tests/fixtures/sources_fake.py),
 sem precisar mockar bibliotecas de rede.
 
+Fontes JSON-sobre-HTTP (CemadenSource, NasaEonetSource, e futuras
+INMET/INPE) não implementam DataSource diretamente: estendem
+`HttpDataSource` (sources/_http.py), que consolida o template method de
+coletar() sem violar a promessa desta ABC de não expor transporte — a
+classe intermediária vive no módulo de transporte, não aqui
+(wiki/decisions/template-method-http-datasource.md).
+
 Design decisions registradas em wiki/decisions/datasource-adapter-falha-de-coleta.md:
 - DataSource como ABC com ResultadoColeta tipado, não list[Alerta]
 - FalhaDeColeta como exceção tipada do domínio

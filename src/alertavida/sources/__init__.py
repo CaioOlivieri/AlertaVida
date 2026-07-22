@@ -7,6 +7,9 @@ DataSources sem conhecer suas particularidades — padrão Adapter.
 
 Exports públicos:
     DataSource         — interface ABC (sources/base.py)
+    HttpDataSource     — base intermediária para fontes JSON-sobre-HTTP,
+                          consolida o skeleton de coletar() (sources/_http.py,
+                          issue #20)
     ResultadoColeta    — dataclass frozen de retorno de coletar() (sources/base.py)
     FalhaDeColeta      — exceção tipada para falhas irrecuperáveis (sources/base.py)
 
@@ -15,12 +18,14 @@ Implementações concretas (B.1.b em diante):
     NasaEonetSource    — sources/nasa_eonet.py (Parte C)
 """
 
+from alertavida.sources._http import HttpDataSource
 from alertavida.sources.base import DataSource, FalhaDeColeta, ResultadoColeta
 from alertavida.sources.cemaden import CemadenSource
 from alertavida.sources.nasa_eonet import NasaEonetSource
 
 __all__ = [
     "DataSource",
+    "HttpDataSource",
     "FalhaDeColeta",
     "ResultadoColeta",
     "CemadenSource",
