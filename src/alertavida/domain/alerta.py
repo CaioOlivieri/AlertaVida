@@ -17,7 +17,7 @@ Invariantes do `Alerta`:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Annotated, Any
 
 from pydantic import (
@@ -40,6 +40,7 @@ from alertavida.domain.enums import (
     TipoEvento,
 )
 from alertavida.domain.municipio import Municipio
+from alertavida.domain.tempo import parse_iso_utc
 
 
 def _pick(data: dict[str, Any], key: str) -> Any:
@@ -144,19 +145,15 @@ class Alerta(BaseModel):
         if dt_raw is None or not str(dt_raw).strip():
             raise ValueError("Alerta sem data_criacao")
         try:
-            data_criacao = datetime.fromisoformat(str(dt_raw))
+            data_criacao = parse_iso_utc(str(dt_raw))
         except ValueError:
             raise ValueError("Alerta sem data_criacao válido") from None
-        if data_criacao.tzinfo is None:
-            data_criacao = data_criacao.replace(tzinfo=timezone.utc)
 
         ult_raw = _pick(data, "ult_atualizacao")
         ult_atualizacao = None
         if ult_raw is not None and str(ult_raw).strip():
             try:
-                ult_atualizacao = datetime.fromisoformat(str(ult_raw))
-                if ult_atualizacao.tzinfo is None:
-                    ult_atualizacao = ult_atualizacao.replace(tzinfo=timezone.utc)
+                ult_atualizacao = parse_iso_utc(str(ult_raw))
             except ValueError:
                 ult_atualizacao = None
 
