@@ -71,3 +71,4 @@ updated: 2026-07-02
 - [[decisions/sqlite-wal-busy-timeout]]
 - [[decisions/shared-report-formatter]]
 - [[decisions/sdd-practices-from-spec-kit]] — spec-kit evaluation: 5 practices adopted, tooling rejected
+- [[decisions/template-method-http-datasource]] — HttpDataSource consolidates the CemadenSource/NasaEonetSource coletar() skeleton
