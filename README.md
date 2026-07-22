@@ -7,25 +7,26 @@
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
 | src/alertavida/database.py               |       87 |        0 |    100% |           |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
-| src/alertavida/domain/alerta.py          |      105 |        1 |     99% |       119 |
+| src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       120 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
 | src/alertavida/domain/coordenadas.py     |        5 |        0 |    100% |           |
 | src/alertavida/domain/detector.py        |       64 |        0 |    100% |           |
 | src/alertavida/domain/enums.py           |       69 |        0 |    100% |           |
 | src/alertavida/domain/geographic.py      |       38 |        0 |    100% |           |
 | src/alertavida/domain/municipio.py       |       18 |        0 |    100% |           |
+| src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
 | src/alertavida/events.py                 |       52 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
 | src/alertavida/ingestion/orquestrador.py |       75 |        0 |    100% |           |
 | src/alertavida/monitor.py                |       15 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
 | src/alertavida/scheduler.py              |       40 |        0 |    100% |           |
-| src/alertavida/sources/\_\_init\_\_.py   |        4 |        0 |    100% |           |
-| src/alertavida/sources/\_http.py         |       58 |        0 |    100% |           |
+| src/alertavida/sources/\_\_init\_\_.py   |        5 |        0 |    100% |           |
+| src/alertavida/sources/\_http.py         |       84 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
-| src/alertavida/sources/cemaden.py        |       58 |        1 |     98% |       160 |
-| src/alertavida/sources/nasa\_eonet.py    |      104 |        0 |    100% |           |
-| **TOTAL**                                |  **843** |    **2** | **99%** |           |
+| src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
+| src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
+| **TOTAL**                                |  **842** |    **2** | **99%** |           |
 
 
 ## Setup coverage badge
