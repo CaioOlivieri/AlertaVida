@@ -1,11 +1,9 @@
 import logging
 import os
-import sys
-import time
 from datetime import datetime
 
 from apscheduler.events import EVENT_JOB_ERROR
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alertavida.database import criar_banco
 from alertavida.events import OutboxDispatcher, bus
@@ -33,7 +31,7 @@ def _rodar_rodada() -> None:
 
 def agendar_ingestao() -> None:
     criar_banco()
-    scheduler = BackgroundScheduler()
+    scheduler = BlockingScheduler()
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
     kwargs_ingestao = {
         "minutes": INTERVALO_MINUTOS,
@@ -58,18 +56,15 @@ def agendar_ingestao() -> None:
         misfire_grace_time=60,
     )
 
-    scheduler.start()
     logger.info(
         f"Scheduler iniciado. Executando ingestão a cada {INTERVALO_MINUTOS} minutos. "
         "Pressione Ctrl+C para encerrar."
     )
     try:
-        while True:
-            time.sleep(1)
+        scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler encerrado pelo usuário.")
         scheduler.shutdown(wait=False)
-        sys.exit(0)
 
 
 if __name__ == "__main__":
