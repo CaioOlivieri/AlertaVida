@@ -67,7 +67,10 @@ def test_dispatcher_processa_evento_pendente(db_temporario) -> None:
     with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
-            INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
+            INSERT INTO eventos (
+                tipo, agregado_id, payload, schema_versao,
+                criado_em, processado_em, tentativas
+            )
             VALUES ('AlertaCriado', 1, '{"a":1}', 1, '2026-05-02T07:00:00', NULL, 0)
             """
         )
@@ -99,8 +102,14 @@ def test_dispatcher_ignora_ja_processados(db_temporario) -> None:
     with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
-            INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
-            VALUES ('AlertaCriado', 2, '{"a":2}', 1, '2026-05-02T07:00:00', '2026-05-02T07:01:00', 1)
+            INSERT INTO eventos (
+                tipo, agregado_id, payload, schema_versao,
+                criado_em, processado_em, tentativas
+            )
+            VALUES (
+                'AlertaCriado', 2, '{"a":2}', 1,
+                '2026-05-02T07:00:00', '2026-05-02T07:01:00', 1
+            )
             """
         )
         conexao.commit()
@@ -125,7 +134,10 @@ def test_dispatcher_respeita_batch_size(db_temporario) -> None:
         for idx in range(5):
             conexao.execute(
                 """
-                INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
+                INSERT INTO eventos (
+                    tipo, agregado_id, payload, schema_versao,
+                    criado_em, processado_em, tentativas
+                )
                 VALUES ('AlertaCriado', ?, '{"a":1}', 1, ?, NULL, 0)
                 """,
                 (idx + 1, f"2026-05-02T07:00:0{idx}"),
@@ -149,7 +161,10 @@ def test_dispatcher_payload_json_invalido_nao_quebra(db_temporario) -> None:
     with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         conexao.execute(
             """
-            INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, processado_em, tentativas)
+            INSERT INTO eventos (
+                tipo, agregado_id, payload, schema_versao,
+                criado_em, processado_em, tentativas
+            )
             VALUES ('AlertaCriado', 99, '{quebrado', 1, '2026-05-02T07:00:00', NULL, 0)
             """
         )

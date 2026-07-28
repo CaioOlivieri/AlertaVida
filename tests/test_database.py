@@ -437,7 +437,8 @@ class TestReativado:
 
         with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             row = conexao.execute(
-                "SELECT status_interno, rodadas_ausente, nivel, evento FROM alertas WHERE cod_alerta = 'R1'"
+                "SELECT status_interno, rodadas_ausente, nivel, evento "
+                "FROM alertas WHERE cod_alerta = 'R1'"
             ).fetchone()
 
         assert row[0] == "ATIVO", f"Esperado ATIVO, obtido {row[0]}"
