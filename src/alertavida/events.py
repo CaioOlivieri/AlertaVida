@@ -103,7 +103,8 @@ class OutboxDispatcher:
                 self._bus.publish(evento)
 
                 conexao.execute(
-                    "UPDATE eventos SET processado_em = ?, tentativas = tentativas + 1 WHERE id = ?",
+                    "UPDATE eventos SET processado_em = ?, tentativas = tentativas + 1 "
+                    "WHERE id = ?",
                     (agora, id_),
                 )
                 processados += 1

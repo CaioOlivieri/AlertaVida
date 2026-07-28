@@ -39,7 +39,10 @@ class RelatorioFonte:
 
     def __post_init__(self) -> None:
         if not self.falha_coleta:
-            soma = self.novos + self.atualizados + self.reativados + self.inalterados + self.descartados
+            soma = (
+                self.novos + self.atualizados + self.reativados
+                + self.inalterados + self.descartados
+            )
             if soma != self.coletados:
                 raise ValueError(
                     f"Invariante violada para fonte {self.fonte.value}: "
@@ -154,7 +157,9 @@ def executar_ingestao(
             agora_da_rodada.isoformat(),
         )
 
-        criados_count = sum(1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.CRIADO)
+        criados_count = sum(
+            1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.CRIADO
+        )
         atualizados_count = sum(
             1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.ATUALIZADO
         )
