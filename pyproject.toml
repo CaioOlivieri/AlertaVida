@@ -28,11 +28,24 @@ Issues = "https://github.com/CaioOlivieri/AlertaVida/issues"
 
 [dependency-groups]
 dev = [
+    "mypy>=1.14",
     "pytest>=9.1.1",
     "pytest-cov>=5.0",
     "pytest-randomly>=3.15",
     "ruff>=0.15.20",
 ]
+
+[tool.mypy]
+# Non-strict para começar (issue #23); a base já é anotada, então dá para
+# apertar `strict = true` por módulo depois. python_version fixa a checagem
+# na versão-alvo em toda a matrix (ubuntu + windows).
+python_version = "3.13"
+
+[[tool.mypy.overrides]]
+# apscheduler não publica stubs nem py.typed; o ignore é escopado só a ele
+# para não afrouxar a checagem do resto (ver wiki/decisions/decision-record.md).
+module = "apscheduler.*"
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
