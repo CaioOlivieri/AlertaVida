@@ -29,7 +29,8 @@ import time
 from abc import abstractmethod
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
-from typing import Callable, Protocol
+from http.client import HTTPMessage
+from typing import IO, Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -74,10 +75,10 @@ class _RedirectHTTPSObrigatorioHandler(HTTPRedirectHandler):
     def redirect_request(
         self,
         req: Request,
-        fp: object,
+        fp: IO[bytes],
         code: int,
         msg: str,
-        headers: object,
+        headers: HTTPMessage,
         newurl: str,
     ) -> Request | None:
         if not newurl.startswith("https://"):
