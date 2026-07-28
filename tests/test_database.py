@@ -41,8 +41,8 @@ def _indices_de(db_path: Path, tabela: str) -> set[str]:
 
 
 def _patch_db_path(monkeypatch, db_path: Path) -> None:
-    """Aponta DB_PATH para o caminho temporário no módulo database."""
-    monkeypatch.setattr(db_module, "DB_PATH", db_path)
+    """Aponta o banco para o caminho temporário via env var (issue #22)."""
+    monkeypatch.setenv(db_module.ENV_DB_PATH, str(db_path))
 
 
 # ----------------------------------------------------------------------

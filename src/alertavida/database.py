@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -27,8 +28,26 @@ from alertavida.domain.detector import (
 )
 from alertavida.domain.enums import FonteDado
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DB_PATH_DEFAULT: Path = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
+ENV_DB_PATH: str = "ALERTAVIDA_DB_PATH"
+
+
+def db_path() -> Path:
+    """Resolve o caminho do banco a cada chamada, a partir da env var.
+
+    `ALERTAVIDA_DB_PATH` sobrepõe o default (`data/alertavida.db` relativo ao
+    pacote). Valor ausente ou em branco cai no default, sem levantar — mesmo
+    padrão de `ALERTAVIDA_BUFFER_PROXIMO_GRAUS` em `domain/geographic.py`.
+
+    É uma função (não uma constante lida no import) de propósito: a env var
+    pode mudar depois do import (testes, hot-reload) e cada acesso reflete o
+    valor corrente. Não há efeito colateral de import — o `mkdir` do diretório
+    pai foi movido para `conectar()` (ver issue #22, item A).
+    """
+    valor_raw = os.getenv(ENV_DB_PATH)
+    if valor_raw is None or not valor_raw.strip():
+        return DB_PATH_DEFAULT
+    return Path(valor_raw)
 
 
 @contextlib.contextmanager
@@ -42,8 +61,13 @@ def conectar() -> Iterator[sqlite3.Connection]:
     conexao:`) ainda dispara rollback (issue #40 — invariante da outbox
     transacional, ver wiki/patterns/resilience-invariants.md #4) antes do
     `finally` fechar a conexão de fato.
+
+    O diretório pai do banco é criado aqui (não no import — issue #22 item A):
+    importar o módulo é livre de efeito colateral no filesystem.
     """
-    conexao = sqlite3.connect(DB_PATH)
+    caminho = db_path()
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    conexao = sqlite3.connect(caminho)
     conexao.execute("PRAGMA busy_timeout=5000")
     try:
         with conexao:
@@ -84,7 +108,7 @@ def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
 
     if faltantes:
         raise SchemaIncompativelError(
-            f"Schema do banco em '{DB_PATH}' é incompatível com a versão atual.\n"
+            f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
             f"\n"
             f"Detectado: tabela `alertas` sem coluna(s): {sorted(faltantes)}.\n"
             f"Provável origem: banco criado antes da Camada 4 Parte A.1 (09/05/2026).\n"
