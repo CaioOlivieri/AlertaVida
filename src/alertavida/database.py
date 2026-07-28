@@ -69,6 +69,9 @@ def conectar() -> Iterator[sqlite3.Connection]:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     conexao = sqlite3.connect(caminho)
     conexao.execute("PRAGMA busy_timeout=5000")
+    # foreign_keys é por-conexão e vira no-op dentro de uma transação — tem de
+    # ser ligado ANTES do `with conexao:` abaixo (issue #22, item B).
+    conexao.execute("PRAGMA foreign_keys=ON")
     try:
         with conexao:
             yield conexao
@@ -79,10 +82,12 @@ def conectar() -> Iterator[sqlite3.Connection]:
 class SchemaIncompativelError(Exception):
     """Banco existente tem schema incompatível com a versão atual do código.
 
-    Levantada quando criar_banco() detecta uma tabela `alertas` pré-A.1
-    (sem coluna `id` ou `fonte`). Bancos pré-A.1 não têm caminho de migration
-    automática — a Camada 4 Parte A.1 (09/05/2026) introduziu ruptura de
-    schema (PK composta -> surrogate key) que SQLite não suporta via ALTER.
+    Dois gatilhos, ambos sem caminho de migration automática (SQLite não
+    suporta a mudança via ALTER TABLE):
+    - tabela `alertas` pré-A.1 (sem coluna `id` ou `fonte`) — a Camada 4 Parte
+      A.1 (09/05/2026) trocou PK composta por surrogate key;
+    - tabela `eventos` sem a FOREIGN KEY para `alertas.id` — banco criado antes
+      da issue #22 (2026-07-28), que passou a exigir integridade referencial.
     """
 
 
@@ -91,35 +96,53 @@ def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
 
     Casos:
     - Tabela `alertas` não existe -> OK, criar_banco() vai criá-la
-    - Tabela existe com `id` + `fonte` -> OK, _migrar_banco() cuida de aditivos
-    - Tabela existe sem `id` ou sem `fonte` -> SchemaIncompativelError
+    - Tabela `alertas` existe com `id` + `fonte` -> OK, _migrar_banco() aditiva
+    - Tabela `alertas` existe sem `id` ou sem `fonte` -> SchemaIncompativelError
+    - Tabela `eventos` não existe -> OK, criar_banco() vai criá-la (com FK)
+    - Tabela `eventos` existe SEM FOREIGN KEY -> SchemaIncompativelError (#22)
 
     Pré-condição: chamada como primeira operação dentro de criar_banco(),
     antes de qualquer CREATE TABLE ou ALTER TABLE.
     """
-    cursor = conexao.execute("PRAGMA table_info(alertas)")
-    colunas = {row[1] for row in cursor.fetchall()}
+    colunas_alertas = {row[1] for row in conexao.execute("PRAGMA table_info(alertas)")}
+    if colunas_alertas:
+        faltantes = {"id", "fonte"} - colunas_alertas
+        if faltantes:
+            raise SchemaIncompativelError(
+                f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
+                f"\n"
+                f"Detectado: tabela `alertas` sem coluna(s): {sorted(faltantes)}.\n"
+                f"Provável origem: banco criado antes da Camada 4 Parte A.1 (09/05/2026).\n"
+                f"\n"
+                f"A Camada 4 Parte A.1 introduziu ruptura estrutural (surrogate key + "
+                f"UNIQUE composto) sem caminho de migration automática — bancos pré-A.1 "
+                f"precisam ser recriados.\n"
+                f"\n"
+                f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
+                f"Se houver dados a preservar, exporte para JSON antes de apagar."
+            )
 
-    if not colunas:
-        return
-
-    colunas_obrigatorias = {"id", "fonte"}
-    faltantes = colunas_obrigatorias - colunas
-
-    if faltantes:
-        raise SchemaIncompativelError(
-            f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
-            f"\n"
-            f"Detectado: tabela `alertas` sem coluna(s): {sorted(faltantes)}.\n"
-            f"Provável origem: banco criado antes da Camada 4 Parte A.1 (09/05/2026).\n"
-            f"\n"
-            f"A Camada 4 Parte A.1 introduziu ruptura estrutural (surrogate key + "
-            f"UNIQUE composto) sem caminho de migration automática — bancos pré-A.1 "
-            f"precisam ser recriados.\n"
-            f"\n"
-            f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
-            f"Se houver dados a preservar, exporte para JSON antes de apagar."
-        )
+    # Item B da issue #22: `eventos` tem de declarar a FK para `alertas.id`.
+    # SQLite não adiciona FK via ALTER TABLE, e recriar a tabela está fora da
+    # política aditiva de _migrar_banco — logo, banco pré-#22 é barrado aqui.
+    colunas_eventos = {row[1] for row in conexao.execute("PRAGMA table_info(eventos)")}
+    if colunas_eventos:
+        tem_fk = bool(conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall())
+        if not tem_fk:
+            raise SchemaIncompativelError(
+                f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
+                f"\n"
+                f"Detectado: tabela `eventos` sem FOREIGN KEY para `alertas.id`.\n"
+                f"Provável origem: banco criado antes da issue #22 (2026-07-28).\n"
+                f"\n"
+                f"A issue #22 passou a exigir integridade referencial em `eventos`. "
+                f"SQLite não adiciona FOREIGN KEY via ALTER TABLE, e recriar a tabela "
+                f"está fora da política aditiva de _migrar_banco() — bancos pré-#22 "
+                f"precisam ser recriados.\n"
+                f"\n"
+                f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
+                f"Se houver dados a preservar, exporte para JSON antes de apagar."
+            )
 
 
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
@@ -216,7 +239,8 @@ def criar_banco() -> None:
                 schema_versao   INTEGER NOT NULL DEFAULT 1,
                 criado_em       TEXT NOT NULL,
                 processado_em   TEXT NULL,
-                tentativas      INTEGER NOT NULL DEFAULT 0
+                tentativas      INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (agregado_id) REFERENCES alertas(id)
             )
             """
         )
@@ -225,6 +249,10 @@ def criar_banco() -> None:
             CREATE INDEX IF NOT EXISTS idx_eventos_pendentes
             ON eventos (processado_em, criado_em)
             """
+        )
+        # SQLite recomenda indexar a child key da FK (issue #22, item B).
+        conexao.execute(
+            "CREATE INDEX IF NOT EXISTS idx_eventos_agregado_id ON eventos (agregado_id)"
         )
         _migrar_banco(conexao)
         conexao.commit()

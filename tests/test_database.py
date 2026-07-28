@@ -15,8 +15,9 @@ from pathlib import Path
 import pytest
 
 from alertavida import database as db_module
-from alertavida.database import SchemaIncompativelError
+from alertavida.database import SchemaIncompativelError, conectar
 from tests.fixtures.schemas_legados import (
+    aplicar_schema_eventos_sem_fk,
     aplicar_schema_pos_a1_pre_a2,
     aplicar_schema_pos_camada_3,
     aplicar_schema_pre_camada_3,
@@ -66,7 +67,9 @@ class TestVerificacaoCompatibilidade:
             aplicar_schema_pre_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
-        with pytest.raises(SchemaIncompativelError, match="id"):
+        # match no ramo `alertas` (não no de `eventos`, adicionado na #22):
+        # o schema pré-C3 falha por falta de coluna, não por FK ausente.
+        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
             db_module.criar_banco()
 
     def test_banco_pos_camada_3_levanta(self, tmp_path, monkeypatch):
@@ -75,7 +78,9 @@ class TestVerificacaoCompatibilidade:
             aplicar_schema_pos_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
-        with pytest.raises(SchemaIncompativelError, match="id"):
+        # C3 tem `eventos` sem FK (dispararia o erro da #22), mas a verificação
+        # da `alertas` roda antes: o match garante que é o motivo pré-A.1.
+        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
             db_module.criar_banco()
 
     def test_mensagem_erro_lista_colunas_faltantes(self, tmp_path, monkeypatch):
@@ -108,7 +113,9 @@ class TestVerificacaoCompatibilidade:
             aplicar_schema_pos_camada_3(conexao)
         _patch_db_path(monkeypatch, db_path)
 
-        with pytest.raises(SchemaIncompativelError):
+        # match no ramo `alertas`: prova que abortou pela ruptura pré-A.1
+        # (antes do _migrar_banco), não pela FK ausente em `eventos` (#22).
+        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
             db_module.criar_banco()
 
         # Verifica que o schema NÃO foi alterado
@@ -525,3 +532,68 @@ class TestRollbackAtomicidade:
 
         assert n_alertas == 0, "INSERT de OK1 deveria ter sido revertido pelo rollback"
         assert n_eventos == 0, "INSERT em eventos deveria ter sido revertido pelo rollback"
+
+
+class TestForeignKeyEventos:
+    """Issue #22 item B: `eventos.agregado_id` -> `alertas.id` via FOREIGN KEY.
+
+    A garantia é POR CONEXÃO: vale para quem passa por `conectar()`
+    (PRAGMA foreign_keys=ON), não para conexões cruas do sqlite3.
+    """
+
+    def test_banco_novo_declara_a_fk(self, db_temporario):
+        """criar_banco() deixa a FK declarada para alertas(id)."""
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            fks = conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall()
+
+        assert len(fks) == 1, "eventos deveria ter exatamente uma FOREIGN KEY"
+        # foreign_key_list: (id, seq, table, from, to, on_update, on_delete, match)
+        _, _, tabela, coluna_filha, coluna_pai, *_rest = fks[0]
+        assert tabela == "alertas"
+        assert coluna_filha == "agregado_id"
+        assert coluna_pai == "id"
+
+    def test_conectar_impoe_a_fk_no_insert_orfao(self, db_temporario):
+        """Via conectar() (FK ON), inserir evento com agregado_id órfão levanta."""
+        with pytest.raises(sqlite3.IntegrityError):
+            with conectar() as conexao:
+                conexao.execute(
+                    """
+                    INSERT INTO eventos (tipo, agregado_id, payload, criado_em)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    ("AlertaCriado", 99999, "{}", "2026-07-28T00:00:00"),
+                )
+
+    def test_conexao_crua_nao_impoe_a_fk(self, db_temporario):
+        """Contraprova: a mesma inserção órfã por conexão crua NÃO levanta.
+
+        Documenta que o enforcement é por conexão (foreign_keys OFF por
+        default no sqlite3) — é o que mantém verdes as fixtures de teste que
+        inserem eventos sem alerta pai via conexão crua.
+        """
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            conexao.execute(
+                """
+                INSERT INTO eventos (tipo, agregado_id, payload, criado_em)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("AlertaCriado", 99999, "{}", "2026-07-28T00:00:00"),
+            )
+            conexao.commit()
+            n = conexao.execute(
+                "SELECT COUNT(*) FROM eventos WHERE agregado_id = 99999"
+            ).fetchone()[0]
+
+        assert n == 1
+
+    def test_banco_legado_com_eventos_sem_fk_levanta(self, tmp_path, monkeypatch):
+        """Banco pré-#22 (eventos sem FK) é barrado por SchemaIncompativelError."""
+        db_path = tmp_path / "eventos_legado.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_eventos_sem_fk(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        # match no ramo `eventos`: prova que é a FK ausente, não a `alertas`.
+        with pytest.raises(SchemaIncompativelError, match="FOREIGN KEY"):
+            db_module.criar_banco()
