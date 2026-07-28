@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-07-17
+updated: 2026-07-28
 
 # Resilience Invariants
 
@@ -29,3 +29,4 @@ updated: 2026-07-17
 23. **Unknown payload format in `_normalize_payload` MUST raise `FalhaDeColeta`** — a dict without any recognized wrapping key, or a non-list/non-dict payload, must not silently return an empty list.
 24. **`fetch_com_retry` reads at most `max_resposta_bytes + 1` bytes and fails immediately (no retry) if the body exceeds `max_resposta_bytes`** — an oversized response is not a transient failure; same treatment as a 4xx `HTTPError`. Default `MAX_RESPOSTA_BYTES = 20 MB`, injectable per call like `timeout_segundos`.
 25. **`opener_padrao` refuses any redirect to a non-https URL** via `_RedirectHTTPSObrigatorioHandler.redirect_request`, surfacing as `FalhaDeColeta` with the original `HTTPError` chained. Both production sources default their `opener` param to `opener_padrao` — never construct a source with a bare `urlopen`.
+26. **`eventos.agregado_id` FK to `alertas.id` is enforced only through `conectar()`** — `conectar()` sets `PRAGMA foreign_keys=ON` before the transaction block (it is a no-op inside a transaction, and enforcement is per-connection). Raw `sqlite3.connect(...)` connections do **not** enforce it — some test fixtures rely on that to insert orphan events. `criar_banco()` declares the FK (`ON DELETE NO ACTION`); a pre-#22 `eventos` table without the FK is rejected by `_verificar_compatibilidade_schema`, never migrated. The FK catches a *dangling* id, not a *wrong* one. See [[decisions/foreign-key-eventos-agregado-id]].

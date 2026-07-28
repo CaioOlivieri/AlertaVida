@@ -72,3 +72,4 @@ updated: 2026-07-02
 - [[decisions/shared-report-formatter]]
 - [[decisions/sdd-practices-from-spec-kit]] — spec-kit evaluation: 5 practices adopted, tooling rejected
 - [[decisions/template-method-http-datasource]] — HttpDataSource consolidates the CemadenSource/NasaEonetSource coletar() skeleton
+- [[decisions/foreign-key-eventos-agregado-id]] — eventos→alertas FK declared in CREATE TABLE, no 12-step rebuild; cheap-now guardrail for Camada 6
