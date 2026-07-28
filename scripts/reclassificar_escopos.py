@@ -22,14 +22,15 @@ from __future__ import annotations
 
 import sys
 
-from alertavida.database import DB_PATH, conectar
+from alertavida.database import conectar, db_path
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.geographic import classificar_escopo
 
 
 def reclassificar() -> int:
-    if not DB_PATH.exists():
-        print(f"Banco não existe em {DB_PATH}. Nada a fazer.")
+    caminho = db_path()
+    if not caminho.exists():
+        print(f"Banco não existe em {caminho}. Nada a fazer.")
         return 0
 
     total = 0
