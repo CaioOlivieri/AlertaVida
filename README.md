@@ -5,7 +5,7 @@
 | Name                                     |    Stmts |     Miss |   Cover |   Missing |
 |----------------------------------------- | -------: | -------: | ------: | --------: |
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
-| src/alertavida/database.py               |       87 |        0 |    100% |           |
+| src/alertavida/database.py               |       99 |        1 |     99% |        49 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       120 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
@@ -26,7 +26,7 @@
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                |  **837** |    **2** | **99%** |           |
+| **TOTAL**                                |  **849** |    **3** | **99%** |           |
 
 
 ## Setup coverage badge
