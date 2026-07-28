@@ -99,6 +99,13 @@ def aplicar_schema_pos_a1_pre_a2(conexao: sqlite3.Connection) -> None:
 
     Este caso deve PASSAR pela verificação de compatibilidade e ser
     aditivamente migrado por _migrar_banco() para o schema atual.
+
+    Nota (issue #22): a tabela `eventos` aqui já carrega a FOREIGN KEY para
+    `alertas.id` — divergência deliberada do commit a5c1af5, cujo `eventos`
+    não tinha FK. É necessária para o cenário continuar chegando ao
+    _migrar_banco() da `alertas` depois que a #22 passou a barrar `eventos`
+    sem FK. O banco A.1 histórico real (eventos SEM FK) está em
+    `aplicar_schema_eventos_sem_fk`, usado para provar essa rejeição.
     """
     conexao.execute(
         """
@@ -130,6 +137,49 @@ def aplicar_schema_pos_a1_pre_a2(conexao: sqlite3.Connection) -> None:
     conexao.execute("CREATE INDEX idx_nivel ON alertas (nivel)")
     conexao.execute("CREATE INDEX idx_fonte ON alertas (fonte)")
     conexao.execute("CREATE INDEX idx_escopo_geografico ON alertas (escopo_geografico)")
+    conexao.execute(
+        """
+        CREATE TABLE eventos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo            TEXT NOT NULL,
+            agregado_id     INTEGER NOT NULL,
+            payload         TEXT NOT NULL,
+            schema_versao   INTEGER NOT NULL DEFAULT 1,
+            criado_em       TEXT NOT NULL,
+            processado_em   TEXT NULL,
+            tentativas      INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (agregado_id) REFERENCES alertas(id)
+        )
+        """
+    )
+    conexao.execute(
+        "CREATE INDEX idx_eventos_pendentes ON eventos (processado_em, criado_em)"
+    )
+    conexao.commit()
+
+
+def aplicar_schema_eventos_sem_fk(conexao: sqlite3.Connection) -> None:
+    """Banco A.1-compatível na `alertas`, mas com `eventos` SEM FOREIGN KEY.
+
+    Reproduz o estado real de um banco criado antes da issue #22 (2026-07-28):
+    a `alertas` já passa na verificação de compatibilidade (tem `id`+`fonte`),
+    mas a `eventos` não declara a FK para `alertas.id`. Deve ser BARRADO por
+    `_verificar_compatibilidade_schema()` com `SchemaIncompativelError`, já que
+    a FK não pode ser adicionada via ALTER TABLE e _migrar_banco() é aditivo.
+    """
+    conexao.execute(
+        """
+        CREATE TABLE alertas (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            fonte               TEXT NOT NULL DEFAULT 'CEMADEN',
+            cod_alerta          TEXT NOT NULL,
+            detectado_em        TEXT NOT NULL,
+            latitude            REAL NOT NULL,
+            longitude           REAL NOT NULL,
+            UNIQUE (fonte, cod_alerta)
+        )
+        """
+    )
     conexao.execute(
         """
         CREATE TABLE eventos (
