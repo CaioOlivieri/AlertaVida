@@ -2,7 +2,12 @@ import contextlib
 import logging
 import sqlite3
 
-from alertavida.events import EventBus, OutboxDispatcher, log_handler
+from alertavida.events import (
+    EventBus,
+    OutboxDispatcher,
+    criar_bus_producao,
+    log_handler,
+)
 
 
 def test_subscribe_e_publish_chama_handler() -> None:
@@ -189,3 +194,27 @@ def test_log_handler_loga_evento(caplog) -> None:
     log_handler({"tipo": "AlertaCriado", "agregado_id": "C1", "payload": {}})
     assert "AlertaCriado" in caplog.text
     assert "C1" in caplog.text
+
+
+def test_criar_bus_producao_inscreve_os_quatro_tipos() -> None:
+    bus = criar_bus_producao()
+
+    assert bus.handler_count("AlertaCriado") == 1
+    assert bus.handler_count("AlertaAtualizado") == 1
+    assert bus.handler_count("AlertaResolvido") == 1
+    assert bus.handler_count("AlertaReativado") == 1
+
+
+def test_criar_bus_producao_devolve_instancias_independentes() -> None:
+    """Sem singleton: um bus não enxerga os handlers registrados no outro."""
+    primeiro = criar_bus_producao()
+    segundo = criar_bus_producao()
+
+    def handler_extra(_: dict) -> None:
+        return None
+
+    primeiro.subscribe("AlertaCriado", handler_extra)
+
+    assert primeiro is not segundo
+    assert primeiro.handler_count("AlertaCriado") == 2
+    assert segundo.handler_count("AlertaCriado") == 1

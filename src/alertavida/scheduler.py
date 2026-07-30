@@ -6,7 +6,7 @@ from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alertavida.database import criar_banco
-from alertavida.events import OutboxDispatcher, bus
+from alertavida.events import OutboxDispatcher, criar_bus_producao
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
 from alertavida.sources.cemaden import CemadenSource
@@ -46,8 +46,9 @@ def agendar_ingestao() -> None:
         "interval",
         **kwargs_ingestao,
     )
+    dispatcher = OutboxDispatcher(criar_bus_producao())
     scheduler.add_job(
-        OutboxDispatcher(bus).processar_pendentes,
+        dispatcher.processar_pendentes,
         "interval",
         seconds=30,
         id="dispatcher",
