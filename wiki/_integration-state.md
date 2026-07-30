@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-07-22
+updated: 2026-07-30
 
 ## Module wiring table (single source of truth)
 
@@ -15,10 +15,10 @@ updated: 2026-07-22
 | `domain/cobrade.py` | COBRADE subgroup mapping tables + validators | `sources/cemaden.py` | integrated |
 | `domain/geographic.py` | `FaixaGeografica`, `classificar_escopo()` | `sources/cemaden.py` | integrated |
 | `monitor.py` | Entrypoint: `main()` → `criar_banco()`, `executar_ingestao()`, prints formatted report via `formatar_relatorio()` | CLI entrypoint | integrated |
-| `scheduler.py` | `agendar_ingestao()`: APScheduler `BlockingScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs; blocks on `start()`, clean `Ctrl+C` shutdown (issue #21); logs per-run report via `formatar_relatorio()` | Production service | integrated |
+| `scheduler.py` | `agendar_ingestao()`: APScheduler `BlockingScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs; blocks on `start()`, clean `Ctrl+C` shutdown (issue #21); logs per-run report via `formatar_relatorio()`; builds the EventBus via `criar_bus_producao()` once and injects it into `OutboxDispatcher` (issue #24) | Production service | integrated |
 | `reporting.py` | `formatar_relatorio()` — shared report formatter for ingestion output | `monitor.py`, `scheduler.py` | integrated |
 | `database.py` | `criar_banco()`, `buscar_snapshots()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
-| `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher` | `scheduler.py` | integrated |
+| `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher`, `log_handler`, `criar_bus_producao()` factory — no module-level singleton (issue #24) | `scheduler.py` (sole composition root) | integrated |
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC (transport-agnostic), `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff + size cap → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener`, `opener_padrao` (HTTPS-only redirect policy); `HttpDataSource(DataSource)` template method (shared `__init__` + concrete `coletar()`, issue #20) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
@@ -29,6 +29,7 @@ updated: 2026-07-22
 
 ```
 scheduler.agendar_ingestao()
+  → criar_bus_producao() → OutboxDispatcher(bus)   (built once, at wiring time)
   → APScheduler (ingestao job every 5min + dispatcher job every 30s)
   → monitor.main()
     → executar_ingestao([CemadenSource(), NasaEonetSource()])
