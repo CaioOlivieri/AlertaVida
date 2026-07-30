@@ -36,10 +36,17 @@ dev = [
 ]
 
 [tool.mypy]
-# Non-strict para começar (issue #23); a base já é anotada, então dá para
-# apertar `strict = true` por módulo depois. python_version fixa a checagem
-# na versão-alvo em toda a matrix (ubuntu + windows).
+# Ainda não é `strict = true` (issue #23), mas as duas flags abaixo são o que
+# faz o gate de CI realmente valer para código NOVO — sem elas, uma função sem
+# anotação passa batida junto com o corpo inteiro dela. python_version fixa a
+# checagem na versão-alvo em toda a matrix (ubuntu + windows).
 python_version = "3.13"
+# Exige anotação em toda função — é a regra do AGENT.md, agora com dente.
+disallow_untyped_defs = true
+# Checa o corpo de funções não anotadas (mypy pula por default). Redundante
+# com a flag acima hoje, mas mantém o corpo coberto se alguma função ganhar
+# um `# type: ignore[no-untyped-def]` no futuro.
+check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 # apscheduler não publica stubs nem py.typed; o ignore é escopado só a ele
