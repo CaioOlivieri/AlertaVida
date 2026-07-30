@@ -13,7 +13,7 @@
 | src/alertavida/domain/detector.py        |       64 |        0 |    100% |           |
 | src/alertavida/domain/enums.py           |       69 |        0 |    100% |           |
 | src/alertavida/domain/geographic.py      |       38 |        0 |    100% |           |
-| src/alertavida/domain/municipio.py       |       18 |        0 |    100% |           |
+| src/alertavida/domain/municipio.py       |       19 |        0 |    100% |           |
 | src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
 | src/alertavida/events.py                 |       52 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
@@ -26,7 +26,7 @@
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                |  **850** |    **3** | **99%** |           |
+| **TOTAL**                                |  **851** |    **3** | **99%** |           |
 
 
 ## Setup coverage badge
