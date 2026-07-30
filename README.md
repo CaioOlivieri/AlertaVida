@@ -15,18 +15,18 @@
 | src/alertavida/domain/geographic.py      |       38 |        0 |    100% |           |
 | src/alertavida/domain/municipio.py       |       19 |        0 |    100% |           |
 | src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
-| src/alertavida/events.py                 |       52 |        0 |    100% |           |
+| src/alertavida/events.py                 |       54 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
 | src/alertavida/ingestion/orquestrador.py |       75 |        0 |    100% |           |
 | src/alertavida/monitor.py                |       15 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
-| src/alertavida/scheduler.py              |       35 |        0 |    100% |           |
+| src/alertavida/scheduler.py              |       36 |        0 |    100% |           |
 | src/alertavida/sources/\_\_init\_\_.py   |        5 |        0 |    100% |           |
 | src/alertavida/sources/\_http.py         |       85 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                |  **851** |    **3** | **99%** |           |
+| **TOTAL**                                |  **854** |    **3** | **99%** |           |
 
 
 ## Setup coverage badge

@@ -54,8 +54,8 @@
             </div>
         </aside>
         <h2>
-            <span class="text">35 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">35<span class="text"> run</span></button>
+            <span class="text">36 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">36<span class="text"> run</span></button>
             <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">3<span class="text"> excluded</span></button>
         </h2>
@@ -65,7 +65,7 @@
             <a id="nextFileLink" class="nav" href="z_e125e1e2959f1576___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-07-30 14:56 +0000
+            created at 2026-07-30 15:58 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -88,7 +88,7 @@
     <p class="run"><span class="n"><a id="t6" href="#t6">6</a></span><span class="t"><span class="key">from</span> <span class="nam">apscheduler</span><span class="op">.</span><span class="nam">schedulers</span><span class="op">.</span><span class="nam">blocking</span> <span class="key">import</span> <span class="nam">BlockingScheduler</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t7" href="#t7">7</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t8" href="#t8">8</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">database</span> <span class="key">import</span> <span class="nam">criar_banco</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">events</span> <span class="key">import</span> <span class="nam">OutboxDispatcher</span><span class="op">,</span> <span class="nam">bus</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">events</span> <span class="key">import</span> <span class="nam">OutboxDispatcher</span><span class="op">,</span> <span class="nam">criar_bus_producao</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">ingestion</span><span class="op">.</span><span class="nam">orquestrador</span> <span class="key">import</span> <span class="nam">executar_ingestao</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">reporting</span> <span class="key">import</span> <span class="nam">formatar_relatorio</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="key">from</span> <span class="nam">alertavida</span><span class="op">.</span><span class="nam">sources</span><span class="op">.</span><span class="nam">cemaden</span> <span class="key">import</span> <span class="nam">CemadenSource</span>&nbsp;</span><span class="r"></span></p>
@@ -128,33 +128,34 @@
     <p class="run run2"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t">        <span class="str">"interval"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">        <span class="op">**</span><span class="nam">kwargs_ingestao</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">scheduler</span><span class="op">.</span><span class="nam">add_job</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">        <span class="nam">OutboxDispatcher</span><span class="op">(</span><span class="nam">bus</span><span class="op">)</span><span class="op">.</span><span class="nam">processar_pendentes</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">        <span class="str">"interval"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">        <span class="nam">seconds</span><span class="op">=</span><span class="num">30</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">        <span class="nam">id</span><span class="op">=</span><span class="str">"dispatcher"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">        <span class="nam">max_instances</span><span class="op">=</span><span class="num">1</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">        <span class="nam">coalesce</span><span class="op">=</span><span class="key">True</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">        <span class="nam">misfire_grace_time</span><span class="op">=</span><span class="num">60</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">        <span class="fst">f"</span><span class="fst">Scheduler iniciado. Executando ingest&#227;o a cada </span><span class="op">{</span><span class="nam">INTERVALO_MINUTOS</span><span class="op">}</span><span class="fst"> minutos. </span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">        <span class="str">"Pressione Ctrl+C para encerrar."</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">        <span class="nam">scheduler</span><span class="op">.</span><span class="nam">start</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t">    <span class="key">except</span> <span class="op">(</span><span class="nam">KeyboardInterrupt</span><span class="op">,</span> <span class="nam">SystemExit</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span><span class="str">"Scheduler encerrado pelo usu&#225;rio."</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">        <span class="nam">scheduler</span><span class="op">.</span><span class="nam">shutdown</span><span class="op">(</span><span class="nam">wait</span><span class="op">=</span><span class="key">False</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t">    <span class="nam">dispatcher</span> <span class="op">=</span> <span class="nam">OutboxDispatcher</span><span class="op">(</span><span class="nam">criar_bus_producao</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t">    <span class="nam">scheduler</span><span class="op">.</span><span class="nam">add_job</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">        <span class="nam">dispatcher</span><span class="op">.</span><span class="nam">processar_pendentes</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">        <span class="str">"interval"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">        <span class="nam">seconds</span><span class="op">=</span><span class="num">30</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t">        <span class="nam">id</span><span class="op">=</span><span class="str">"dispatcher"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">        <span class="nam">max_instances</span><span class="op">=</span><span class="num">1</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">        <span class="nam">coalesce</span><span class="op">=</span><span class="key">True</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t">        <span class="nam">misfire_grace_time</span><span class="op">=</span><span class="num">60</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">    <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">        <span class="fst">f"</span><span class="fst">Scheduler iniciado. Executando ingest&#227;o a cada </span><span class="op">{</span><span class="nam">INTERVALO_MINUTOS</span><span class="op">}</span><span class="fst"> minutos. </span><span class="fst">"</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">        <span class="str">"Pressione Ctrl+C para encerrar."</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t64" href="#t64">64</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t65" href="#t65">65</a></span><span class="t">        <span class="nam">scheduler</span><span class="op">.</span><span class="nam">start</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t66" href="#t66">66</a></span><span class="t">    <span class="key">except</span> <span class="op">(</span><span class="nam">KeyboardInterrupt</span><span class="op">,</span> <span class="nam">SystemExit</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t67" href="#t67">67</a></span><span class="t">        <span class="nam">logger</span><span class="op">.</span><span class="nam">info</span><span class="op">(</span><span class="str">"Scheduler encerrado pelo usu&#225;rio."</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t68" href="#t68">68</a></span><span class="t">        <span class="nam">scheduler</span><span class="op">.</span><span class="nam">shutdown</span><span class="op">(</span><span class="nam">wait</span><span class="op">=</span><span class="key">False</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="exc show_exc"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t"><span class="key">if</span> <span class="nam">__name__</span> <span class="op">==</span> <span class="str">"__main__"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="exc show_exc"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">    <span class="nam">logging</span><span class="op">.</span><span class="nam">basicConfig</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="exc exc2 show_exc"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">        <span class="nam">level</span><span class="op">=</span><span class="nam">os</span><span class="op">.</span><span class="nam">getenv</span><span class="op">(</span><span class="str">"LOG_LEVEL"</span><span class="op">,</span> <span class="str">"INFO"</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="exc exc2 show_exc"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">        <span class="nam">format</span><span class="op">=</span><span class="str">"%(asctime)s [%(levelname)s] %(name)s: %(message)s"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="exc exc2 show_exc"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="exc show_exc"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="nam">agendar_ingestao</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="exc show_exc"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t"><span class="key">if</span> <span class="nam">__name__</span> <span class="op">==</span> <span class="str">"__main__"</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="exc show_exc"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t">    <span class="nam">logging</span><span class="op">.</span><span class="nam">basicConfig</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="exc exc2 show_exc"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">        <span class="nam">level</span><span class="op">=</span><span class="nam">os</span><span class="op">.</span><span class="nam">getenv</span><span class="op">(</span><span class="str">"LOG_LEVEL"</span><span class="op">,</span> <span class="str">"INFO"</span><span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="exc exc2 show_exc"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">        <span class="nam">format</span><span class="op">=</span><span class="str">"%(asctime)s [%(levelname)s] %(name)s: %(message)s"</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="exc exc2 show_exc"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="exc show_exc"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">    <span class="nam">agendar_ingestao</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -164,7 +165,7 @@
             <a class="nav" href="z_e125e1e2959f1576___init___py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.2">coverage.py v7.15.2</a>,
-            created at 2026-07-30 14:56 +0000
+            created at 2026-07-30 15:58 +0000
         </p>
     </div>
 </footer>
