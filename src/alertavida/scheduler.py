@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime
 
-from apscheduler.events import EVENT_JOB_ERROR
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from alertavida.database import criar_banco
@@ -16,7 +16,7 @@ INTERVALO_MINUTOS = 5
 logger = logging.getLogger(__name__)
 
 
-def _on_job_error(event) -> None:
+def _on_job_error(event: JobExecutionEvent) -> None:
     if event.exception:
         logger.error("[ERRO] Rodada de ingestão falhou: %s", event.exception)
 

@@ -5,6 +5,8 @@ Município identifica o "onde administrativo" (nome, UF, código IBGE);
 o ponto exato do alerta vai em `Alerta.coordenadas`.
 """
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -17,14 +19,14 @@ class Municipio(BaseModel):
 
     @field_validator("uf", mode="before")
     @classmethod
-    def normalize_uf(cls, value):
+    def normalize_uf(cls, value: Any) -> Any:
         if isinstance(value, str):
             return value.strip().upper()
         return value
 
     @field_validator("nome", mode="before")
     @classmethod
-    def normalize_nome(cls, value):
+    def normalize_nome(cls, value: Any) -> Any:
         if isinstance(value, str):
             return value.strip()
         return value
