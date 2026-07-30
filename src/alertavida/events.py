@@ -123,8 +123,17 @@ def log_handler(evento: dict) -> None:
     )
 
 
-bus = EventBus()
-bus.subscribe("AlertaCriado", log_handler)
-bus.subscribe("AlertaAtualizado", log_handler)
-bus.subscribe("AlertaResolvido", log_handler)
-bus.subscribe("AlertaReativado", log_handler)
+def criar_bus_producao() -> EventBus:
+    """Compõe o EventBus da produção — instância nova com os handlers do ambiente.
+
+    Ponto único de composição: o entrypoint (`scheduler.py`) chama esta
+    factory uma vez e injeta o bus no `OutboxDispatcher`. Importar `events`
+    não registra handler nenhum, então ordem de import não importa e cada
+    ambiente (produção, testes, `monitor.py` one-shot) escolhe o seu conjunto.
+    """
+    bus = EventBus()
+    bus.subscribe("AlertaCriado", log_handler)
+    bus.subscribe("AlertaAtualizado", log_handler)
+    bus.subscribe("AlertaResolvido", log_handler)
+    bus.subscribe("AlertaReativado", log_handler)
+    return bus
