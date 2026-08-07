@@ -79,11 +79,65 @@ class TestMontarAlerta:
         source = NasaEonetSource()
         out = source._montar_alerta(TEMPESTADE_MULTI_FIX)
         # Fix mais recente: 2026-05-18T12:00:00Z em (-42, -22), apesar de estar
-        # no meio da lista (índice 1).
+        # no meio da lista (índice 1). Posição e ult_atualizacao vêm dele.
         assert out.tipo_evento == TipoEvento.METEOROLOGICO
         assert out.coordenadas.longitude == -42.0
         assert out.coordenadas.latitude == -22.0
-        assert out.data_criacao == datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
+        assert out.ult_atualizacao == datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
+
+    # ------------------------------------------------------------------
+    # Onset (#57) — data_criacao vem da geometry MAIS ANTIGA
+    # ------------------------------------------------------------------
+
+    def test_multi_fix_data_criacao_e_a_geometry_mais_antiga(self):
+        """#57: data_criacao é o onset (fix mais ANTIGO), não a última observação.
+
+        Um evento EONET já vem agregado: geometry[] é uma série temporal, então
+        o maior date é a observação mais recente, não o começo do evento. A
+        Camada 5 mede janelas de correlação contra o onset estimado.
+        """
+        source = NasaEonetSource()
+        out = source._montar_alerta(TEMPESTADE_MULTI_FIX)
+        # Fix mais antigo: 2026-05-16T00:00:00Z em (-40, -20), no FIM da lista —
+        # a seleção é por data, não por posição.
+        assert out.data_criacao == datetime(2026, 5, 16, tzinfo=timezone.utc)
+
+    def test_multi_fix_separa_onset_de_posicao_e_atualizacao(self):
+        """Regressão #57: os três campos saem de fixes DIFERENTES da mesma série.
+
+        earliest ≠ latest na fixture, então o teste falha se qualquer um dos
+        campos voltar a ser alimentado pelo fix errado.
+        """
+        source = NasaEonetSource()
+        out = source._montar_alerta(TEMPESTADE_MULTI_FIX)
+        assert out.data_criacao == datetime(2026, 5, 16, tzinfo=timezone.utc)
+        assert out.ult_atualizacao == datetime(2026, 5, 18, 12, 0, tzinfo=timezone.utc)
+        assert (out.coordenadas.longitude, out.coordenadas.latitude) == (-42.0, -22.0)
+        assert out.data_criacao < out.ult_atualizacao
+
+    def test_fix_unico_tem_onset_igual_a_ult_atualizacao(self):
+        """Evento de 1 fix (a maioria): onset e última observação coincidem."""
+        source = NasaEonetSource()
+        out = source._montar_alerta(INCENDIO_BRASIL)
+        assert out.data_criacao == datetime(2026, 5, 18, tzinfo=timezone.utc)
+        assert out.ult_atualizacao == out.data_criacao
+
+    def test_onset_ignora_fix_mais_antigo_invalido(self):
+        """Fix inválido mais antigo não vira onset: a série é filtrada antes."""
+        source = NasaEonetSource()
+        ev = evento(
+            id="EONET_ONSET_SUJO",
+            categoria="wildfires",
+            geometry=[
+                fix_point((-50.0, -10.0), "não-data"),  # mais antigo se contasse
+                fix_point((-51.0, -11.0), "2026-05-17T00:00:00Z"),
+                fix_point((-52.0, -12.0), "2026-05-19T00:00:00Z"),
+            ],
+        )
+        out = source._montar_alerta(ev)
+        assert out.data_criacao == datetime(2026, 5, 17, tzinfo=timezone.utc)
+        assert out.ult_atualizacao == datetime(2026, 5, 19, tzinfo=timezone.utc)
+        assert (out.coordenadas.longitude, out.coordenadas.latitude) == (-52.0, -12.0)
 
     def test_montar_alerta_wildfires_mapeia_cobrade(self):
         """C.2 mapeia wildfires → 1.4.1.0.0 com MAPEADA_POR_NOME."""
@@ -163,7 +217,7 @@ class TestMontarAlerta:
         assert out.fonte_classificacao == FonteClassificacao.INDETERMINADA
 
     # ------------------------------------------------------------------
-    # _fix_mais_recente — ramos que pulam fix inválido
+    # _fixes_validos — ramos que pulam fix inválido
     # ------------------------------------------------------------------
 
     def test_fix_coordenadas_curtas_pulado(self):

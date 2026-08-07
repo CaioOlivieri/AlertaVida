@@ -6,7 +6,8 @@ casos que NasaEonetSource precisa tratar:
 
 - evento Point dentro do Brasil   → escopo BRASIL
 - evento Point no exterior        → escopo INTERNACIONAL
-- evento com N fixes              → source usa o fix MAIS RECENTE (por data)
+- evento com N fixes              → onset (data_criacao) do fix MAIS ANTIGO;
+                                    posição + ult_atualizacao do MAIS RECENTE
 - evento sem geometry             → descartado (sem coordenadas)
 - categoria fora do mapeamento    → tipo_evento INDETERMINADO
 
@@ -97,9 +98,11 @@ INCENDIO_EXTERIOR: dict[str, Any] = evento(
     geometry=[fix_point((-120.0, 38.0), "2026-05-18T00:00:00Z")],
 )
 
-# Múltiplos fixes em ordem NÃO-cronológica: o mais recente (índice 1) está no
-# meio da lista de propósito, para que o teste verifique seleção POR DATA, não
-# por posição. Fix mais recente: 2026-05-18T12:00:00Z em (-42, -22), no Brasil.
+# Múltiplos fixes em ordem NÃO-cronológica, de propósito: nem o mais recente
+# nem o mais antigo estão onde a posição na lista sugeriria, para que os testes
+# verifiquem seleção POR DATA. Mais recente: 2026-05-18T12:00:00Z em (-42, -22)
+# (índice 1). Mais antigo: 2026-05-16T00:00:00Z em (-40, -20) (índice 2, o
+# ÚLTIMO da lista) — é o onset usado por data_criacao (#57). earliest ≠ latest.
 TEMPESTADE_MULTI_FIX: dict[str, Any] = evento(
     id="EONET_STORM_MULTI",
     categoria="severeStorms",
