@@ -68,6 +68,14 @@ with a location", i.e. a time series for an already-aggregated event, so that
 timestamp is the *latest* observation, not the onset. Correlation must use the
 **earliest** geometry as EONET onset.
 
+> **RESOLVED 2026-08-07 by issue #57** — the note above is kept as written for the
+> record; it no longer describes the code. `_fix_mais_recente` is gone: the source
+> now builds the validated series with `_fixes_validos` and takes `data_criacao`
+> from the **earliest** fix (onset), leaving `coordenadas` and `ult_atualizacao`
+> on the latest. Scoring can measure its windows against `Alerta.data_criacao`
+> directly for EONET. See [[components/sources-nasa-eonet]], "Two instants from
+> one geometry series".
+
 **OPEN:** the provisional per-type values, pending the first confirmed pair set.
 
 #### Q2 — Distance: single radius or per-type? point-to-point or bbox?

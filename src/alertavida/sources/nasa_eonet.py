@@ -15,8 +15,16 @@ porque o shape do payload v3 diverge do CEMADEN:
 - Tipo vem de categories[].id em inglês → mapeamento próprio
   CATEGORIA_EONET_PARA_TIPO (invariante 10: cada DataSource mapeia sua própria
   terminologia para os valores neutros de TipoEvento).
-- Data vive em geometry[].date por fix; um evento tem 1..N fixes → usa o fix
-  MAIS RECENTE (maior date) como posição/momento corrente do alerta.
+- Data vive em geometry[].date por fix; um evento tem 1..N fixes. A série é
+  colapsada em DOIS instantes distintos (issue #57):
+    * data_criacao   ← fix MAIS ANTIGO (onset, início estimado do evento);
+    * ult_atualizacao ← fix MAIS RECENTE (última observação publicada);
+    * coordenadas    ← fix MAIS RECENTE (melhor estimativa da posição atual).
+  Um evento EONET já vem agregado: a geometry é uma série temporal
+  ("the pairing of a specific date/time with a location"), então o maior date
+  é a observação mais recente, NÃO o começo do evento. Camada 5 mede janelas
+  de correlação contra o onset — ver wiki/projects/layer-5-correlation.md,
+  Round 1 Q1.
 
 Parte C.2 atribui cobrade_codigo via mapear_eonet, que retorna código COBRADE
 para categorias EONET mapeadas. Categorias não mapeadas mantêm None /
@@ -138,7 +146,12 @@ class NasaEonetSource(HttpDataSource):
             else FonteClassificacao.INDETERMINADA
         )
 
-        longitude, latitude, data_criacao = self._fix_mais_recente(evento.get("geometry"))
+        fixes = self._fixes_validos(evento.get("geometry"))
+        # A série é colapsada em dois instantes distintos (#57). `min`/`max` com
+        # key=data preservam o primeiro fix de cada empate, mantendo a seleção
+        # determinística mesmo quando dois fixes compartilham a mesma date.
+        data_criacao = min(fixes, key=lambda fix: fix[0])[0]
+        ult_atualizacao, longitude, latitude = max(fixes, key=lambda fix: fix[0])
         try:
             coordenadas = Coordenadas(latitude=latitude, longitude=longitude)
         except ValidationError:
@@ -156,7 +169,7 @@ class NasaEonetSource(HttpDataSource):
             municipio=None,
             escopo_geografico=escopo,
             data_criacao=data_criacao,
-            ult_atualizacao=None,
+            ult_atualizacao=ult_atualizacao,
             descricao=None if titulo is None else str(titulo),
             cobrade_codigo=cobrade,
             fonte_classificacao=fonte_classificacao,
@@ -175,20 +188,27 @@ class NasaEonetSource(HttpDataSource):
         return ""
 
     @staticmethod
-    def _fix_mais_recente(geometry: Any) -> tuple[float, float, datetime]:
-        """Seleciona o fix Point mais recente (maior date) de geometry[].
+    def _fixes_validos(geometry: Any) -> list[tuple[datetime, float, float]]:
+        """Extrai a série temporal de fixes Point válidos de geometry[].
 
-        Retorna (longitude, latitude, data) — coordinates em ordem GeoJSON.
+        Retorna [(data, longitude, latitude), ...] na ordem de aparição no
+        payload — coordinates em ordem GeoJSON. Fixes malformados (tipo != Point,
+        coordinates curtas ou não numéricas, date ausente ou não parseável) são
+        pulados silenciosamente; o evento só é descartado se NENHUM sobrar.
+
         Levanta ValueError se geometry estiver vazia/ausente ou não tiver
         nenhum fix Point com coordenadas e data válidas (evento descartado).
 
-        A seleção é por DATA, não por posição na lista: a API não garante
+        Devolve a série inteira em vez de já escolher um fix porque o chamador
+        precisa de DOIS extremos com papéis diferentes (#57): o mais antigo é o
+        onset, o mais recente é a posição/atualização corrente. Quem escolhe
+        seleciona por DATA, nunca por posição na lista — a API não garante
         ordenação cronológica dos fixes.
         """
         if not isinstance(geometry, list) or not geometry:
             raise ValueError("evento EONET sem geometry")
 
-        melhor: tuple[datetime, float, float] | None = None
+        fixes: list[tuple[datetime, float, float]] = []
         for fix in geometry:
             if not isinstance(fix, dict) or fix.get("type") != "Point":
                 continue
@@ -207,10 +227,8 @@ class NasaEonetSource(HttpDataSource):
                 latitude = float(coords[1])
             except (TypeError, ValueError):
                 continue
-            if melhor is None or data > melhor[0]:
-                melhor = (data, longitude, latitude)
+            fixes.append((data, longitude, latitude))
 
-        if melhor is None:
+        if not fixes:
             raise ValueError("evento EONET sem fix Point válido")
-        data, longitude, latitude = melhor
-        return longitude, latitude, data
+        return fixes
