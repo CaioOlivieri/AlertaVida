@@ -42,6 +42,7 @@ updated: 2026-07-02
 - [[components/domain-detector]]
 - [[components/domain-geographic]]
 - [[components/domain-cobrade]]
+- [[components/domain-incidente-correlacao]]
 - [[components/reporting]]
 
 ### Patterns
