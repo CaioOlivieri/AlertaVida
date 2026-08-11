@@ -10,9 +10,11 @@
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       120 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
 | src/alertavida/domain/coordenadas.py     |        5 |        0 |    100% |           |
+| src/alertavida/domain/correlacao.py      |      108 |        0 |    100% |           |
 | src/alertavida/domain/detector.py        |       64 |        0 |    100% |           |
 | src/alertavida/domain/enums.py           |       69 |        0 |    100% |           |
 | src/alertavida/domain/geographic.py      |       38 |        0 |    100% |           |
+| src/alertavida/domain/incidente.py       |       44 |        0 |    100% |           |
 | src/alertavida/domain/municipio.py       |       19 |        0 |    100% |           |
 | src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
 | src/alertavida/events.py                 |       54 |        0 |    100% |           |
@@ -26,7 +28,7 @@
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                |  **854** |    **3** | **99%** |           |
+| **TOTAL**                                | **1006** |    **3** | **99%** |           |
 
 
 ## Setup coverage badge
