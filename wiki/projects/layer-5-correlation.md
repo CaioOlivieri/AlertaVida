@@ -414,14 +414,12 @@ Three properties are load-bearing and must survive implementation:
   [[decisions/alert-reactivation-instead-of-crash]]). Internal consistency beats
   novelty (Round 1, Q5).
 
-**Open implementation question, owned by #59 — do not pre-empt it here.**
-`eventos.agregado_id` carries a FK to `alertas(id)` since #22, so incident
-lifecycle events cannot reuse that column to reference `incidentes`. The
-candidates are: (a) incident id in the JSON `payload`, `agregado_id` pointing at
-the triggering alert; (b) a nullable `agregado_incidente_id` column with its own
-FK; (c) something else. #59 must put the trade-offs to the maintainer before
-writing code, and the #22 FK must not be weakened or dropped either way. The
-outcome gets a page in `decisions/`.
+**Resolved by #59, 2026-08-12** — option (b): a nullable
+`agregado_incidente_id` column on `eventos`, with its own
+`FOREIGN KEY → incidentes(id)` and child-key index. `agregado_id` (the #22 FK
+to `alertas`) stays `NOT NULL` and is populated with the triggering alert on
+every incident event too, so nothing about the #22 FK weakens. See
+[[decisions/agregado-incidente-id]].
 
 ### Execution plan
 
