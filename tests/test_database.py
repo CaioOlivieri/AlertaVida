@@ -1152,3 +1152,38 @@ class TestFundirIncidentes:
             "incidente_fundido_id": fundido_id,
             "alerta_id_disparador": disparador_alerta,
         }
+
+
+# ----------------------------------------------------------------------
+# Disponibilidade do R-Tree do SQLite (issue #60) — prova empírica, não
+# inferência (wiki/_schema.md regra 1). A matriz de CI cobre ubuntu-latest
+# e windows-latest com o mesmo `uv python install`; a saída deste teste nas
+# duas pernas É a evidência colada no corpo do PR. Se qualquer perna falhar
+# aqui, o candidato de blocking usa o fallback de colunas indexadas
+# (ver decisions/ se o fallback for necessário) em vez do R-Tree.
+# ----------------------------------------------------------------------
+
+class TestCapacidadeEspacialSQLite:
+    def test_rtree_habilitado_via_compile_options(self):
+        with contextlib.closing(sqlite3.connect(":memory:")) as conexao:
+            opcoes = [row[0] for row in conexao.execute("PRAGMA compile_options")]
+
+        assert any("RTREE" in opcao.upper() for opcao in opcoes), (
+            f"SQLITE_ENABLE_RTREE ausente em compile_options: {sorted(opcoes)}"
+        )
+
+    def test_rtree_cria_tabela_virtual_e_consulta(self):
+        with contextlib.closing(sqlite3.connect(":memory:")) as conexao:
+            conexao.execute(
+                "CREATE VIRTUAL TABLE probe_rtree USING rtree("
+                "id, min_lat, max_lat, min_lon, max_lon)"
+            )
+            conexao.execute("INSERT INTO probe_rtree VALUES (1, -30.0, -29.0, -57.0, -56.0)")
+
+            linhas = conexao.execute(
+                "SELECT id FROM probe_rtree "
+                "WHERE min_lat <= -29.5 AND max_lat >= -29.5 "
+                "AND min_lon <= -56.5 AND max_lon >= -56.5"
+            ).fetchall()
+
+        assert linhas == [(1,)]
