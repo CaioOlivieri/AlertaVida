@@ -8,6 +8,7 @@ Cobre:
 """
 
 import contextlib
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +45,26 @@ def _indices_de(db_path: Path, tabela: str) -> set[str]:
 def _patch_db_path(monkeypatch, db_path: Path) -> None:
     """Aponta o banco para o caminho temporário via env var (issue #22)."""
     monkeypatch.setenv(db_module.ENV_DB_PATH, str(db_path))
+
+
+def _inserir_alerta(db_path: Path, cod_alerta: str) -> int:
+    """Insere um alerta mínimo via SQL cru e devolve o id gerado.
+
+    Helper só para os testes de persistência de Incidente (issue #59), que
+    precisam de um alerta_id real para satisfazer as FKs de
+    incidente_membros/eventos.
+    """
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        cursor = conexao.execute(
+            """
+            INSERT INTO alertas (fonte, cod_alerta, latitude, longitude, detectado_em)
+            VALUES ('CEMADEN', ?, -10.0, -40.0, '2026-08-12T00:00:00')
+            """,
+            (cod_alerta,),
+        )
+        conexao.commit()
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
 
 # ----------------------------------------------------------------------
@@ -543,13 +564,19 @@ class TestForeignKeyEventos:
     """
 
     def test_banco_novo_declara_a_fk(self, db_temporario):
-        """criar_banco() deixa a FK declarada para alertas(id)."""
+        """criar_banco() deixa a FK declarada para alertas(id).
+
+        Desde a #59, `eventos` também carrega uma segunda FK opcional para
+        `incidentes(id)` (`agregado_incidente_id`) — ver
+        TestPersistenciaIncidente.TestSchemaIncidente para a cobertura dela.
+        """
         with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
             fks = conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall()
 
-        assert len(fks) == 1, "eventos deveria ter exatamente uma FOREIGN KEY"
         # foreign_key_list: (id, seq, table, from, to, on_update, on_delete, match)
-        _, _, tabela, coluna_filha, coluna_pai, *_rest = fks[0]
+        fks_para_alertas = [fk for fk in fks if fk[2] == "alertas"]
+        assert len(fks_para_alertas) == 1, "eventos deveria ter exatamente uma FK para alertas"
+        _, _, tabela, coluna_filha, coluna_pai, *_rest = fks_para_alertas[0]
         assert tabela == "alertas"
         assert coluna_filha == "agregado_id"
         assert coluna_pai == "id"
@@ -598,3 +625,530 @@ class TestForeignKeyEventos:
         # match no ramo `eventos`: prova que é a FK ausente, não a `alertas`.
         with pytest.raises(SchemaIncompativelError, match="FOREIGN KEY"):
             db_module.criar_banco()
+
+
+# ----------------------------------------------------------------------
+# Persistência de Incidente (issue #59) — tabelas, proveniência, redirect
+# de fusão, eventos de outbox.
+# ----------------------------------------------------------------------
+
+class TestSchemaIncidente:
+    """Tabelas incidentes/incidente_membros + FKs + índices.
+
+    Mesmo estilo de TestCriacaoSchemaAtual/TestMigrationAditiva.
+    """
+
+    def test_cria_tabela_incidentes(self, db_temporario):
+        colunas = _colunas_de(db_temporario, "incidentes")
+        esperadas = {"id", "status", "criado_em", "atualizado_em", "resolvido_em", "fundido_em"}
+        assert esperadas.issubset(colunas)
+
+    def test_incidentes_tem_fk_autorreferente_fundido_em(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            fks = conexao.execute("PRAGMA foreign_key_list(incidentes)").fetchall()
+
+        assert len(fks) == 1, "incidentes deveria ter exatamente uma FOREIGN KEY"
+        _, _, tabela, coluna_filha, coluna_pai, *_rest = fks[0]
+        assert tabela == "incidentes"
+        assert coluna_filha == "fundido_em"
+        assert coluna_pai == "id"
+
+    def test_incidentes_tem_indices_de_fundido_em_e_candidatos(self, db_temporario):
+        indices = _indices_de(db_temporario, "incidentes")
+        assert "idx_incidentes_fundido_em" in indices
+        assert "idx_incidentes_status_fundido" in indices
+
+    def test_cria_tabela_incidente_membros(self, db_temporario):
+        colunas = _colunas_de(db_temporario, "incidente_membros")
+        esperadas = {"id", "incidente_id", "alerta_id", "score", "motivo", "criado_em"}
+        assert esperadas.issubset(colunas)
+
+    def test_incidente_membros_tem_as_duas_fks(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            fks = conexao.execute("PRAGMA foreign_key_list(incidente_membros)").fetchall()
+
+        tabelas_referenciadas = {fk[2] for fk in fks}
+        assert tabelas_referenciadas == {"incidentes", "alertas"}
+
+    def test_incidente_membros_tem_unique_em_alerta_id(self, db_temporario):
+        """UNIQUE(alerta_id): um Alerta pertence a no máximo um Incidente vivo."""
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            indices = conexao.execute("PRAGMA index_list(incidente_membros)").fetchall()
+
+        # PRAGMA index_list: (seq, name, unique, origin, partial) — origin='u'
+        # é o índice autogerado pela constraint UNIQUE da coluna.
+        indices_unicos = [idx for idx in indices if idx[2] == 1]
+        assert len(indices_unicos) == 1
+
+    def test_incidente_membros_tem_indice_no_incidente_id(self, db_temporario):
+        indices = _indices_de(db_temporario, "incidente_membros")
+        assert "idx_incidente_membros_incidente_id" in indices
+
+    def test_eventos_tem_fk_para_incidentes(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            fks = conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall()
+
+        fks_para_incidentes = [fk for fk in fks if fk[2] == "incidentes"]
+        assert len(fks_para_incidentes) == 1
+        _, _, tabela, coluna_filha, coluna_pai, *_rest = fks_para_incidentes[0]
+        assert coluna_filha == "agregado_incidente_id"
+        assert coluna_pai == "id"
+
+    def test_eventos_tem_indice_no_agregado_incidente_id(self, db_temporario):
+        indices = _indices_de(db_temporario, "eventos")
+        assert "idx_eventos_agregado_incidente_id" in indices
+
+    def test_criar_banco_duas_vezes_e_idempotente(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "idem_incidente.db"
+        _patch_db_path(monkeypatch, db_path)
+
+        db_module.criar_banco()
+        incidentes_1 = _colunas_de(db_path, "incidentes")
+        membros_1 = _colunas_de(db_path, "incidente_membros")
+
+        db_module.criar_banco()  # segunda vez — deve ser no-op
+
+        assert _colunas_de(db_path, "incidentes") == incidentes_1
+        assert _colunas_de(db_path, "incidente_membros") == membros_1
+
+
+class TestMigracaoAgregadoIncidenteId:
+    """eventos.agregado_incidente_id chega via ALTER TABLE em bancos que já
+    tinham `eventos` mas não a coluna (nem `incidentes`) — mesmo padrão
+    aditivo das colunas COBRADE em `alertas` (TestMigrationAditiva)."""
+
+    def test_eventos_legado_recebe_a_coluna(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "legado_pre_59.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        colunas_antes = _colunas_de(db_path, "eventos")
+        assert "agregado_incidente_id" not in colunas_antes
+
+        db_module.criar_banco()
+
+        colunas_depois = _colunas_de(db_path, "eventos")
+        assert "agregado_incidente_id" in colunas_depois
+
+    def test_eventos_legado_recebe_a_fk(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "legado_pre_59_fk.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        db_module.criar_banco()
+
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            fks = conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall()
+        fks_para_incidentes = [fk for fk in fks if fk[2] == "incidentes"]
+        assert len(fks_para_incidentes) == 1
+
+    def test_eventos_legado_recebe_o_indice(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "legado_pre_59_idx.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        db_module.criar_banco()
+
+        indices = _indices_de(db_path, "eventos")
+        assert "idx_eventos_agregado_incidente_id" in indices
+
+    def test_migracao_e_idempotente(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "legado_pre_59_idem.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        db_module.criar_banco()
+        db_module.criar_banco()  # segunda rodada — não deve tentar ADD COLUMN de novo
+
+        colunas = _colunas_de(db_path, "eventos")
+        assert "agregado_incidente_id" in colunas
+
+
+class TestForeignKeyIncidentes:
+    """FKs de incidente_membros/incidentes/eventos, POR CONEXÃO — mesma
+    disciplina da #22 (TestForeignKeyEventos)."""
+
+    def test_conectar_impoe_fk_de_incidente_membros_para_incidentes(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            with conectar() as conexao:
+                conexao.execute(
+                    """
+                    INSERT INTO incidente_membros (
+                        incidente_id, alerta_id, score, motivo, criado_em
+                    ) VALUES (99999, ?, 0.9, 'teste', '2026-08-12T00:00:00')
+                    """,
+                    (alerta_id,),
+                )
+
+    def test_conectar_impoe_fk_de_incidente_membros_para_alertas(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(alerta_id, 0.9, "teste", "2026-08-12T00:00:00")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            with conectar() as conexao:
+                conexao.execute(
+                    """
+                    INSERT INTO incidente_membros (
+                        incidente_id, alerta_id, score, motivo, criado_em
+                    ) VALUES (?, 99999, 0.9, 'teste', '2026-08-12T00:00:01')
+                    """,
+                    (incidente_id,),
+                )
+
+    def test_conectar_impoe_fk_de_fundido_em(self, db_temporario):
+        with pytest.raises(sqlite3.IntegrityError):
+            with conectar() as conexao:
+                conexao.execute(
+                    "INSERT INTO incidentes (status, criado_em, atualizado_em, fundido_em) "
+                    "VALUES ('RESOLVIDO', '2026-08-12T00:00:00', '2026-08-12T00:00:00', 99999)"
+                )
+
+    def test_conectar_impoe_fk_de_agregado_incidente_id(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            with conectar() as conexao:
+                conexao.execute(
+                    """
+                    INSERT INTO eventos (
+                        tipo, agregado_id, agregado_incidente_id, payload, criado_em
+                    ) VALUES ('IncidenteCriado', ?, 99999, '{}', '2026-08-12T00:00:00')
+                    """,
+                    (alerta_id,),
+                )
+
+    def test_unique_alerta_id_impede_membro_duplicado(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+        outro_incidente_id = db_module.criar_incidente(
+            _inserir_alerta(db_temporario, "A2"), 0.9, "fundador", "2026-08-12T00:00:01"
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            db_module.adicionar_membro_incidente(
+                outro_incidente_id, alerta_id, 0.5, "duplicado", "2026-08-12T00:00:02"
+            )
+
+
+class TestInvarianteAgregadoIncidenteId:
+    """agregado_incidente_id IS NOT NULL SSE o evento é de ciclo de vida de
+    Incidente — validado em runtime por `_inserir_evento_outbox`, não como
+    CHECK constraint (SQLite não permite adicioná-la via ALTER TABLE)."""
+
+    def test_evento_de_incidente_sem_agregado_incidente_id_levanta(self, db_temporario):
+        from alertavida.database import _inserir_evento_outbox
+
+        with pytest.raises(ValueError, match="Invariante violada"):
+            with conectar() as conexao:
+                _inserir_evento_outbox(
+                    conexao,
+                    tipo="IncidenteCriado",
+                    agregado_id=1,
+                    agregado_incidente_id=None,
+                    payload={},
+                    criado_em="2026-08-12T00:00:00",
+                )
+
+    def test_evento_de_alerta_com_agregado_incidente_id_levanta(self, db_temporario):
+        from alertavida.database import _inserir_evento_outbox
+
+        with pytest.raises(ValueError, match="Invariante violada"):
+            with conectar() as conexao:
+                _inserir_evento_outbox(
+                    conexao,
+                    tipo="AlertaCriado",
+                    agregado_id=1,
+                    agregado_incidente_id=1,
+                    payload={},
+                    criado_em="2026-08-12T00:00:00",
+                )
+
+
+class TestRollbackAtomicidadeIncidente:
+    """Cada função de transição de Incidente escreve estado + evento na
+    MESMA transação (invariante 4) — mesmo estilo de
+    TestRollbackAtomicidade."""
+
+    def test_criar_incidente_com_alerta_inexistente_nao_deixa_residuo(self, db_temporario):
+        with pytest.raises(sqlite3.IntegrityError):
+            db_module.criar_incidente(99999, 0.9, "teste", "2026-08-12T00:00:00")
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            n_incidentes = conexao.execute("SELECT COUNT(*) FROM incidentes").fetchone()[0]
+            n_membros = conexao.execute("SELECT COUNT(*) FROM incidente_membros").fetchone()[0]
+            n_eventos = conexao.execute(
+                "SELECT COUNT(*) FROM eventos WHERE tipo = 'IncidenteCriado'"
+            ).fetchone()[0]
+
+        assert n_incidentes == 0, "INSERT em incidentes deveria ter sido revertido pelo rollback"
+        assert n_membros == 0
+        assert n_eventos == 0
+
+    def test_adicionar_membro_duplicado_nao_deixa_residuo(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+        outro_incidente_id = db_module.criar_incidente(
+            _inserir_alerta(db_temporario, "A2"), 0.9, "fundador", "2026-08-12T00:00:01"
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            db_module.adicionar_membro_incidente(
+                outro_incidente_id, alerta_id, 0.5, "duplicado", "2026-08-12T05:00:00"
+            )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            atualizado_em = conexao.execute(
+                "SELECT atualizado_em FROM incidentes WHERE id = ?", (outro_incidente_id,)
+            ).fetchone()[0]
+            n_eventos_atualizado = conexao.execute(
+                "SELECT COUNT(*) FROM eventos WHERE tipo = 'IncidenteAtualizado'"
+            ).fetchone()[0]
+
+        assert atualizado_em == "2026-08-12T00:00:01", (
+            "UPDATE atualizado_em deveria ter sido revertido"
+        )
+        assert n_eventos_atualizado == 0
+
+
+class TestCriarIncidente:
+    def test_persiste_incidente_e_membro_fundador(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 0.9, "mesmo_codigo_ibge", "2026-08-12T00:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            incidente = conexao.execute(
+                "SELECT status, criado_em, atualizado_em, resolvido_em, fundido_em "
+                "FROM incidentes WHERE id = ?",
+                (incidente_id,),
+            ).fetchone()
+            membro = conexao.execute(
+                "SELECT incidente_id, alerta_id, score, motivo "
+                "FROM incidente_membros WHERE incidente_id = ?",
+                (incidente_id,),
+            ).fetchone()
+
+        assert incidente == ("ATIVO", "2026-08-12T00:00:00", "2026-08-12T00:00:00", None, None)
+        assert membro == (incidente_id, alerta_id, 0.9, "mesmo_codigo_ibge")
+
+    def test_emite_incidente_criado(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 0.9, "mesmo_codigo_ibge", "2026-08-12T00:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            evento = conexao.execute(
+                "SELECT tipo, agregado_id, agregado_incidente_id, payload "
+                "FROM eventos WHERE tipo = 'IncidenteCriado'"
+            ).fetchone()
+
+        assert evento[0] == "IncidenteCriado"
+        assert evento[1] == alerta_id
+        assert evento[2] == incidente_id
+        assert json.loads(evento[3]) == {
+            "incidente_id": incidente_id,
+            "alerta_id": alerta_id,
+            "score": 0.9,
+            "motivo": "mesmo_codigo_ibge",
+        }
+
+
+class TestAdicionarMembroIncidente:
+    def test_persiste_novo_membro_e_atualiza_incidente(self, db_temporario):
+        fundador_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            fundador_id, 0.9, "fundador", "2026-08-12T00:00:00"
+        )
+        novo_membro_id = _inserir_alerta(db_temporario, "A2")
+
+        db_module.adicionar_membro_incidente(
+            incidente_id, novo_membro_id, 0.7, "distancia_proxima", "2026-08-12T01:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            membros = conexao.execute(
+                "SELECT alerta_id FROM incidente_membros WHERE incidente_id = ?",
+                (incidente_id,),
+            ).fetchall()
+            atualizado_em = conexao.execute(
+                "SELECT atualizado_em FROM incidentes WHERE id = ?", (incidente_id,)
+            ).fetchone()[0]
+
+        assert {m[0] for m in membros} == {fundador_id, novo_membro_id}
+        assert atualizado_em == "2026-08-12T01:00:00"
+
+    def test_emite_incidente_atualizado(self, db_temporario):
+        fundador_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            fundador_id, 0.9, "fundador", "2026-08-12T00:00:00"
+        )
+        novo_membro_id = _inserir_alerta(db_temporario, "A2")
+
+        db_module.adicionar_membro_incidente(
+            incidente_id, novo_membro_id, 0.7, "distancia_proxima", "2026-08-12T01:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            evento = conexao.execute(
+                "SELECT tipo, agregado_id, agregado_incidente_id "
+                "FROM eventos WHERE tipo = 'IncidenteAtualizado'"
+            ).fetchone()
+
+        assert evento == ("IncidenteAtualizado", novo_membro_id, incidente_id)
+
+
+class TestResolverIncidente:
+    def test_resolve_e_marca_resolvido_em(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T02:00:00")
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            status, resolvido_em = conexao.execute(
+                "SELECT status, resolvido_em FROM incidentes WHERE id = ?", (incidente_id,)
+            ).fetchone()
+
+        assert status == "RESOLVIDO"
+        assert resolvido_em == "2026-08-12T02:00:00"
+
+    def test_emite_incidente_resolvido(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T02:00:00")
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            evento = conexao.execute(
+                "SELECT tipo, agregado_id, agregado_incidente_id "
+                "FROM eventos WHERE tipo = 'IncidenteResolvido'"
+            ).fetchone()
+
+        assert evento == ("IncidenteResolvido", alerta_id, incidente_id)
+
+
+class TestReativarIncidente:
+    def test_reativa_e_limpa_resolvido_em(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T02:00:00")
+
+        db_module.reativar_incidente(incidente_id, alerta_id, "2026-08-12T03:00:00")
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            status, resolvido_em = conexao.execute(
+                "SELECT status, resolvido_em FROM incidentes WHERE id = ?", (incidente_id,)
+            ).fetchone()
+
+        assert status == "ATIVO"
+        assert resolvido_em is None
+
+    def test_emite_incidente_reativado(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(alerta_id, 0.9, "fundador", "2026-08-12T00:00:00")
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T02:00:00")
+
+        db_module.reativar_incidente(incidente_id, alerta_id, "2026-08-12T03:00:00")
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            evento = conexao.execute(
+                "SELECT tipo, agregado_id, agregado_incidente_id "
+                "FROM eventos WHERE tipo = 'IncidenteReativado'"
+            ).fetchone()
+
+        assert evento == ("IncidenteReativado", alerta_id, incidente_id)
+
+
+class TestFundirIncidentes:
+    """Redirect append-only (Round 1, Q6): o Incidente fundido nunca é
+    apagado nem tem seus membros movidos; ambos os ids continuam
+    resolvíveis."""
+
+    def test_redirect_append_only_preserva_membros_do_fundido(self, db_temporario):
+        sobrevivente_alerta = _inserir_alerta(db_temporario, "A1")
+        sobrevivente_id = db_module.criar_incidente(
+            sobrevivente_alerta, 0.9, "fundador", "2026-08-12T00:00:00"
+        )
+        fundido_alerta = _inserir_alerta(db_temporario, "A2")
+        fundido_id = db_module.criar_incidente(
+            fundido_alerta, 0.9, "fundador", "2026-08-12T00:00:01"
+        )
+        disparador_alerta = _inserir_alerta(db_temporario, "A3")
+
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_alerta, "2026-08-12T04:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            fundido_em = conexao.execute(
+                "SELECT fundido_em FROM incidentes WHERE id = ?", (fundido_id,)
+            ).fetchone()[0]
+            membros_fundido = conexao.execute(
+                "SELECT alerta_id FROM incidente_membros WHERE incidente_id = ?",
+                (fundido_id,),
+            ).fetchall()
+
+        assert fundido_em == sobrevivente_id
+        assert membros_fundido == [(fundido_alerta,)]
+
+    def test_ambos_ids_continuam_resolviveis(self, db_temporario):
+        sobrevivente_alerta = _inserir_alerta(db_temporario, "A1")
+        sobrevivente_id = db_module.criar_incidente(
+            sobrevivente_alerta, 0.9, "fundador", "2026-08-12T00:00:00"
+        )
+        fundido_alerta = _inserir_alerta(db_temporario, "A2")
+        fundido_id = db_module.criar_incidente(
+            fundido_alerta, 0.9, "fundador", "2026-08-12T00:00:01"
+        )
+        disparador_alerta = _inserir_alerta(db_temporario, "A3")
+
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_alerta, "2026-08-12T04:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            ids_existentes = {
+                row[0] for row in conexao.execute("SELECT id FROM incidentes").fetchall()
+            }
+
+        assert {sobrevivente_id, fundido_id}.issubset(ids_existentes)
+
+    def test_emite_incidente_fundido(self, db_temporario):
+        sobrevivente_alerta = _inserir_alerta(db_temporario, "A1")
+        sobrevivente_id = db_module.criar_incidente(
+            sobrevivente_alerta, 0.9, "fundador", "2026-08-12T00:00:00"
+        )
+        fundido_alerta = _inserir_alerta(db_temporario, "A2")
+        fundido_id = db_module.criar_incidente(
+            fundido_alerta, 0.9, "fundador", "2026-08-12T00:00:01"
+        )
+        disparador_alerta = _inserir_alerta(db_temporario, "A3")
+
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_alerta, "2026-08-12T04:00:00"
+        )
+
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            evento = conexao.execute(
+                "SELECT tipo, agregado_id, agregado_incidente_id, payload "
+                "FROM eventos WHERE tipo = 'IncidenteFundido'"
+            ).fetchone()
+
+        assert evento[0] == "IncidenteFundido"
+        assert evento[1] == disparador_alerta
+        assert evento[2] == fundido_id
+        assert json.loads(evento[3]) == {
+            "incidente_sobrevivente_id": sobrevivente_id,
+            "incidente_fundido_id": fundido_id,
+            "alerta_id_disparador": disparador_alerta,
+        }

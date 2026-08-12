@@ -19,6 +19,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Final
 
 from alertavida.domain import Alerta
 from alertavida.domain.detector import (
@@ -193,6 +194,20 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     if "descricao" not in colunas_existentes:
         conexao.execute("ALTER TABLE alertas ADD COLUMN descricao TEXT NULL")
 
+    # Issue #59 — eventos de ciclo de vida de Incidente não podem reusar
+    # agregado_id (FK fixa para alertas(id) desde a #22). Coluna aditiva
+    # NULL com sua própria FK; SQLite aceita REFERENCES em ADD COLUMN
+    # (verificado empiricamente — só não aceita para colunas NOT NULL sem
+    # default constante). `incidentes` já existe neste ponto: é criada em
+    # criar_banco() antes desta chamada. Ver [[decisions/agregado-incidente-id]].
+    cursor_eventos = conexao.execute("PRAGMA table_info(eventos)")
+    colunas_eventos = {row[1] for row in cursor_eventos.fetchall()}
+    if "agregado_incidente_id" not in colunas_eventos:
+        conexao.execute(
+            "ALTER TABLE eventos ADD COLUMN agregado_incidente_id "
+            "INTEGER NULL REFERENCES incidentes(id)"
+        )
+
 
 def criar_banco() -> None:
     with conectar() as conexao:
@@ -232,15 +247,17 @@ def criar_banco() -> None:
         conexao.execute(
             """
             CREATE TABLE IF NOT EXISTS eventos (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                tipo            TEXT NOT NULL,
-                agregado_id     INTEGER NOT NULL,
-                payload         TEXT NOT NULL,
-                schema_versao   INTEGER NOT NULL DEFAULT 1,
-                criado_em       TEXT NOT NULL,
-                processado_em   TEXT NULL,
-                tentativas      INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (agregado_id) REFERENCES alertas(id)
+                id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo                   TEXT NOT NULL,
+                agregado_id            INTEGER NOT NULL,
+                agregado_incidente_id  INTEGER NULL,
+                payload                TEXT NOT NULL,
+                schema_versao          INTEGER NOT NULL DEFAULT 1,
+                criado_em              TEXT NOT NULL,
+                processado_em          TEXT NULL,
+                tentativas             INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (agregado_id) REFERENCES alertas(id),
+                FOREIGN KEY (agregado_incidente_id) REFERENCES incidentes(id)
             )
             """
         )
@@ -254,7 +271,63 @@ def criar_banco() -> None:
         conexao.execute(
             "CREATE INDEX IF NOT EXISTS idx_eventos_agregado_id ON eventos (agregado_id)"
         )
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS incidentes (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                status        TEXT    NOT NULL DEFAULT 'ATIVO',
+                criado_em     TEXT    NOT NULL,
+                atualizado_em TEXT    NOT NULL,
+                resolvido_em  TEXT    NULL,
+                fundido_em    INTEGER NULL,
+                FOREIGN KEY (fundido_em) REFERENCES incidentes(id)
+            )
+            """
+        )
+        # Child-key index do redirect de fusão (issue #22, item B, mesmo estilo).
+        conexao.execute(
+            "CREATE INDEX IF NOT EXISTS idx_incidentes_fundido_em ON incidentes (fundido_em)"
+        )
+        # Índice de busca de candidatos (#60): incidentes abertos e não fundidos.
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_incidentes_status_fundido
+            ON incidentes (status, fundido_em)
+            """
+        )
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS incidente_membros (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                incidente_id INTEGER NOT NULL,
+                alerta_id    INTEGER NOT NULL,
+                score        REAL    NOT NULL,
+                motivo       TEXT    NOT NULL,
+                criado_em    TEXT    NOT NULL,
+                UNIQUE (alerta_id),
+                FOREIGN KEY (incidente_id) REFERENCES incidentes(id),
+                FOREIGN KEY (alerta_id)    REFERENCES alertas(id)
+            )
+            """
+        )
+        # UNIQUE (alerta_id) já cria um índice implícito (child key da FK
+        # alerta_id -> alertas); incidente_id precisa do seu próprio.
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_incidente_membros_incidente_id
+            ON incidente_membros (incidente_id)
+            """
+        )
         _migrar_banco(conexao)
+        # A coluna agregado_incidente_id só existe garantidamente depois de
+        # _migrar_banco (bancos legados a recebem via ALTER TABLE ali) —
+        # criar o índice antes disso falharia com "no such column".
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_eventos_agregado_incidente_id
+            ON eventos (agregado_incidente_id)
+            """
+        )
         conexao.commit()
 
 
@@ -441,4 +514,242 @@ def aplicar_resultado_deteccao(
                 (agora, fonte_cod.value, cod),
             )
 
+        conexao.commit()
+
+
+# ---------------------------------------------------------------------------
+# Persistência de Incidente (Camada 5, issue #59) — tabelas, proveniência,
+# redirect de fusão e eventos de outbox. Decidir QUAIS alertas formam um
+# Incidente é responsabilidade de #60/#61 (blocking + integração); as
+# funções abaixo só persistem uma transição de estado já decidida pelo
+# chamador, cada uma na sua própria transação (outbox pattern, invariante 4).
+#
+# Tipos de evento de Incidente, string crua (mesmo estilo de events.py —
+# "sem dependência de domínio, mensagens cruzam a fronteira de processo via
+# SQL da outbox onde strings são a representação canônica").
+# ---------------------------------------------------------------------------
+
+_TIPOS_EVENTO_INCIDENTE: Final[frozenset[str]] = frozenset(
+    {
+        "IncidenteCriado",
+        "IncidenteAtualizado",
+        "IncidenteResolvido",
+        "IncidenteReativado",
+        "IncidenteFundido",
+    }
+)
+
+
+def _inserir_evento_outbox(
+    conexao: sqlite3.Connection,
+    *,
+    tipo: str,
+    agregado_id: int,
+    agregado_incidente_id: int | None,
+    payload: dict,
+    criado_em: str,
+) -> None:
+    """INSERT na outbox com a invariante de `agregado_incidente_id` validada.
+
+    `agregado_incidente_id` deve estar preenchido SE E SOMENTE SE `tipo` for
+    um evento de ciclo de vida de Incidente — nunca como CHECK constraint
+    (SQLite não permite adicioná-la via ALTER TABLE, e quebraria a política
+    aditiva de `_migrar_banco`); validado aqui em runtime, mesmo estilo de
+    `Alerta._validar_invariante_classificacao` /
+    `Incidente._validar_invariante_resolucao`. Ver
+    [[decisions/agregado-incidente-id]].
+    """
+    eh_evento_incidente = tipo in _TIPOS_EVENTO_INCIDENTE
+    tem_agregado_incidente = agregado_incidente_id is not None
+    if eh_evento_incidente != tem_agregado_incidente:
+        raise ValueError(
+            "Invariante violada: agregado_incidente_id deve estar preenchido "
+            "se e somente se o evento for de ciclo de vida de Incidente. "
+            f"tipo={tipo!r}, agregado_incidente_id={agregado_incidente_id!r}"
+        )
+    conexao.execute(
+        """
+        INSERT INTO eventos (
+            tipo, agregado_id, agregado_incidente_id, payload, schema_versao,
+            criado_em, processado_em, tentativas
+        ) VALUES (?, ?, ?, ?, 1, ?, NULL, 0)
+        """,
+        (
+            tipo,
+            agregado_id,
+            agregado_incidente_id,
+            json.dumps(payload, ensure_ascii=False),
+            criado_em,
+        ),
+    )
+
+
+def criar_incidente(alerta_id: int, score: float, motivo: str, agora: str) -> int:
+    """Abre um novo Incidente com um único membro fundador; emite `IncidenteCriado`.
+
+    `alerta_id` é o disparador: o Alerta cuja correlação não encontrou
+    Incidente compatível e abriu um novo (Round 1, Q6, opção 2 — "abre um
+    novo"; wiki/projects/layer-5-correlation.md). INSERT em `incidentes` +
+    `incidente_membros` + `eventos` na mesma transação SQLite.
+    """
+    with conectar() as conexao:
+        cursor = conexao.execute(
+            "INSERT INTO incidentes (status, criado_em, atualizado_em) VALUES ('ATIVO', ?, ?)",
+            (agora, agora),
+        )
+        incidente_id = cursor.lastrowid
+        assert incidente_id is not None  # AUTOINCREMENT sempre popula lastrowid
+        conexao.execute(
+            """
+            INSERT INTO incidente_membros (
+                incidente_id, alerta_id, score, motivo, criado_em
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (incidente_id, alerta_id, score, motivo, agora),
+        )
+        _inserir_evento_outbox(
+            conexao,
+            tipo="IncidenteCriado",
+            agregado_id=alerta_id,
+            agregado_incidente_id=incidente_id,
+            payload={
+                "incidente_id": incidente_id,
+                "alerta_id": alerta_id,
+                "score": score,
+                "motivo": motivo,
+            },
+            criado_em=agora,
+        )
+        conexao.commit()
+    return incidente_id
+
+
+def adicionar_membro_incidente(
+    incidente_id: int, alerta_id: int, score: float, motivo: str, agora: str
+) -> None:
+    """Associa um Alerta a um Incidente já aberto; emite `IncidenteAtualizado`.
+
+    `alerta_id` é o disparador: o Alerta que a correlação vinculou a um
+    Incidente compatível já aberto (Round 1, Q6, opção 1 — "junta-se").
+    `UNIQUE (alerta_id)` em `incidente_membros` garante que um Alerta
+    pertence a no máximo um Incidente vivo por vez.
+    """
+    with conectar() as conexao:
+        conexao.execute(
+            """
+            INSERT INTO incidente_membros (
+                incidente_id, alerta_id, score, motivo, criado_em
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (incidente_id, alerta_id, score, motivo, agora),
+        )
+        conexao.execute(
+            "UPDATE incidentes SET atualizado_em = ? WHERE id = ?",
+            (agora, incidente_id),
+        )
+        _inserir_evento_outbox(
+            conexao,
+            tipo="IncidenteAtualizado",
+            agregado_id=alerta_id,
+            agregado_incidente_id=incidente_id,
+            payload={
+                "incidente_id": incidente_id,
+                "alerta_id": alerta_id,
+                "score": score,
+                "motivo": motivo,
+            },
+            criado_em=agora,
+        )
+        conexao.commit()
+
+
+def resolver_incidente(incidente_id: int, alerta_id_disparador: int, agora: str) -> None:
+    """Resolve um Incidente; emite `IncidenteResolvido`.
+
+    `alerta_id_disparador` é o Alerta cuja resolução completou a condição de
+    "todos os membros resolvidos" (Round 1, Q5 — resolve só quando TODOS
+    resolvem, nunca quando qualquer um resolve). A decisão de QUANDO chamar
+    esta função — a verificação "todos os membros já resolveram?" — pertence
+    à integração (#61); esta função só persiste a transição já decidida.
+    """
+    with conectar() as conexao:
+        conexao.execute(
+            """
+            UPDATE incidentes
+            SET status = 'RESOLVIDO', resolvido_em = ?, atualizado_em = ?
+            WHERE id = ?
+            """,
+            (agora, agora, incidente_id),
+        )
+        _inserir_evento_outbox(
+            conexao,
+            tipo="IncidenteResolvido",
+            agregado_id=alerta_id_disparador,
+            agregado_incidente_id=incidente_id,
+            payload={"incidente_id": incidente_id, "alerta_id_disparador": alerta_id_disparador},
+            criado_em=agora,
+        )
+        conexao.commit()
+
+
+def reativar_incidente(incidente_id: int, alerta_id_disparador: int, agora: str) -> None:
+    """Reativa um Incidente RESOLVIDO; emite `IncidenteReativado`.
+
+    Espelha `AlertaReativado` ([[decisions/alert-reactivation-instead-of-crash]]):
+    um Incidente RESOLVIDO cujo Alerta membro reaparece precisa poder voltar
+    a ATIVO, sob pena de deixar `alertas` e `incidentes` inconsistentes
+    (Round 1, Q5). `alerta_id_disparador` é o Alerta que reativou.
+    """
+    with conectar() as conexao:
+        conexao.execute(
+            """
+            UPDATE incidentes
+            SET status = 'ATIVO', resolvido_em = NULL, atualizado_em = ?
+            WHERE id = ?
+            """,
+            (agora, incidente_id),
+        )
+        _inserir_evento_outbox(
+            conexao,
+            tipo="IncidenteReativado",
+            agregado_id=alerta_id_disparador,
+            agregado_incidente_id=incidente_id,
+            payload={"incidente_id": incidente_id, "alerta_id_disparador": alerta_id_disparador},
+            criado_em=agora,
+        )
+        conexao.commit()
+
+
+def fundir_incidentes(
+    incidente_sobrevivente_id: int,
+    incidente_fundido_id: int,
+    alerta_id_disparador: int,
+    agora: str,
+) -> None:
+    """Funde dois Incidentes ATIVOs abertos; emite `IncidenteFundido`.
+
+    Redirect append-only (Round 1, Q6): `incidente_fundido_id` NUNCA é
+    apagado nem tem seus membros movidos — sua linha ganha
+    `fundido_em = incidente_sobrevivente_id`, e ambos os ids permanecem
+    resolvíveis para sempre. `alerta_id_disparador` é o Alerta cujo
+    processamento revelou que os dois Incidentes descrevem o mesmo evento
+    físico.
+    """
+    with conectar() as conexao:
+        conexao.execute(
+            "UPDATE incidentes SET fundido_em = ?, atualizado_em = ? WHERE id = ?",
+            (incidente_sobrevivente_id, agora, incidente_fundido_id),
+        )
+        _inserir_evento_outbox(
+            conexao,
+            tipo="IncidenteFundido",
+            agregado_id=alerta_id_disparador,
+            agregado_incidente_id=incidente_fundido_id,
+            payload={
+                "incidente_sobrevivente_id": incidente_sobrevivente_id,
+                "incidente_fundido_id": incidente_fundido_id,
+                "alerta_id_disparador": alerta_id_disparador,
+            },
+            criado_em=agora,
+        )
         conexao.commit()
