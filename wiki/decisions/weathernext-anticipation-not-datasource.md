@@ -1,6 +1,6 @@
 status: open
 sources: https://developers.google.com/weathernext, https://developers.google.com/earth-engine/datasets/catalog/projects_gcp-public-data-weathernext_assets_weathernext_2_0_0, https://developers.google.com/weathernext/guides/bigquery, https://developers.google.com/weathernext/guides/dissemination, https://storage.googleapis.com/weathernext-public/terms-of-use.pdf (read in full, 2026-08-11), [[projects/layer-5-correlation]]
-updated: 2026-08-11
+updated: 2026-08-12
 
 # WeatherNext: Anticipation Track, Not a DataSource
 
@@ -60,6 +60,45 @@ past:
     agency alerts; Google's aggregate liability capped at USD 500; access
     revocable, fees possible on one month's notice.
   - **§1:** Brazil is not in the restricted-country list.
+
+### Commercial use is not prohibited — the constraint is the sharing *form*
+
+Recorded 2026-08-12, after the question came up while filling the access
+request form. Re-read of the terms establishes:
+
+**There is no non-commercial clause.** The grant is "non-exclusive,
+royalty-free, revocable, non-transferable and non-sublicensable" and says
+nothing about money changing hands; CC BY 4.0 (historic data) permits
+commercial use explicitly. What §3 restricts is the *shape* of what leaves the
+building:
+
+| What is shared | Permitted audience | Paid? |
+|---|---|---|
+| Non-Retrievable VAS (grid not recoverable) | anyone, including by publication | not restricted |
+| Retrievable VAS (grid recoverable) | clearly identified, known third parties, for their own internal use, no onward sharing | not restricted |
+| Unmodified data (incl. sub-set areas, selected time-steps/runs) | controlled distribution only — never public | n/a |
+
+**B2G fits these terms better than a public consumer app.** Selling to a
+municipal Defesa Civil is precisely §3's "clearly identified and known third
+party, using it for their own internal purposes" — the case the terms *do*
+allow for Retrievable VAS. A product open to the general public is the more
+restricted scenario, not the less.
+
+**The real obstacle is §6, not the licence.** Data is as-is, "not intended for
+consumer use", does not replace official agency alerts, Google's aggregate
+liability is capped at **USD 500**, and the customer indemnifies Google. Under
+a paid contract with a civil-protection body, that means carrying contractual
+responsibility for a life-safety service built on data whose provider disclaims
+fitness and caps exposure at five hundred dollars. That is a commercial
+problem, not a legal-permission one, and it points at the same two exits
+already recorded as #72's precondition: written permission from
+weathernext@google.com, or the Google Maps Platform Weather API, whose
+production terms carry no such posture.
+
+**Consequence for the current plan: none.** #69 and #70 are internal and touch
+none of this. It only means that if a B2G route becomes real, the *data
+channel* likely changes before the product ships — which is why #72 is gated on
+the legal path rather than on engineering.
 
 ## The phased plan
 
