@@ -1,8 +1,8 @@
-status: in-progress
+status: done
 sources: [[raw/context-md-2026-06-11.pt.md]] (§3)
-updated: 2026-08-07
+updated: 2026-08-13
 
-# Layer 5: Event Correlation (in progress)
+# Layer 5: Event Correlation (complete)
 
 **Concept:** `Incidente` = aggregate of N `Alerta`s referring to the same physical event observed by different sources.
 
@@ -521,3 +521,51 @@ follows from a round above.
    empirically on ubuntu **and** windows before relying on it) and plain indexed
    bbox columns if it does not. Any dependency #62 might want needs its own
    `decisions/` page.
+
+---
+
+## Layer convergence audit (issue #61, 2026-08-13)
+
+Run per [[patterns/layer-convergence]] before moving this page's status to
+`done`.
+
+1. **Tracker vs code:** #56–#60 closed. #61 is this issue (real work, PR
+   about to open — not closed by this audit; closes when the PR merges).
+   #62 (point-in-polygon upgrade) and #63 (calibration) remain open and
+   **correctly so** — v1 scope decision #1 puts #62 out of the v1 critical
+   path by design, and #63 is deliberately dormant pending field data
+   (§"Notes on the ordering"). No drift found.
+2. **Claims vs execution:** all claims in this entry are re-verified against
+   real execution, not inferred — `uv run pytest` (403 passed, 0 failed),
+   `uv run ruff check .` (clean), `uv run mypy src/` (clean), all run fresh
+   during this issue, not carried over from #56–#60.
+3. **Wiring vs table:** [[_integration-state]] module table checked against
+   the actual code — `database.py`'s Incidente persistence (#59) and
+   correlation blocking (#60) rows updated from "not yet called by
+   anything" to their real caller (`ingestion/orquestrador.py`'s
+   `_correlacionar_rodada`/`_abrir_ou_juntar_incidente`, #61); the "Current
+   flow" diagram extended with the correlation step. Spot-checked against
+   the actual imports in `orquestrador.py` — matches.
+4. **Changelog + decision record:** issue #61's decisions —
+   `aplicar_resultado_deteccao` returning alerta ids, merge-survivor
+   selection, the REATIVADO/RESOLVIDO merge-tree-aware lifecycle handling,
+   REVISAO-only alerts still opening their own Incidente, and the
+   ATUALIZADO non-re-correlation justification — are written up in
+   [[decisions/incident-lifecycle-wiring]] (new page) and summarized in
+   [[changelog]]. `decisions/decision-record.md` (the legacy full-table
+   page) is not updated, consistent with #58/#59/#60/#68 — it has not
+   received new rows since the dedicated `decisions/` pages became the
+   pattern.
+5. **Residue:** two items were already known and explicitly out of scope
+   before this issue, and remain so — the CEMADEN centroid-vs-risk-point
+   discriminator (Round 2, tracked for the rainy season) and the per-type
+   time-window/threshold values (Calibration-time, dormant #63). Nothing
+   *new* was found and deliberately left unfixed. One interpretive gap in
+   the issue's own spec text was resolved during implementation rather than
+   left ambiguous — what happens to an alert whose only candidates are
+   `REVISAO` — recorded as its own decision in
+   [[decisions/incident-lifecycle-wiring]] rather than silently assumed.
+
+**Result: audit passes, no unreconciled drift.** #56 through #61 constitute
+the full v1 critical path (per the execution plan above); #62 and #63 are
+explicitly not v1-blocking. Layer status moves to `done`.

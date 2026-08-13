@@ -1546,3 +1546,172 @@ class TestAvaliarCandidatosCorrelacao:
         )
 
         assert resultados[0].incidente_id == incidente_id
+
+
+# ----------------------------------------------------------------------
+# Ciclo de vida de Incidente (issue #61) — helpers de leitura que a
+# integração usa para decidir reativação/resolução: buscar_incidente_atual
+# (segue o redirect de fusão), status_incidente, todos_membros_resolvidos
+# (árvore de fusão, não só o incidente_id passado).
+# ----------------------------------------------------------------------
+
+def _marcar_resolvido(db_path: Path, alerta_id: int) -> None:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        conexao.execute(
+            "UPDATE alertas SET status_interno = 'RESOLVIDO' WHERE id = ?",
+            (alerta_id,),
+        )
+        conexao.commit()
+
+
+class TestBuscarIncidenteAtual:
+    def test_alerta_nunca_correlacionado_retorna_none(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        assert db_module.buscar_incidente_atual(alerta_id) is None
+
+    def test_alerta_membro_direto_retorna_seu_incidente(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        assert db_module.buscar_incidente_atual(alerta_id) == incidente_id
+
+    def test_segue_redirect_de_fusao_ate_o_sobrevivente(self, db_temporario):
+        alerta_sobrevivente = _inserir_alerta(db_temporario, "A1")
+        sobrevivente_id = db_module.criar_incidente(
+            alerta_sobrevivente, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        alerta_fundido = _inserir_alerta(db_temporario, "A2")
+        fundido_id = db_module.criar_incidente(
+            alerta_fundido, 1.0, "fundador", "2026-08-12T00:00:01"
+        )
+        disparador_id = _inserir_alerta(db_temporario, "A3")
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_id, "2026-08-12T00:30:00"
+        )
+
+        # O membro do incidente FUNDIDO (não do sobrevivente) deve resolver
+        # para o id do sobrevivente através do redirect.
+        assert db_module.buscar_incidente_atual(alerta_fundido) == sobrevivente_id
+
+
+class TestStatusIncidente:
+    def test_retorna_status_atual(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        assert db_module.status_incidente(incidente_id) == "ATIVO"
+
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T01:00:00")
+        assert db_module.status_incidente(incidente_id) == "RESOLVIDO"
+
+    def test_incidente_inexistente_levanta(self, db_temporario):
+        with pytest.raises(ValueError):
+            db_module.status_incidente(99999)
+
+
+class TestTodosMembrosResolvidos:
+    def test_incidente_de_membro_unico_nao_resolvido(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        assert db_module.todos_membros_resolvidos(incidente_id) is False
+
+    def test_incidente_de_membro_unico_resolvido(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        _marcar_resolvido(db_temporario, alerta_id)
+        assert db_module.todos_membros_resolvidos(incidente_id) is True
+
+    def test_um_membro_nao_resolvido_impede_resolucao(self, db_temporario):
+        alerta_a = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_a, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        alerta_b = _inserir_alerta(db_temporario, "A2")
+        db_module.adicionar_membro_incidente(
+            incidente_id, alerta_b, 0.9, "vincula", "2026-08-12T00:10:00"
+        )
+        _marcar_resolvido(db_temporario, alerta_a)
+        # alerta_b ainda ATIVO
+        assert db_module.todos_membros_resolvidos(incidente_id) is False
+
+        _marcar_resolvido(db_temporario, alerta_b)
+        assert db_module.todos_membros_resolvidos(incidente_id) is True
+
+    def test_conta_membros_herdados_por_fusao(self, db_temporario):
+        """Membros do Incidente FUNDIDO continuam com incidente_id apontando
+        para ele (redirect append-only, nunca realocação) — checar apenas o
+        sobrevivente ignoraria esses membros herdados."""
+        alerta_sobrevivente = _inserir_alerta(db_temporario, "A1")
+        sobrevivente_id = db_module.criar_incidente(
+            alerta_sobrevivente, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        alerta_fundido = _inserir_alerta(db_temporario, "A2")
+        fundido_id = db_module.criar_incidente(
+            alerta_fundido, 1.0, "fundador", "2026-08-12T00:00:01"
+        )
+        disparador_id = _inserir_alerta(db_temporario, "A3")
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_id, "2026-08-12T00:30:00"
+        )
+        db_module.adicionar_membro_incidente(
+            sobrevivente_id, disparador_id, 0.9, "vincula", "2026-08-12T00:30:00"
+        )
+
+        _marcar_resolvido(db_temporario, alerta_sobrevivente)
+        _marcar_resolvido(db_temporario, disparador_id)
+        # alerta_fundido (herdado via fusão) ainda ATIVO — não deve resolver.
+        assert db_module.todos_membros_resolvidos(sobrevivente_id) is False
+
+        _marcar_resolvido(db_temporario, alerta_fundido)
+        assert db_module.todos_membros_resolvidos(sobrevivente_id) is True
+
+
+class TestAplicarResultadoDeteccaoRetornaIds:
+    def test_retorna_alerta_id_para_criado_e_reativado(self, db_temporario):
+        from alertavida.domain.alerta import Alerta
+        from alertavida.domain.coordenadas import Coordenadas
+        from alertavida.domain.detector import (
+            EventoDetectado,
+            ResultadoDeteccao,
+            TipoEventoDetectado,
+        )
+        from alertavida.domain.enums import FonteDado, NivelRisco
+
+        alerta = Alerta(
+            cod_alerta="A1",
+            fonte=FonteDado.CEMADEN,
+            tipo_evento=TipoEvento.HIDROLOGICO,
+            nivel_risco=NivelRisco.ALTO,
+            coordenadas=Coordenadas(latitude=-10.0, longitude=-40.0),
+            data_criacao=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[
+                EventoDetectado(
+                    tipo=TipoEventoDetectado.CRIADO,
+                    cod_alerta="A1",
+                    fonte=FonteDado.CEMADEN,
+                    payload={},
+                )
+            ],
+            codigos_vistos={"A1"},
+            codigos_ausentes=set(),
+            fonte_por_codigo={"A1": FonteDado.CEMADEN},
+        )
+
+        ids = db_module.aplicar_resultado_deteccao(
+            resultado, {"A1": alerta}, "2026-08-12T00:00:00"
+        )
+
+        assert set(ids.keys()) == {"A1"}
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            alerta_id_real = conexao.execute(
+                "SELECT id FROM alertas WHERE cod_alerta = 'A1'"
+            ).fetchone()[0]
+        assert ids["A1"] == alerta_id_real

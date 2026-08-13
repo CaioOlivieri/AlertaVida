@@ -20,6 +20,10 @@ def test_formatar_relatorio_com_sucesso_inclui_contadores() -> None:
         inalterados=10,
         descartados=1,
         reativados=0,
+        incidentes_criados=2,
+        incidentes_juntados=1,
+        incidentes_fundidos=1,
+        incidentes_revisao=1,
         falha_coleta=False,
         coletado_em=datetime(2026, 5, 19, 14, 30, tzinfo=UTC),
         duracao_segundos=1.23,
@@ -38,6 +42,10 @@ def test_formatar_relatorio_com_sucesso_inclui_contadores() -> None:
     assert "0 reativados" in saida
     assert "10 inalterados" in saida
     assert "1 descartado" in saida
+    assert "2 criados" in saida
+    assert "1 juntados" in saida
+    assert "1 fundidos" in saida
+    assert "1 revisão" in saida
     assert "1.23s" in saida
     assert "Total: 15 alertas" in saida
 

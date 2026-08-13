@@ -448,7 +448,7 @@ def aplicar_resultado_deteccao(
     resultado: ResultadoDeteccao,
     alertas_por_codigo: dict[str, "Alerta"],
     agora: str,
-) -> None:
+) -> dict[str, int]:
     """Persiste o resultado do ChangeDetector atomicamente.
 
     INSERT/UPDATE em alertas e INSERT em eventos ocorrem na mesma transação
@@ -459,7 +459,16 @@ def aplicar_resultado_deteccao(
     (populado pelo detector) — não recebe `fonte` como parâmetro. Isso
     permite que rodadas multi-fonte (Camada 5+) sejam tratadas sem
     mudanças nesta função.
+
+    Retorna `{cod_alerta: alerta_id}` para todo evento com um `agregado_id`
+    resolvido (CRIADO/ATUALIZADO/REATIVADO/RESOLVIDO) — Tell, Don't Ask
+    (mesmo princípio de `ResultadoDeteccao`): esta função já calcula o id
+    surrogate de cada alerta para o INSERT/UPDATE de `alertas`, e a
+    integração de correlação (#61) precisa exatamente desses ids logo em
+    seguida para CRIADO/REATIVADO/RESOLVIDO — reconsultar por
+    (fonte, cod_alerta) seria uma query redundante por alerta.
     """
+    ids_por_codigo: dict[str, int] = {}
     with conectar() as conexao:
         for evento in resultado.eventos:
             agregado_id: int | None = None
@@ -564,6 +573,7 @@ def aplicar_resultado_deteccao(
                 )
 
             if agregado_id is not None:
+                ids_por_codigo[evento.cod_alerta] = agregado_id
                 conexao.execute(
                     """
                     INSERT INTO eventos (
@@ -604,6 +614,7 @@ def aplicar_resultado_deteccao(
             )
 
         conexao.commit()
+    return ids_por_codigo
 
 
 # ---------------------------------------------------------------------------
@@ -842,6 +853,81 @@ def fundir_incidentes(
             criado_em=agora,
         )
         conexao.commit()
+
+
+def buscar_incidente_atual(alerta_id: int) -> int | None:
+    """Segue o redirect de fusão (`fundido_em`) até o Incidente sobrevivente
+    ao qual `alerta_id` pertence hoje.
+
+    `incidente_membros` nunca move linhas entre incidentes (Round 1, Q6 —
+    fusão é redirect, nunca realocação), então a associação original de um
+    alerta pode apontar para um Incidente já fundido em outro; este helper
+    resolve a cadeia até o id atual. Retorna `None` se o alerta nunca foi
+    correlacionado (nenhuma linha em `incidente_membros`) — caso de um
+    alerta ainda não processado por `avaliar_candidatos_correlacao`/a ação
+    de #61 sobre ela.
+    """
+    with conectar() as conexao:
+        row = conexao.execute(
+            "SELECT incidente_id FROM incidente_membros WHERE alerta_id = ?",
+            (alerta_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        incidente_id: int = row[0]
+        while True:
+            redirecionamento = conexao.execute(
+                "SELECT fundido_em FROM incidentes WHERE id = ?", (incidente_id,)
+            ).fetchone()
+            if redirecionamento is None or redirecionamento[0] is None:
+                return incidente_id
+            incidente_id = redirecionamento[0]
+
+
+def status_incidente(incidente_id: int) -> str:
+    """Status atual (`ATIVO`/`RESOLVIDO`) do Incidente.
+
+    Não segue o redirect de fusão — quem chama já resolveu o id atual via
+    `buscar_incidente_atual`.
+    """
+    with conectar() as conexao:
+        row = conexao.execute(
+            "SELECT status FROM incidentes WHERE id = ?", (incidente_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Incidente id={incidente_id} não encontrado")
+        return row[0]
+
+
+def todos_membros_resolvidos(incidente_id: int) -> bool:
+    """True quando TODO Alerta membro do Incidente — e de qualquer Incidente
+    fundido nele, transitivamente — está com `status_interno = 'RESOLVIDO'`
+    (Round 1, Q5: resolve só quando o ÚLTIMO membro não-resolvido resolve).
+
+    A árvore de fusão importa porque `fundir_incidentes` nunca move linhas
+    de `incidente_membros` para o sobrevivente (redirect append-only) — os
+    membros do Incidente fundido continuam com `incidente_id` apontando
+    para ele, não para o sobrevivente, então contar só os membros do id
+    passado ignoraria membros herdados por fusão.
+    """
+    with conectar() as conexao:
+        row = conexao.execute(
+            """
+            WITH RECURSIVE arvore_fusao(id) AS (
+                SELECT ?
+                UNION ALL
+                SELECT i.id FROM incidentes i
+                JOIN arvore_fusao f ON i.fundido_em = f.id
+            )
+            SELECT COUNT(*)
+            FROM incidente_membros im
+            JOIN alertas a ON a.id = im.alerta_id
+            JOIN arvore_fusao f ON f.id = im.incidente_id
+            WHERE a.status_interno != 'RESOLVIDO'
+            """,
+            (incidente_id,),
+        ).fetchone()
+        return row[0] == 0
 
 
 # ---------------------------------------------------------------------------

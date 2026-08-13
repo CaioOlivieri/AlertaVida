@@ -1,16 +1,19 @@
 """Testes do orquestrador de ingestão multi-fonte (Camada 4, Parte B.2.a)."""
 
 import contextlib
+import json
 import math
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from alertavida.domain.alerta import Alerta
 from alertavida.domain.coordenadas import Coordenadas
-from alertavida.domain.enums import FonteDado, NivelRisco, TipoEvento
+from alertavida.domain.enums import FonteClassificacao, FonteDado, NivelRisco, TipoEvento
+from alertavida.domain.incidente import Incidente, MembroIncidente
+from alertavida.domain.municipio import Municipio
 from alertavida.ingestion import executar_ingestao
 from alertavida.ingestion.orquestrador import RelatorioFonte, RelatorioIngestao
 from alertavida.sources.base import DataSource, ResultadoColeta
@@ -26,16 +29,39 @@ def _alerta(
     lon: float = -46.6,
     *,
     ult_atualizacao: datetime | None = None,
+    tipo_evento: TipoEvento = TipoEvento.HIDROLOGICO,
+    nivel_risco: NivelRisco = NivelRisco.ALTO,
+    cobrade_codigo: str | None = None,
+    codigo_ibge: int | None = None,
+    data_criacao: datetime = _DATA_CRIACAO,
 ) -> Alerta:
-    """Constrói um Alerta mínimo e válido para testes."""
+    """Constrói um Alerta mínimo e válido para testes.
+
+    Parâmetros adicionais (tipo_evento/cobrade_codigo/codigo_ibge/data_criacao)
+    existem para os testes de correlação (issue #61) — controlam exatamente
+    os campos que `domain/correlacao.py` usa para decidir VINCULA/REVISAO/
+    NAO_VINCULA.
+    """
+    municipio = (
+        Municipio(nome="Teste", uf="RS", codigo_ibge=codigo_ibge)
+        if codigo_ibge is not None
+        else None
+    )
     return Alerta(
         cod_alerta=cod,
         fonte=fonte,
-        tipo_evento=TipoEvento.HIDROLOGICO,
-        nivel_risco=NivelRisco.ALTO,
+        tipo_evento=tipo_evento,
+        nivel_risco=nivel_risco,
         coordenadas=Coordenadas(latitude=lat, longitude=lon),
-        data_criacao=_DATA_CRIACAO,
+        municipio=municipio,
+        data_criacao=data_criacao,
         ult_atualizacao=ult_atualizacao,
+        cobrade_codigo=cobrade_codigo,
+        fonte_classificacao=(
+            FonteClassificacao.DIRETA
+            if cobrade_codigo is not None
+            else FonteClassificacao.INDETERMINADA
+        ),
     )
 
 
@@ -529,11 +555,11 @@ def test_persistencia_de_fontes_anteriores_sobrevive_a_falha_posterior(
         resultado: ResultadoDeteccao,
         alertas_por_codigo: dict[str, Alerta],
         agora: str,
-    ) -> None:
+    ) -> dict[str, int]:
         chamadas_persistencia.append(len(chamadas_persistencia))
         if len(chamadas_persistencia) == 2:
             raise sqlite3.OperationalError("falha simulada na 2a fonte")
-        _real(resultado, alertas_por_codigo, agora)
+        return _real(resultado, alertas_por_codigo, agora)
 
     monkeypatch.setattr(
         "alertavida.ingestion.orquestrador.aplicar_resultado_deteccao",
@@ -574,3 +600,337 @@ def test_persistencia_de_fontes_anteriores_sobrevive_a_falha_posterior(
         "Esperado exatamente 2 chamadas à aplicar_resultado_deteccao "
         "(A e B); C nunca chega por causa da exceção em B"
     )
+
+
+# ---------------------------------------------------------------------------
+# Correlação de incidentes (issue #61) — wiring end-to-end via
+# executar_ingestao. O núcleo de decisão (domain/correlacao.py, #58) e o
+# blocking (database.avaliar_candidatos_correlacao, #60) já têm sua própria
+# cobertura extensa; os testes abaixo verificam só a AÇÃO tomada sobre o
+# resultado (criar/juntar/fundir/resolver/reativar Incidente), não
+# recalculam o score.
+# ---------------------------------------------------------------------------
+
+
+def _contar_eventos(db_path: Path, tipo: str) -> int:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        return conexao.execute(
+            "SELECT COUNT(*) FROM eventos WHERE tipo = ?", (tipo,)
+        ).fetchone()[0]
+
+
+def test_correlacao_duas_fontes_mesmo_evento_forma_incidente_severidade_maxima(
+    db_temporario: Path,
+) -> None:
+    """Round 1 Q3: severidade do Incidente = máximo entre membros conhecidos.
+
+    Dois alertas de fontes diferentes, mesma posição/onset/cobrade — o par
+    ideal para VINCULA (score 1.0). CEMADEN chega primeiro e abre o
+    Incidente; EONET se junta a ele.
+    """
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta_cemaden = _alerta(
+        "A1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        nivel_risco=NivelRisco.ALTO,
+        data_criacao=onset,
+    )
+    alerta_eonet = _alerta(
+        "B1",
+        FonteDado.EONET,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        nivel_risco=NivelRisco.MUITO_ALTO,
+        data_criacao=onset,
+    )
+    source_cemaden = FakeDataSource(fonte=FonteDado.CEMADEN, alertas=[alerta_cemaden])
+    source_eonet = FakeDataSource(fonte=FonteDado.EONET, alertas=[alerta_eonet])
+
+    relatorio = executar_ingestao([source_cemaden, source_eonet])
+
+    assert relatorio.por_fonte[0].incidentes_criados == 1
+    assert relatorio.por_fonte[1].incidentes_juntados == 1
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        incidente_ids = conexao.execute(
+            "SELECT DISTINCT incidente_id FROM incidente_membros"
+        ).fetchall()
+        assert len(incidente_ids) == 1
+        membros_rows = conexao.execute(
+            "SELECT a.fonte, a.cod_alerta, a.nivel FROM incidente_membros im "
+            "JOIN alertas a ON a.id = im.alerta_id "
+            "WHERE im.incidente_id = ?",
+            (incidente_ids[0][0],),
+        ).fetchall()
+
+    assert len(membros_rows) == 2
+    incidente = Incidente(
+        membros=tuple(
+            MembroIncidente(
+                fonte=FonteDado.from_string(fonte),
+                cod_alerta=cod,
+                nivel_risco=NivelRisco.from_string(nivel),
+            )
+            for fonte, cod, nivel in membros_rows
+        ),
+        criado_em=onset,
+        atualizado_em=onset,
+    )
+    assert incidente.severidade == NivelRisco.MUITO_ALTO
+
+
+def test_correlacao_tipos_incompativeis_gera_dois_incidentes(
+    db_temporario: Path,
+) -> None:
+    """Portão estrutural: tipos INCOMPATIVEL nunca VINCULA (#58), então dois
+    alertas da mesma posição/onset mas grupos COBRADE diferentes abrem dois
+    Incidentes distintos."""
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    hidrologico = _alerta(
+        "A1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",  # grupo 1.2 (hidrológico)
+        data_criacao=onset,
+    )
+    geologico = _alerta(
+        "A2",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.1.1.0.0",  # grupo 1.1 (geológico) — grupo diferente
+        data_criacao=onset,
+    )
+    source = FakeDataSource(fonte=FonteDado.CEMADEN, alertas=[hidrologico, geologico])
+
+    relatorio = executar_ingestao([source])
+
+    assert relatorio.por_fonte[0].incidentes_criados == 2
+    assert relatorio.por_fonte[0].incidentes_juntados == 0
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        incidente_ids = conexao.execute(
+            "SELECT DISTINCT incidente_id FROM incidente_membros"
+        ).fetchall()
+    assert len(incidente_ids) == 2
+
+
+def test_correlacao_banda_revisao_alerta_fica_separado_e_observacao_flagada(
+    db_temporario: Path,
+) -> None:
+    """Round 2 — bias para separar: REVISAO nunca auto-vincula. Segundo
+    alerta com `tipo_evento=INDETERMINADO` (sem cobrade) contra um
+    Incidente compatível o suficiente para cair na banda de revisão
+    (LIMIAR_REVISAO <= score < LIMIAR_VINCULA) abre seu PRÓPRIO Incidente
+    e grava uma observação REVISAO — nunca junta automaticamente."""
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    fundador = _alerta(
+        "A1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+    )
+    indeterminado = _alerta(
+        "B1",
+        FonteDado.EONET,
+        lat=-29.84,
+        lon=-56.73,
+        tipo_evento=TipoEvento.INDETERMINADO,  # sem cobrade -> INDETERMINADA
+        data_criacao=onset,
+    )
+    source_cemaden = FakeDataSource(fonte=FonteDado.CEMADEN, alertas=[fundador])
+    source_eonet = FakeDataSource(fonte=FonteDado.EONET, alertas=[indeterminado])
+
+    relatorio = executar_ingestao([source_cemaden, source_eonet])
+
+    assert relatorio.por_fonte[0].incidentes_criados == 1
+    rf_eonet = relatorio.por_fonte[1]
+    assert rf_eonet.incidentes_criados == 1
+    assert rf_eonet.incidentes_juntados == 0
+    assert rf_eonet.incidentes_revisao == 1
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        incidente_ids = conexao.execute(
+            "SELECT DISTINCT incidente_id FROM incidente_membros"
+        ).fetchall()
+        observacao_revisao = conexao.execute(
+            "SELECT decisao, motivo FROM correlacao_observacoes WHERE decisao = 'REVISAO'"
+        ).fetchall()
+    assert len(incidente_ids) == 2
+    assert len(observacao_revisao) == 1
+    assert observacao_revisao[0][1] == "tipo_indeterminado_evidencia_forte"
+
+
+def test_correlacao_resolve_incidente_so_quando_ultimo_membro_resolve(
+    db_temporario: Path,
+) -> None:
+    """Round 1 Q5: Incidente resolve quando o ÚLTIMO membro não-resolvido
+    resolve, nunca quando qualquer um resolve.
+
+    C1 (CEMADEN) desaparece a partir da rodada 2 e resolve na rodada 4 (3ª
+    ausência); E1 (EONET) continua presente até a rodada 4, some a partir
+    da 5 e resolve na rodada 7. O Incidente (1 só, os dois se juntam na
+    rodada 1) só deve resolver depois da rodada 7.
+    """
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta_cemaden = _alerta(
+        "C1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    alerta_eonet = _alerta(
+        "E1",
+        FonteDado.EONET,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    source_cemaden = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[[alerta_cemaden], [], [], [], [], [], []],
+    )
+    source_eonet = FakeDataSource.com_rodadas(
+        fonte=FonteDado.EONET,
+        rodadas=[
+            [alerta_eonet],
+            [alerta_eonet],
+            [alerta_eonet],
+            [alerta_eonet],
+            [],
+            [],
+            [],
+        ],
+    )
+
+    for _ in range(4):
+        executar_ingestao([source_cemaden, source_eonet])
+    assert _contar_eventos(db_temporario, "IncidenteResolvido") == 0
+
+    for _ in range(3):
+        executar_ingestao([source_cemaden, source_eonet])
+    assert _contar_eventos(db_temporario, "IncidenteResolvido") == 1
+
+
+def test_correlacao_reativacao_de_membro_reativa_incidente(
+    db_temporario: Path,
+) -> None:
+    """Round 1 Q5: reativação de um membro reativa o Incidente. Incidente de
+    membro único resolve junto com seu único Alerta (rodada 4, 3ª ausência)
+    e reativa quando o Alerta reaparece (rodada 5)."""
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta = _alerta(
+        "C1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[[alerta], [], [], [], [alerta]],
+    )
+
+    for _ in range(4):
+        executar_ingestao([source])
+    assert _contar_eventos(db_temporario, "IncidenteResolvido") == 1
+    assert _contar_eventos(db_temporario, "IncidenteReativado") == 0
+
+    executar_ingestao([source])
+    assert _contar_eventos(db_temporario, "IncidenteReativado") == 1
+
+
+def test_correlacao_funde_dois_incidentes_com_redirect_intacto(
+    db_temporario: Path,
+) -> None:
+    """Round 1 Q6: um alerta que VINCULA com dois Incidentes abertos
+    distintos ao mesmo tempo prova que os dois descrevem o mesmo evento —
+    dispara fusão (append-only redirect, nunca delete).
+
+    A (t=0) e B (t=+8h) mesma posição/ibge/cobrade, mas separados por mais
+    que a janela de 6h — B não vê A como candidato ao nascer, cada um abre
+    seu próprio Incidente. C (t=+4h) fica dentro da janela de AMBOS e
+    VINCULA com os dois -> funde, sobrevivendo o mais antigo (A).
+    """
+    t0 = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta_a = _alerta(
+        "A1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        codigo_ibge=4322400,
+        data_criacao=t0,
+    )
+    alerta_b = _alerta(
+        "B1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        codigo_ibge=4322400,
+        data_criacao=t0 + timedelta(hours=8),
+    )
+    alerta_c = _alerta(
+        "C1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        codigo_ibge=4322400,
+        data_criacao=t0 + timedelta(hours=4),
+    )
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[[alerta_a], [alerta_b], [alerta_c]],
+    )
+
+    relatorio_1 = executar_ingestao([source])
+    assert relatorio_1.por_fonte[0].incidentes_criados == 1
+
+    relatorio_2 = executar_ingestao([source])
+    assert relatorio_2.por_fonte[0].incidentes_criados == 1  # B não viu A (fora da janela)
+
+    relatorio_3 = executar_ingestao([source])
+    assert relatorio_3.por_fonte[0].incidentes_fundidos == 1
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        incidente_ids = conexao.execute(
+            "SELECT id FROM incidentes ORDER BY id"
+        ).fetchall()
+        assert len(incidente_ids) == 2  # ambos os ids continuam resolvíveis
+        sobrevivente_id, fundido_id = incidente_ids[0][0], incidente_ids[1][0]
+
+        fundido_em = conexao.execute(
+            "SELECT fundido_em FROM incidentes WHERE id = ?", (fundido_id,)
+        ).fetchone()[0]
+        assert fundido_em == sobrevivente_id
+
+        incidente_do_c = conexao.execute(
+            "SELECT im.incidente_id FROM incidente_membros im "
+            "JOIN alertas a ON a.id = im.alerta_id WHERE a.cod_alerta = 'C1'"
+        ).fetchone()[0]
+        assert incidente_do_c == sobrevivente_id
+
+        evento_fusao = conexao.execute(
+            "SELECT agregado_incidente_id, payload FROM eventos "
+            "WHERE tipo = 'IncidenteFundido'"
+        ).fetchone()
+    assert evento_fusao is not None
+    assert evento_fusao[0] == fundido_id
+    payload = json.loads(evento_fusao[1])
+    assert payload["incidente_sobrevivente_id"] == sobrevivente_id
+    assert payload["incidente_fundido_id"] == fundido_id
