@@ -18,16 +18,26 @@ import json
 import os
 import sqlite3
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 from alertavida.domain import Alerta
+from alertavida.domain.correlacao import (
+    DISTANCIA_MAXIMA_KM,
+    JANELA_TEMPO_SEGUNDOS,
+    CandidatoCorrelacao,
+    DecisaoCorrelacao,
+    ResultadoDecisao,
+    decidir_correlacao,
+)
 from alertavida.domain.detector import (
     AlertaSnapshot,
     ResultadoDeteccao,
     TipoEventoDetectado,
 )
-from alertavida.domain.enums import FonteDado
+from alertavida.domain.enums import FonteDado, TipoEvento
+from alertavida.domain.tempo import parse_iso_utc
 
 DB_PATH_DEFAULT: Path = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
 ENV_DB_PATH: str = "ALERTAVIDA_DB_PATH"
@@ -208,6 +218,21 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
             "INTEGER NULL REFERENCES incidentes(id)"
         )
 
+    # Issue #60 — backfill do índice espacial (R-Tree) para bancos que já
+    # tinham alertas antes desta migration. Sem isso, alertas antigos
+    # nunca apareceriam como candidatos de correlação (o INSERT normal do
+    # índice só cobre alertas CRIADOs a partir de agora, em
+    # aplicar_resultado_deteccao). Idempotente via NOT IN; `idx_alertas_espacial`
+    # já existe neste ponto (criada em criar_banco() antes desta chamada).
+    conexao.execute(
+        """
+        INSERT INTO idx_alertas_espacial (id, min_lat, max_lat, min_lon, max_lon)
+        SELECT id, latitude, latitude, longitude, longitude
+        FROM alertas
+        WHERE id NOT IN (SELECT id FROM idx_alertas_espacial)
+        """
+    )
+
 
 def criar_banco() -> None:
     with conectar() as conexao:
@@ -318,6 +343,54 @@ def criar_banco() -> None:
             ON incidente_membros (incidente_id)
             """
         )
+        # Issue #60 — índice espacial: tabela virtual R-Tree sobre a posição
+        # de cada alerta (bbox degenerada, min=max=ponto). Disponibilidade
+        # do módulo verificada empiricamente em ubuntu-latest e
+        # windows-latest (ver TestCapacidadeEspacialSQLite em
+        # tests/test_database.py e o PR #60) — sem fallback necessário.
+        # Populada em aplicar_resultado_deteccao no INSERT de cada alerta
+        # CRIADO; backfill de alertas pré-existentes fica em _migrar_banco.
+        conexao.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS idx_alertas_espacial
+            USING rtree(id, min_lat, max_lat, min_lon, max_lon)
+            """
+        )
+        # Issue #60 — dataset de instrumentação para a #63 calibrar: TODO
+        # par (alerta, incidente candidato) avaliado, inclusive NAO_VINCULA.
+        # incidente_id NULL = blocking não achou nenhum candidato para o
+        # alerta. Append-only — nunca UPDATE/DELETE. Shape fixado no plano
+        # técnico da #59/#60 (wiki/projects/layer-5-correlation.md).
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS correlacao_observacoes (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                alerta_id        INTEGER NOT NULL,
+                incidente_id     INTEGER NULL,
+                delta_t_segundos REAL    NOT NULL,
+                distancia_km     REAL    NULL,
+                mesmo_codibge    INTEGER NOT NULL,
+                score            REAL    NOT NULL,
+                decisao          TEXT    NOT NULL,
+                motivo           TEXT    NOT NULL,
+                criado_em        TEXT    NOT NULL,
+                FOREIGN KEY (alerta_id)    REFERENCES alertas(id),
+                FOREIGN KEY (incidente_id) REFERENCES incidentes(id)
+            )
+            """
+        )
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_correlacao_observacoes_alerta_id
+            ON correlacao_observacoes (alerta_id)
+            """
+        )
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_correlacao_observacoes_incidente_id
+            ON correlacao_observacoes (incidente_id)
+            """
+        )
         _migrar_banco(conexao)
         # A coluna agregado_incidente_id só existe garantidamente depois de
         # _migrar_banco (bancos legados a recebem via ALTER TABLE ali) —
@@ -425,6 +498,22 @@ def aplicar_resultado_deteccao(
                     ),
                 )
                 agregado_id = cursor.lastrowid
+                # Issue #60 — posição imutável após a criação (ATUALIZADO/
+                # REATIVADO nunca tocam latitude/longitude, ver ramo abaixo),
+                # então o índice espacial só precisa de um INSERT aqui.
+                conexao.execute(
+                    """
+                    INSERT INTO idx_alertas_espacial (id, min_lat, max_lat, min_lon, max_lon)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        agregado_id,
+                        alerta.coordenadas.latitude,
+                        alerta.coordenadas.latitude,
+                        alerta.coordenadas.longitude,
+                        alerta.coordenadas.longitude,
+                    ),
+                )
 
             elif evento.tipo in (
                 TipoEventoDetectado.ATUALIZADO,
@@ -753,3 +842,249 @@ def fundir_incidentes(
             criado_em=agora,
         )
         conexao.commit()
+
+
+# ---------------------------------------------------------------------------
+# Blocking de correlação (Camada 5, issue #60) — geração de candidatos e
+# instrumentação. Decidir se um par (Alerta, Incidente candidato) é o mesmo
+# evento é responsabilidade do núcleo puro em domain/correlacao.py (#58);
+# este módulo só gera candidatos baratos (bbox + janela) e avalia cada um
+# através daquele núcleo, registrando TODO par avaliado em
+# correlacao_observacoes — inclusive NAO_VINCULA (Round 1, Q1, "instrument
+# before calibrating"; wiki/projects/layer-5-correlation.md).
+#
+# Candidatos = SÓ incidentes com status ATIVO, fundido_em IS NULL, cujo
+# bbox intersecte a posição (com buffer) do alerta avaliado e cuja janela de
+# tempo por tipo ainda esteja aberta (Round 1, Q6 — custo O(incidentes
+# abertos), nunca O(histórico)): a query só toca incidentes já filtrados por
+# `idx_incidentes_status_fundido` e os membros DESSES incidentes via
+# `idx_alertas_espacial`, nunca a tabela `alertas` inteira.
+# ---------------------------------------------------------------------------
+
+# Buffer de blocking em graus decimais — NUNCA usado na decisão (#58 decide
+# com haversine exata sobre coordenadas reais); só alimenta o WHERE do
+# R-Tree para superselecionar candidatos (Round 1, Q2: bbox pode
+# superselecionar, nunca subselecionar). Convertido de DISTANCIA_MAXIMA_KM
+# (#58) usando a pior compressão de longitude do território brasileiro
+# (~34°S, 1° de longitude ≈ 92 km — valor conservador, arredondado para
+# baixo). Na latitude, 111 km/grau é aproximadamente constante em todo o
+# país, então o mesmo buffer também cobre esse eixo com folga.
+#
+# GARANTIA VÁLIDA SÓ PARA LATITUDES BRASILEIRAS (até ~34°S). NasaEonetSource
+# ingere eventos globais sem filtro de bbox (decision record, "Global NASA
+# EONET ingestion"), e acima de |34°| a compressão de longitude piora (a
+# 60°S, 1° de longitude ≈ 55 km — o mesmo buffer cobre só ~30 km ali),
+# então FORA do Brasil o blocking pode SUBSELECIONAR candidatos por
+# longitude, violando a garantia acima. Limitação conhecida e aceita — o
+# produto é brasileiro e o viés do projeto é para separar (Round 2), não
+# para vincular de mais —, registrada aqui para não ficar silenciosa.
+_KM_POR_GRAU_LONGITUDE_MINIMO_BRASIL: Final[float] = 92.0
+BUFFER_BLOQUEIO_GRAUS: Final[float] = DISTANCIA_MAXIMA_KM / _KM_POR_GRAU_LONGITUDE_MINIMO_BRASIL
+
+# Janela de "incidente ainda aberto para novos membros", por tipo de evento
+# do ALERTA avaliado (Round 1, Q1 — estrutura per-type mantida em v1). Cada
+# entrada é (janela_antes, janela_depois) em segundos: quanto o onset do
+# alerta avaliado pode preceder (antes) ou suceder (depois) o onset do
+# representante do incidente e ainda contar como candidato. A ASSIMETRIA é
+# estrutural — a issue #60 exige a forma per-type/assimétrica em v1 mesmo
+# que os dois lados comecem IGUAIS (ambos = domain.correlacao.JANELA_TEMPO_SEGUNDOS)
+# — para que a #63 edite só esta tabela de valores, nunca o formato do
+# código, quando calibrar contra pares confirmados reais (latência de
+# detecção difere por fonte, então antes/depois não devem convergir para o
+# mesmo número após calibração). NÃO preencher com valores "da literatura"
+# — mesma disciplina de domain/cobrade.py.
+JANELA_ABERTA_SEGUNDOS_POR_TIPO: Final[dict[TipoEvento, tuple[float, float]]] = {
+    tipo: (JANELA_TEMPO_SEGUNDOS, JANELA_TEMPO_SEGUNDOS) for tipo in TipoEvento
+}
+
+
+@dataclass(frozen=True)
+class ObservacaoCandidato:
+    """Resultado de avaliar um candidato — o suficiente para quem chama
+    (#61) decidir se age sobre `incidente_id` (VINCULA/REVISAO) sem
+    reconsultar o banco. `incidente_id is None` só ocorre na linha
+    "sem candidatos" (blocking não achou nenhum incidente aberto compatível).
+    """
+
+    incidente_id: int | None
+    decisao: DecisaoCorrelacao
+
+
+def _construir_candidato_correlacao(row: tuple) -> CandidatoCorrelacao:
+    """Constrói um `CandidatoCorrelacao` a partir de uma row de `alertas`.
+
+    Ordem esperada da row: (fonte, cod_alerta, evento, cobrade_codigo,
+    codibge, latitude, longitude, datahoracriacao). `TipoEvento.from_string`/
+    `FonteDado.from_string` são a mesma rede de segurança contra dado
+    corrompido já usada por `buscar_snapshots` (invariante 15,
+    wiki/patterns/resilience-invariants.md).
+    """
+    fonte, cod_alerta, evento, cobrade_codigo, codibge, latitude, longitude, datahoracriacao = row
+    if not datahoracriacao:
+        raise ValueError(
+            f"Alerta {fonte}/{cod_alerta} sem datahoracriacao — não é possível "
+            "correlacionar sem um momento de onset."
+        )
+    return CandidatoCorrelacao(
+        fonte=FonteDado.from_string(fonte),
+        cod_alerta=cod_alerta,
+        tipo_evento=TipoEvento.from_string(evento),
+        cobrade_codigo=cobrade_codigo,
+        codigo_ibge=codibge,
+        latitude=latitude,
+        longitude=longitude,
+        momento_onset=parse_iso_utc(datahoracriacao),
+    )
+
+
+def _buscar_incidentes_candidatos(
+    conexao: sqlite3.Connection,
+    candidato_alerta: CandidatoCorrelacao,
+    janela_antes_segundos: float,
+    janela_depois_segundos: float,
+) -> list[tuple[int, CandidatoCorrelacao]]:
+    """Blocking: incidentes abertos com um membro dentro do bbox bufferizado
+    E dentro da janela de tempo por tipo, um por incidente.
+
+    Estágio 1 (bbox, R-Tree) roda inteiramente em SQL — é o que realmente
+    precisa de índice espacial. Estágio 2 (janela de tempo) roda em Python
+    sobre o resultado já filtrado pelo bbox (pequeno, O(incidentes abertos)),
+    evitando aritmética de data em SQL sobre strings ISO. Quando um
+    incidente tem mais de um membro dentro do bbox, o membro mais
+    recentemente associado (`incidente_membros.criado_em` mais alto)
+    representa o incidente na comparação — decisão v1, documentada em
+    wiki/decisions/incidente-representante-blocking.md.
+    """
+    linhas = conexao.execute(
+        """
+        SELECT im.incidente_id, im.criado_em,
+               a.fonte, a.cod_alerta, a.evento, a.cobrade_codigo, a.codibge,
+               a.latitude, a.longitude, a.datahoracriacao
+        FROM idx_alertas_espacial r
+        JOIN incidente_membros im ON im.alerta_id = r.id
+        JOIN incidentes i ON i.id = im.incidente_id
+        JOIN alertas a ON a.id = r.id
+        WHERE i.status = 'ATIVO' AND i.fundido_em IS NULL
+          AND r.min_lat <= ? AND r.max_lat >= ?
+          AND r.min_lon <= ? AND r.max_lon >= ?
+        """,
+        (
+            candidato_alerta.latitude + BUFFER_BLOQUEIO_GRAUS,
+            candidato_alerta.latitude - BUFFER_BLOQUEIO_GRAUS,
+            candidato_alerta.longitude + BUFFER_BLOQUEIO_GRAUS,
+            candidato_alerta.longitude - BUFFER_BLOQUEIO_GRAUS,
+        ),
+    ).fetchall()
+
+    representante_por_incidente: dict[int, tuple[str, tuple]] = {}
+    for incidente_id, criado_em_membro, *campos_alerta in linhas:
+        if not campos_alerta[-1]:  # datahoracriacao ausente — membro inutilizável
+            continue
+        atual = representante_por_incidente.get(incidente_id)
+        if atual is None or criado_em_membro > atual[0]:
+            representante_por_incidente[incidente_id] = (criado_em_membro, tuple(campos_alerta))
+
+    candidatos: list[tuple[int, CandidatoCorrelacao]] = []
+    for incidente_id, (_, campos_alerta) in representante_por_incidente.items():
+        representante = _construir_candidato_correlacao(campos_alerta)
+        # Sinal importa (Round 1, Q1 — janela assimétrica): delta_t > 0
+        # significa que o alerta avaliado tem onset DEPOIS do representante;
+        # delta_t < 0, ANTES. Cada lado é checado contra sua própria janela.
+        delta_t = (candidato_alerta.momento_onset - representante.momento_onset).total_seconds()
+        if -janela_antes_segundos <= delta_t <= janela_depois_segundos:
+            candidatos.append((incidente_id, representante))
+    return candidatos
+
+
+def _inserir_observacao_correlacao(
+    conexao: sqlite3.Connection,
+    *,
+    alerta_id: int,
+    incidente_id: int | None,
+    decisao: DecisaoCorrelacao,
+    mesmo_codibge: bool,
+    agora: str,
+) -> None:
+    conexao.execute(
+        """
+        INSERT INTO correlacao_observacoes (
+            alerta_id, incidente_id, delta_t_segundos, distancia_km,
+            mesmo_codibge, score, decisao, motivo, criado_em
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            alerta_id,
+            incidente_id,
+            decisao.delta_t_segundos,
+            decisao.distancia_km if incidente_id is not None else None,
+            int(mesmo_codibge),
+            decisao.score,
+            decisao.resultado.value,
+            decisao.motivo,
+            agora,
+        ),
+    )
+
+
+def avaliar_candidatos_correlacao(alerta_id: int, agora: str) -> list[ObservacaoCandidato]:
+    """Gera candidatos (blocking), avalia cada um via `decidir_correlacao`
+    (#58) e grava uma linha em `correlacao_observacoes` por par avaliado —
+    inclusive quando não há nenhum candidato. Não muta `incidentes`/
+    `incidente_membros`: agir sobre VINCULA/REVISAO (criar, juntar, fundir)
+    é responsabilidade de quem chama (#61).
+    """
+    with conectar() as conexao:
+        row_alerta = conexao.execute(
+            """
+            SELECT fonte, cod_alerta, evento, cobrade_codigo, codibge,
+                   latitude, longitude, datahoracriacao
+            FROM alertas WHERE id = ?
+            """,
+            (alerta_id,),
+        ).fetchone()
+        if row_alerta is None:
+            raise ValueError(f"Alerta id={alerta_id} não encontrado")
+        candidato_alerta = _construir_candidato_correlacao(row_alerta)
+
+        janela_antes, janela_depois = JANELA_ABERTA_SEGUNDOS_POR_TIPO[candidato_alerta.tipo_evento]
+        candidatos = _buscar_incidentes_candidatos(
+            conexao, candidato_alerta, janela_antes, janela_depois
+        )
+
+        resultados: list[ObservacaoCandidato] = []
+        if not candidatos:
+            decisao_vazia = DecisaoCorrelacao(
+                resultado=ResultadoDecisao.NAO_VINCULA,
+                score=0.0,
+                motivo="sem_candidatos",
+                distancia_km=0.0,
+                delta_t_segundos=0.0,
+            )
+            _inserir_observacao_correlacao(
+                conexao,
+                alerta_id=alerta_id,
+                incidente_id=None,
+                decisao=decisao_vazia,
+                mesmo_codibge=False,
+                agora=agora,
+            )
+            resultados.append(ObservacaoCandidato(incidente_id=None, decisao=decisao_vazia))
+        else:
+            for incidente_id, representante in candidatos:
+                decisao = decidir_correlacao(candidato_alerta, representante)
+                mesmo_codibge = (
+                    candidato_alerta.codigo_ibge is not None
+                    and candidato_alerta.codigo_ibge == representante.codigo_ibge
+                )
+                _inserir_observacao_correlacao(
+                    conexao,
+                    alerta_id=alerta_id,
+                    incidente_id=incidente_id,
+                    decisao=decisao,
+                    mesmo_codibge=mesmo_codibge,
+                    agora=agora,
+                )
+                resultados.append(ObservacaoCandidato(incidente_id=incidente_id, decisao=decisao))
+
+        conexao.commit()
+    return resultados

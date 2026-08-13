@@ -76,3 +76,5 @@ updated: 2026-07-02
 - [[decisions/foreign-key-eventos-agregado-id]] — eventos→alertas FK declared in CREATE TABLE, no 12-step rebuild; cheap-now guardrail for Camada 6
 - [[decisions/weathernext-anticipation-not-datasource]] — WeatherNext 2: rejected as DataSource, adopted as phased internal anticipation track (#68–#72)
 - [[decisions/agregado-incidente-id]] — incident lifecycle events get a new agregado_incidente_id FK column, not a payload-only reference or a second outbox table; the #22 FK stays untouched
+- [[decisions/rtree-spatial-index-blocking]] — R-Tree confirmed available on both CI OSes (empirical evidence in PR #76), used for the blocking spatial index; no fallback needed
+- [[decisions/incidente-representante-blocking]] — a candidate incident's most recently joined member represents it for the blocking-stage decidir_correlacao call
