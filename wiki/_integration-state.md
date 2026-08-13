@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-08-12 (issue #60)
+updated: 2026-08-13 (issue #61)
 
 ## Module wiring table (single source of truth)
 
@@ -18,10 +18,10 @@ updated: 2026-08-12 (issue #60)
 | `scheduler.py` | `agendar_ingestao()`: APScheduler `BlockingScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs; blocks on `start()`, clean `Ctrl+C` shutdown (issue #21); logs per-run report via `formatar_relatorio()`; builds the EventBus via `criar_bus_producao()` once and injects it into `OutboxDispatcher` (issue #24) | Production service | integrated |
 | `reporting.py` | `formatar_relatorio()` — shared report formatter for ingestion output | `monitor.py`, `scheduler.py` | integrated |
 | `database.py` | `criar_banco()`, `buscar_snapshots()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
-| `database.py` — Incidente persistence (#59) | `incidentes`/`incidente_membros` tables, `agregado_incidente_id` FK on `eventos`; `criar_incidente`/`adicionar_membro_incidente`/`resolver_incidente`/`reativar_incidente`/`fundir_incidentes`, each its own outbox transaction | **not yet called by anything** — no caller until `ingestion/orquestrador.py` is wired in #61 | schema + functions integrated; **not wired into the ingestion flow** |
-| `database.py` — Correlation blocking (#60) | `idx_alertas_espacial` R-Tree index (populated on alert `CRIADO`), `correlacao_observacoes` table, `avaliar_candidatos_correlacao()` (blocking → `domain.correlacao.decidir_correlacao` → instrumentation row per pair) | **not yet called by anything** — no caller until `ingestion/orquestrador.py` is wired in #61 | schema + functions integrated; **not wired into the ingestion flow** |
+| `database.py` — Incidente persistence (#59) | `incidentes`/`incidente_membros` tables, `agregado_incidente_id` FK on `eventos`; `criar_incidente`/`adicionar_membro_incidente`/`resolver_incidente`/`reativar_incidente`/`fundir_incidentes`, each its own outbox transaction; read helpers `buscar_incidente_atual`/`status_incidente`/`todos_membros_resolvidos` (#61) | `ingestion/orquestrador.py` (`_correlacionar_rodada`, #61) | integrated |
+| `database.py` — Correlation blocking (#60) | `idx_alertas_espacial` R-Tree index (populated on alert `CRIADO`), `correlacao_observacoes` table, `avaliar_candidatos_correlacao()` (blocking → `domain.correlacao.decidir_correlacao` → instrumentation row per pair) | `ingestion/orquestrador.py` (`_abrir_ou_juntar_incidente`, #61) | integrated |
 | `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher`, `log_handler`, `criar_bus_producao()` factory — no module-level singleton (issue #24) | `scheduler.py` (sole composition root) | integrated |
-| `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist per source; `RelatorioFonte`, `RelatorioIngestao` | `monitor.py`, `scheduler.py` | integrated |
+| `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist → correlate per source; `RelatorioFonte`, `RelatorioIngestao`. Since #61, wires Camada 5 Incidente lifecycle (`_abrir_ou_juntar_incidente`, `_correlacionar_rodada`) right after `aplicar_resultado_deteccao` — see [[components/ingestion-orquestrador]] | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC (transport-agnostic), `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff + size cap → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener`, `opener_padrao` (HTTPS-only redirect policy); `HttpDataSource(DataSource)` template method (shared `__init__` + concrete `coletar()`, issue #20) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(HttpDataSource)`: `URL`/`USER_AGENT` class constants + payload normalization | `ingestion/orquestrador.py` | integrated |
@@ -41,4 +41,9 @@ scheduler.agendar_ingestao()
       → buscar_snapshots(fonte=EONET)
       → detectar_mudancas(alertas, snapshots) per source
       → aplicar_resultado_deteccao() (single transaction: alerts + outbox events) per source
+      → _correlacionar_rodada() per source (issue #61, Camada 5)
+        → CRIADO/REATIVADO-sem-membership: avaliar_candidatos_correlacao() (#60 blocking → #58 decidir_correlacao)
+          → criar_incidente() / adicionar_membro_incidente() / fundir_incidentes()
+        → REATIVADO-com-membership: reativar_incidente() se o Incidente estava RESOLVIDO
+        → RESOLVIDO: resolver_incidente() se todos_membros_resolvidos()
 ```
