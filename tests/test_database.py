@@ -17,6 +17,7 @@ import pytest
 
 from alertavida import database as db_module
 from alertavida.database import SchemaIncompativelError, conectar
+from alertavida.domain.enums import TipoEvento
 from tests.fixtures.schemas_legados import (
     aplicar_schema_eventos_sem_fk,
     aplicar_schema_pos_a1_pre_a2,
@@ -1187,3 +1188,361 @@ class TestCapacidadeEspacialSQLite:
             ).fetchall()
 
         assert linhas == [(1,)]
+
+
+# ----------------------------------------------------------------------
+# Blocking de correlação (issue #60) — geração de candidatos + instrumentação
+# ----------------------------------------------------------------------
+
+def _inserir_alerta_correlacao(
+    db_path: Path,
+    *,
+    cod_alerta: str,
+    fonte: str = "CEMADEN",
+    evento: str = "HIDROLOGICO",
+    cobrade_codigo: str | None = "1.2.1.0.0",
+    codibge: int | None = 4322400,
+    latitude: float,
+    longitude: float,
+    datahoracriacao: str,
+) -> int:
+    """Insere um alerta com os campos que o blocking usa (evento, cobrade,
+    codibge, posição, onset) e o registra em `idx_alertas_espacial` — o
+    mesmo par de INSERTs que `aplicar_resultado_deteccao` faz no ramo
+    CRIADO. `_inserir_alerta` (issue #59) não serve aqui: cobre só os
+    campos mínimos para as FKs de incidente, sem posição/onset reais.
+    """
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        cursor = conexao.execute(
+            """
+            INSERT INTO alertas (
+                fonte, cod_alerta, evento, cobrade_codigo, codibge,
+                latitude, longitude, datahoracriacao, detectado_em
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fonte,
+                cod_alerta,
+                evento,
+                cobrade_codigo,
+                codibge,
+                latitude,
+                longitude,
+                datahoracriacao,
+                datahoracriacao,
+            ),
+        )
+        alerta_id = cursor.lastrowid
+        assert alerta_id is not None
+        conexao.execute(
+            """
+            INSERT INTO idx_alertas_espacial (id, min_lat, max_lat, min_lon, max_lon)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (alerta_id, latitude, latitude, longitude, longitude),
+        )
+        conexao.commit()
+    return alerta_id
+
+
+class TestAvaliarCandidatosCorrelacao:
+    def test_sem_nenhum_incidente_aberto_grava_observacao_sem_candidato(self, db_temporario):
+        alerta_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            alerta_id, "2026-08-12T10:00:00+00:00"
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.resultado.value == "NAO_VINCULA"
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            observacao = conexao.execute(
+                "SELECT alerta_id, incidente_id, distancia_km, decisao, motivo "
+                "FROM correlacao_observacoes"
+            ).fetchone()
+        assert observacao == (alerta_id, None, None, "NAO_VINCULA", "sem_candidatos")
+
+    def test_incidente_dentro_do_bbox_e_da_janela_e_candidato(self, db_temporario):
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        incidente_id = db_module.criar_incidente(
+            fundador_id, 1.0, "fundador", "2026-08-12T10:00:00+00:00"
+        )
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T11:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T11:00:00+00:00"
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].incidente_id == incidente_id
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            observacao = conexao.execute(
+                "SELECT alerta_id, incidente_id, mesmo_codibge, decisao "
+                "FROM correlacao_observacoes"
+            ).fetchone()
+        assert observacao == (novo_id, incidente_id, 1, resultados[0].decisao.resultado.value)
+
+    def test_fora_do_bbox_nao_e_candidato(self, db_temporario):
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        db_module.criar_incidente(fundador_id, 1.0, "fundador", "2026-08-12T10:00:00+00:00")
+        # Belém (~PA), a milhares de km de distância — muito além do buffer
+        # de blocking (~0.54° derivado de DISTANCIA_MAXIMA_KM).
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-1.45,
+            longitude=-48.48,
+            datahoracriacao="2026-08-12T11:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T11:00:00+00:00"
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.motivo == "sem_candidatos"
+
+    def test_fora_da_janela_de_tempo_nao_e_candidato(self, db_temporario):
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T00:00:00+00:00",
+        )
+        db_module.criar_incidente(fundador_id, 1.0, "fundador", "2026-08-12T00:00:00+00:00")
+        # Mesmo bbox, mas 7h de diferença de onset — além da janela de 6h
+        # (JANELA_TEMPO_SEGUNDOS, importada de domain/correlacao.py).
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T07:00:01+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T07:00:01+00:00"
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.motivo == "sem_candidatos"
+
+    def test_incidente_resolvido_nao_e_candidato(self, db_temporario):
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        incidente_id = db_module.criar_incidente(
+            fundador_id, 1.0, "fundador", "2026-08-12T10:00:00+00:00"
+        )
+        db_module.resolver_incidente(incidente_id, fundador_id, "2026-08-12T10:30:00+00:00")
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T11:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T11:00:00+00:00"
+        )
+
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.motivo == "sem_candidatos"
+
+    def test_incidente_fundido_nao_e_candidato(self, db_temporario):
+        sobrevivente_alerta = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-20.0,
+            longitude=-45.0,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        sobrevivente_id = db_module.criar_incidente(
+            sobrevivente_alerta, 1.0, "fundador", "2026-08-12T10:00:00+00:00"
+        )
+        fundido_alerta = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A2",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        fundido_id = db_module.criar_incidente(
+            fundido_alerta, 1.0, "fundador", "2026-08-12T10:00:01+00:00"
+        )
+        disparador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A3",
+            latitude=0.0,
+            longitude=0.0,
+            datahoracriacao="2026-08-12T10:00:02+00:00",
+        )
+        db_module.fundir_incidentes(
+            sobrevivente_id, fundido_id, disparador_id, "2026-08-12T10:30:00+00:00"
+        )
+        # Mesmo bbox/janela do incidente FUNDIDO (não do sobrevivente).
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T11:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T11:00:00+00:00"
+        )
+
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.motivo == "sem_candidatos"
+
+    def test_grava_observacao_para_par_avaliado_nao_vincula(self, db_temporario):
+        """Par avaliado (dentro do bbox/janela), mas tipo incompatível —
+        NAO_VINCULA ainda assim vira uma linha em correlacao_observacoes
+        (Round 1, Q1: "TODO par avaliado, inclusive NAO_VINCULA")."""
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            evento="HIDROLOGICO",
+            cobrade_codigo="1.2.1.0.0",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        db_module.criar_incidente(fundador_id, 1.0, "fundador", "2026-08-12T10:00:00+00:00")
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            evento="GEOLOGICO",
+            cobrade_codigo="1.1.1.0.0",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T11:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T11:00:00+00:00"
+        )
+
+        assert len(resultados) == 1
+        assert resultados[0].decisao.resultado.value == "NAO_VINCULA"
+        assert resultados[0].decisao.motivo == "tipos_incompativeis"
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            observacao = conexao.execute(
+                "SELECT incidente_id, decisao, motivo FROM correlacao_observacoes"
+            ).fetchone()
+        assert observacao[0] is not None
+        assert observacao[1] == "NAO_VINCULA"
+        assert observacao[2] == "tipos_incompativeis"
+
+    def test_janela_assimetrica_respeita_sinal(self, db_temporario, monkeypatch):
+        """delta_t > 0 (alerta avaliado com onset DEPOIS do representante) é
+        checado contra janela_depois, não contra janela_antes — um par que
+        passaria numa janela simétrica de 6h (o único valor usado antes desta
+        mudança) é excluído quando janela_depois é estreitada para 4h,
+        provando que a comparação usa o sinal de delta_t, não abs(delta_t)."""
+        monkeypatch.setitem(
+            db_module.JANELA_ABERTA_SEGUNDOS_POR_TIPO,
+            TipoEvento.HIDROLOGICO,
+            (6 * 3600.0, 4 * 3600.0),  # (janela_antes, janela_depois)
+        )
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+        db_module.criar_incidente(fundador_id, 1.0, "fundador", "2026-08-12T10:00:00+00:00")
+        # +5h: dentro de uma janela simétrica de 6h, fora da janela_depois de 4h.
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T15:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T15:00:00+00:00"
+        )
+
+        assert resultados[0].incidente_id is None
+        assert resultados[0].decisao.motivo == "sem_candidatos"
+
+    def test_janela_assimetrica_aceita_dentro_do_lado_antes(self, db_temporario, monkeypatch):
+        """Mesma janela assimétrica do teste acima, mas delta_t < 0 (alerta
+        avaliado com onset ANTES do representante) — dentro de janela_antes
+        (6h), então é candidato mesmo excedendo janela_depois (4h), provando
+        que os dois lados são checados independentemente."""
+        monkeypatch.setitem(
+            db_module.JANELA_ABERTA_SEGUNDOS_POR_TIPO,
+            TipoEvento.HIDROLOGICO,
+            (6 * 3600.0, 4 * 3600.0),  # (janela_antes, janela_depois)
+        )
+        fundador_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A1",
+            latitude=-29.84,
+            longitude=-56.73,
+            datahoracriacao="2026-08-12T15:00:00+00:00",
+        )
+        incidente_id = db_module.criar_incidente(
+            fundador_id, 1.0, "fundador", "2026-08-12T15:00:00+00:00"
+        )
+        # -5h: fora da janela_depois (4h) se o sinal fosse ignorado, mas
+        # dentro de janela_antes (6h).
+        novo_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B1",
+            fonte="EONET",
+            latitude=-29.85,
+            longitude=-56.74,
+            datahoracriacao="2026-08-12T10:00:00+00:00",
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(
+            novo_id, "2026-08-12T10:00:00+00:00"
+        )
+
+        assert resultados[0].incidente_id == incidente_id
