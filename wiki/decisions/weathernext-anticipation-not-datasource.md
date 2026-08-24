@@ -1,6 +1,6 @@
 status: open
-sources: https://developers.google.com/weathernext, https://developers.google.com/earth-engine/datasets/catalog/projects_gcp-public-data-weathernext_assets_weathernext_2_0_0, https://developers.google.com/weathernext/guides/bigquery, https://developers.google.com/weathernext/guides/dissemination, https://storage.googleapis.com/weathernext-public/terms-of-use.pdf (read in full, 2026-08-11), [[projects/layer-5-correlation]]
-updated: 2026-08-12
+sources: https://developers.google.com/weathernext, https://developers.google.com/earth-engine/datasets/catalog/projects_gcp-public-data-weathernext_assets_weathernext_2_0_0, https://developers.google.com/weathernext/guides/bigquery, https://developers.google.com/weathernext/guides/dissemination, https://storage.googleapis.com/weathernext-public/terms-of-use.pdf (read in full, 2026-08-11), [[projects/layer-5-correlation]], [[raw/analise-weathernext-skill-2026-08-24]]
+updated: 2026-08-24
 
 # WeatherNext: Anticipation Track, Not a DataSource
 
@@ -104,8 +104,8 @@ the legal path rather than on engineering.
 
 | Phase | Issue | What | When |
 |---|---|---|---|
-| Kickoff | #68 | this page | now |
-| A | #69 | data access + offline skill validation over known Brazilian events (CC BY historic; **STOP gate for the whole track**) | now — parallel with #59–#61 |
+| Kickoff | #68 | this page | done |
+| A | #69 | data access + offline skill validation over known Brazilian events (CC BY historic; **STOP gate for the whole track**) | **done, 2026-08-24 — qualified PASS, see below** |
 | B | #70 | surge watch: daily forecast artifact (`scripts/`, outside the runtime) + high-frequency CEMADEN capture for the Round 2 discriminator | **before Oct 2026** (rainy season) |
 | C | #71 | physical-plausibility annotation on `REVISAO` rows, input to #63 labelling | after #61 + #70 |
 | D | #72 | public worsening-trend indicator on `Incidente` (Non-Retrievable VAS or Maps Platform Weather API) | dormant — after Camada 7 + written legal path |
@@ -134,3 +134,50 @@ forced the Round 2 live fetch instead of trusting fixtures. If #69's answer is
 no, the correct outcome is to close #70–#72 as not planned and keep only this
 page as the written answer for the next time the question comes up (the
 [[decisions/sdd-practices-from-spec-kit]] precedent).
+
+## #69 verdict, 2026-08-24: qualified PASS — proceed to #70
+
+Measured against 9 real Brazilian flood events (NASA EONET/GDACS, since
+WeatherNext's 2025-10-03 coverage start; below the 10–20 target — see
+[[raw/analise-weathernext-skill-2026-08-24]] for why), using only the
+WeatherNext 2 **mean** field (cost rule; ensemble excluded) and ERA5 as
+ground truth (Open-Meteo Archive API, pipeline independently validated
+against the documented Zona da Mata Mineira / Juiz de Fora disaster):
+
+- **6 of 9 events** show a precipitation signal ≥50% of the ERA5-observed
+  magnitude at the correct 0.25° grid cell, even at 1-day lead.
+- **5 of 9** keep that signal useful out to 7-day lead.
+- **2 of 9** (EONET_16409, EONET_20298) show no useful signal at *any*
+  tested lead (1–11 days) — reported without cherry-picking, same as the
+  6 hits.
+- Signal degrades to weak/miss for all 9 by 7–11 days, matching known NWP
+  predictability limits.
+
+**Statistical caveat — read the percentages as qualitative, not precise.**
+N=9. The ≥50% HIT threshold is a cutoff chosen for this analysis, not a
+property of the problem; with N=9, one event moving category shifts any
+percentage by ~11 points ("67% at 1d" and "56% at 7d" differ by exactly one
+event, EONET_18043's intermittent HIT). Do not cite these numbers later as
+a precise skill rate.
+
+**The 22% miss rate does not disqualify #70.** #70 is an *internal capture
+trigger* (surge-watch → higher-frequency CEMADEN capture), not a
+user-facing alert. Against that use, a ~78% hit rate means catching roughly
+4 surge events out of 5, against catching **zero** today. Read the miss
+rate as the size of the gap #70 leaves, not as evidence the track should
+stop.
+
+**Open, unresolved question: mean vs. ensemble.** This analysis cannot tell
+"the model didn't see the event" apart from "the mean smoothed out a signal
+present in part of the 64-member ensemble" — the mean is a deterministic
+average, and the two events that missed could plausibly be
+ensemble-visible. Left open deliberately: testing it would cost ~189 GB per
+event at 1-day lead alone (≈37% of the 1 TiB free tier for both), and
+would not change this verdict either way — #70 proceeds regardless, carrying
+this caveat. Revisit only if #70's real-world false-negative rate makes it
+worth spending that budget.
+
+**Gate outcome: not "close #70–#72."** Skill was demonstrated for a
+majority of real events with real lead time — not the zero-signal outcome
+that would have triggered the not-planned close. #70 proceeds, scoped with
+the miss rate and the mean/ensemble open question above in mind.
