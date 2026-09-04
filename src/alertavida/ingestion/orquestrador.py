@@ -164,6 +164,25 @@ def _abrir_ou_juntar_incidente(alerta_id: int, agora: str) -> tuple[str, bool]:
     return "juntado", teve_revisao
 
 
+def _acumular_contadores(
+    criados: int,
+    juntados: int,
+    fundidos: int,
+    revisao: int,
+    acao: str,
+    teve_revisao: bool,
+) -> tuple[int, int, int, int]:
+    """Soma o resultado de uma chamada a `_abrir_ou_juntar_incidente` aos
+    quatro contadores de `_correlacionar_rodada` (CRIADO e o ramo
+    REATIVADO-sem-membership prévia compartilham essa contagem)."""
+    return (
+        criados + (acao == "criado"),
+        juntados + (acao == "juntado"),
+        fundidos + (acao == "fundido"),
+        revisao + teve_revisao,
+    )
+
+
 def _correlacionar_rodada(
     eventos: Sequence[EventoDetectado],
     ids_por_codigo: dict[str, int],
@@ -204,20 +223,18 @@ def _correlacionar_rodada(
         if evento.tipo is TipoEventoDetectado.CRIADO:
             alerta_id = ids_por_codigo[evento.cod_alerta]
             acao, teve_revisao = _abrir_ou_juntar_incidente(alerta_id, agora)
-            criados += acao == "criado"
-            juntados += acao == "juntado"
-            fundidos += acao == "fundido"
-            revisao += teve_revisao
+            criados, juntados, fundidos, revisao = _acumular_contadores(
+                criados, juntados, fundidos, revisao, acao, teve_revisao
+            )
 
         elif evento.tipo is TipoEventoDetectado.REATIVADO:
             alerta_id = ids_por_codigo[evento.cod_alerta]
             incidente_id = buscar_incidente_atual(alerta_id)
             if incidente_id is None:
                 acao, teve_revisao = _abrir_ou_juntar_incidente(alerta_id, agora)
-                criados += acao == "criado"
-                juntados += acao == "juntado"
-                fundidos += acao == "fundido"
-                revisao += teve_revisao
+                criados, juntados, fundidos, revisao = _acumular_contadores(
+                    criados, juntados, fundidos, revisao, acao, teve_revisao
+                )
             elif status_incidente(incidente_id) == "RESOLVIDO":
                 reativar_incidente(incidente_id, alerta_id, agora)
 
