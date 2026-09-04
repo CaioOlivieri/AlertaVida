@@ -823,6 +823,68 @@ def test_correlacao_resolve_incidente_so_quando_ultimo_membro_resolve(
     assert _contar_eventos(db_temporario, "IncidenteResolvido") == 1
 
 
+def test_correlacao_dois_membros_mesma_rodada_emite_um_incidente_resolvido(
+    db_temporario: Path,
+) -> None:
+    """Regressão da issue #85: dois membros do mesmo Incidente resolvendo na
+    mesma rodada emitem exatamente UM `IncidenteResolvido`, não um por
+    membro.
+
+    C1 e C2 (mesma fonte, mesma posição/onset/cobrade) VINCULAM no mesmo
+    Incidente na rodada 1. Ambos somem juntos a partir da rodada 2 e
+    completam RODADAS_PARA_RESOLVER=3 ausências simultaneamente na rodada 4
+    — reprodução exata do bug: os dois eventos RESOLVIDO da mesma fonte
+    chegam na mesma chamada de `_correlacionar_rodada`, e por já estarem
+    ambos `RESOLVIDO` no banco quando o segundo é visitado,
+    `todos_membros_resolvidos` retornava True nas duas visitas antes da
+    guarda de status.
+    """
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta_c1 = _alerta(
+        "C1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    alerta_c2 = _alerta(
+        "C2",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[
+            [alerta_c1, alerta_c2],  # rodada 1 — ambos presentes, mesmo Incidente
+            [],  # rodada 2 — ausentes (1ª)
+            [],  # rodada 3 — ausentes (2ª)
+            [],  # rodada 4 — ausentes (3ª, ambos resolvem juntos)
+        ],
+    )
+
+    relatorio_1 = executar_ingestao([source])
+    assert relatorio_1.por_fonte[0].incidentes_criados == 1
+    assert relatorio_1.por_fonte[0].incidentes_juntados == 1
+
+    for _ in range(3):
+        executar_ingestao([source])
+
+    assert _contar_eventos(db_temporario, "IncidenteResolvido") == 1, (
+        "Esperado exatamente 1 IncidenteResolvido quando dois membros do "
+        "mesmo Incidente resolvem na mesma rodada"
+    )
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        status = conexao.execute("SELECT status FROM incidentes").fetchall()
+    assert status == [("RESOLVIDO",)]
+
+
 def test_correlacao_reativacao_de_membro_reativa_incidente(
     db_temporario: Path,
 ) -> None:
