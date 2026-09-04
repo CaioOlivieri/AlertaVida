@@ -178,8 +178,11 @@ def _correlacionar_rodada(
     Incidente quando ele estava RESOLVIDO (Round 1, Q5) — não re-roda
     blocking contra novos candidatos; caso contrário (nunca correlacionado
     antes — ex. banco anterior à #61) segue o mesmo caminho do CRIADO.
-    RESOLVIDO verifica se o Incidente do alerta tem TODOS os membros
-    resolvidos e, só então, resolve o Incidente — nunca quando apenas este
+    RESOLVIDO relê `status_incidente` antes de agir — mesma guarda que
+    REATIVADO já usa — para que a segunda (e demais) visita ao mesmo
+    Incidente já RESOLVIDO seja descartada antes de pagar o CTE recursivo de
+    `todos_membros_resolvidos`; só resolve o Incidente quando ele ainda está
+    ATIVO e TODOS os membros estão resolvidos, nunca quando apenas este
     membro resolve.
 
     ATUALIZADO não participa (decisão v1, ver PR #61): posição e onset são
@@ -221,7 +224,11 @@ def _correlacionar_rodada(
         elif evento.tipo is TipoEventoDetectado.RESOLVIDO:
             alerta_id = ids_por_codigo[evento.cod_alerta]
             incidente_id = buscar_incidente_atual(alerta_id)
-            if incidente_id is not None and todos_membros_resolvidos(incidente_id):
+            if (
+                incidente_id is not None
+                and status_incidente(incidente_id) == "ATIVO"
+                and todos_membros_resolvidos(incidente_id)
+            ):
                 resolver_incidente(incidente_id, alerta_id, agora)
 
     return criados, juntados, fundidos, revisao
