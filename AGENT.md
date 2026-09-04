@@ -28,13 +28,14 @@ uv run pytest -m integration -v   # CEMADEN contract test (hits real API)
 
 ## Architecture (modules under `src/alertavida/`)
 
-- `monitor.py` — entrypoint (46 lines): `main()` → `criar_banco()`, `executar_ingestao()`, formatted report
-- `scheduler.py` — APScheduler `BackgroundScheduler`: ingest job (5min) + dispatcher job (30s)
+- `monitor.py` — pure entrypoint: `main()` → `criar_banco()`, `executar_ingestao()`, formatted report
+- `scheduler.py` — APScheduler `BlockingScheduler`: ingest job (5min) + dispatcher job (30s)
 - `database.py` — SQLite persistence: schema bootstrap, snapshots, transactional outbox
 - `events.py` — in-memory EventBus + `OutboxDispatcher`
-- `domain/` — `Alerta`, enums (`FonteDado`, `TipoEvento`, etc.), `ChangeDetector`, COBRADE mapper, geographic classifier
+- `reporting.py` — shared report formatting for `monitor.py`
+- `domain/` — `Alerta`, enums (`FonteDado`, `TipoEvento`, etc.), `ChangeDetector`, COBRADE mapper, geographic classifier, `correlacao`/`incidente` (event correlation, Camada 5)
 - `ingestion/orquestrador.py` — `executar_ingestao()`: collects → detects → persists per source
-- `sources/` — `DataSource` ABC, `CemadenSource`, `ResultadoColeta`, `FalhaDeColeta`
+- `sources/` — `DataSource` ABC, `HttpDataSource` template, `CemadenSource`, `NasaEonetSource`, `ResultadoColeta`, `FalhaDeColeta`
 
 ---
 
@@ -57,6 +58,6 @@ This repo maintains a wiki in `./wiki/` (LLM-Wiki format). Before any architectu
 2. `wiki/_schema.md` — discipline rules for this wiki
 
 Before touching the ingestion pipeline (`sources/`, `ingestion/`, `monitor.py`, `scheduler.py`, `database.py`):
-3. `wiki/patterns/resilience-invariants.md` — 23 invariants, must not break any
+3. `wiki/patterns/resilience-invariants.md` — numbered invariants, must not break any
 
 Discipline rules: only assert test/pipeline behavior based on real execution output (`uv run pytest`, logs in `wiki/raw/`) — never by inference. Every new architectural decision requires a page in `wiki/decisions/` + updating `_integration-state.md` when wiring changes. When learning something durable, do ingest: update the page.
