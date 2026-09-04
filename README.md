@@ -7,7 +7,7 @@
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
 | src/alertavida/database.py               |      230 |        4 |     98% |60, 1010, 1068, 1132 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
-| src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       120 |
+| src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       121 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
 | src/alertavida/domain/coordenadas.py     |        5 |        0 |    100% |           |
 | src/alertavida/domain/correlacao.py      |      108 |        0 |    100% |           |
