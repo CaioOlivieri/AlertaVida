@@ -1,6 +1,6 @@
 status: verified
 sources: [[raw/context-md-2026-06-11.pt.md]] (§8)
-updated: 2026-08-07
+updated: 2026-09-04
 
 # Architectural Decision Record
 
@@ -19,7 +19,7 @@ Immutable record translated from the original Portuguese in [[raw/context-md-202
 | Dedup by `cod_alerta` (PK) | Integrity guarantee at database level |
 | Retry only on 5xx/timeout/connection | 4xx errors don't resolve with retry; 408/429 are exceptions |
 | Exponential backoff (2s, 4s, 8s) | Industry standard — respects downed API without hostility |
-| BackgroundScheduler instead of Blocking | Enables clean `Ctrl+C` shutdown on Windows; prepares future FastAPI integration |
+| BackgroundScheduler instead of Blocking | Enables clean `Ctrl+C` shutdown on Windows; prepares future FastAPI integration. **Superseded by [[decisions/scheduler-background-jobs]] (#21)** — `BlockingScheduler` is now in use |
 | `time.sleep(1)` on main thread | Works on any OS, respects `Ctrl+C` natively |
 | `max_instances=1` + `coalesce=True` | Prevents execution pile-up if a round takes longer than the interval |
 | Mock `time.sleep` in tests | Full suite in < 1 second |

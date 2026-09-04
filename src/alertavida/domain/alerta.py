@@ -5,9 +5,10 @@ Invariantes do `Alerta`:
 - `coordenadas` é OBRIGATÓRIO. Alerta sem localização geográfica não entra no
   sistema (princípio de honestidade dos dados — ver wiki/patterns/code-conventions.md).
 - `municipio` é opcional e descritivo. Pode ser None quando a fonte não fornece.
-- `escopo_geografico` é atributo do domínio mas calculado externamente em
-  `monitor.py` via `geographic.classificar_escopo()` (Camada 4 Parte A.1.4).
-  Default `INDETERMINADO` é o valor seguro até a classificação acontecer.
+- `escopo_geografico` é atributo do domínio mas calculado externamente, nas
+  sources (`cemaden.py`/`nasa_eonet.py`), via `geographic.classificar_escopo()`
+  (Camada 4 Parte A.1.4). Default `INDETERMINADO` é o valor seguro até a
+  classificação acontecer.
 - `descricao` é opcional. `NasaEonetSource` popula com o título do evento;
   persistido em `alertas.descricao` e propagado no payload de eventos
   (`detector._payload_de`) desde a issue #11 D4. `from_dict` (usado só por

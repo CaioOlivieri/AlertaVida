@@ -40,7 +40,7 @@ Apache 2.0. Copyright 2026 Caio Olivieri. See [LICENSE](LICENSE).
 
 ## Status
 
-Active development — Layer 4 (multi-source ingestion) complete; Layer 5 (correlation) next. See [wiki](wiki/_index.md).
+Active development — Layer 4 (multi-source ingestion) complete; Layer 5 (correlation) v1 integrated. See [wiki](wiki/_index.md).
 
 ---
 
@@ -56,4 +56,4 @@ Ingestão em tempo real de alertas de desastres naturais para o público brasile
 
 **Licença** — Apache 2.0. Copyright 2026 Caio Olivieri. Veja [LICENSE](LICENSE).
 
-**Status** — Em desenvolvimento ativo — Camada 4 (ingestão multi-fonte) completa; Camada 5 (correlação) a seguir (veja a [wiki](wiki/_index.md)).
+**Status** — Em desenvolvimento ativo — Camada 4 (ingestão multi-fonte) completa; Camada 5 (correlação) v1 integrada (veja a [wiki](wiki/_index.md)).
