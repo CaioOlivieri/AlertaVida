@@ -86,8 +86,27 @@ def test_keyboard_interrupt_encerra_limpo(caplog):
         scheduler.agendar_ingestao()
 
     scheduler_mock.start.assert_called_once_with()
-    scheduler_mock.shutdown.assert_called_once_with(wait=False)
-    assert "Scheduler encerrado pelo usuário." in caplog.text
+    scheduler_mock.shutdown.assert_called_once_with(wait=True)
+    assert "aguardando rodada em andamento encerrar..." in caplog.text
+
+
+def test_sigterm_aciona_shutdown_com_espera(caplog):
+    """SIGTERM (systemctl stop/restart) deve drenar a rodada em andamento, não abortá-la."""
+    scheduler_mock = Mock()
+    with (
+        patch("alertavida.scheduler.criar_banco"),
+        patch("alertavida.scheduler.BlockingScheduler", return_value=scheduler_mock),
+        patch("alertavida.scheduler.signal.signal") as signal_mock,
+    ):
+        caplog.set_level("INFO", logger="alertavida.scheduler")
+        scheduler.agendar_ingestao()
+
+    sinal, handler = signal_mock.call_args.args
+    assert sinal == scheduler.signal.SIGTERM
+
+    handler(scheduler.signal.SIGTERM, None)
+    scheduler_mock.shutdown.assert_called_once_with(wait=True)
+    assert "SIGTERM recebido, aguardando rodada em andamento encerrar..." in caplog.text
 
 
 def test_rodar_rodada_chama_ambas_as_fontes():

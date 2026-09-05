@@ -1,6 +1,8 @@
 import logging
 import os
+import signal
 from datetime import datetime
+from types import FrameType
 
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -57,6 +59,12 @@ def agendar_ingestao() -> None:
         misfire_grace_time=60,
     )
 
+    def _handle_sigterm(signum: int, frame: FrameType | None) -> None:
+        logger.info("SIGTERM recebido, aguardando rodada em andamento encerrar...")
+        scheduler.shutdown(wait=True)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     logger.info(
         f"Scheduler iniciado. Executando ingestão a cada {INTERVALO_MINUTOS} minutos. "
         "Pressione Ctrl+C para encerrar."
@@ -64,8 +72,10 @@ def agendar_ingestao() -> None:
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Scheduler encerrado pelo usuário.")
-        scheduler.shutdown(wait=False)
+        logger.info("Scheduler encerrado pelo usuário, aguardando rodada em andamento encerrar...")
+        scheduler.shutdown(wait=True)
+    else:
+        logger.info("Scheduler encerrado.")
 
 
 if __name__ == "__main__":
