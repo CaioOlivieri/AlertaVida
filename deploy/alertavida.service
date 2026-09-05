@@ -1,0 +1,58 @@
+[Unit]
+Description=AlertaVida ingestion scheduler
+After=network-online.target
+Wants=network-online.target
+# Caps a persistent failure (e.g. a bad DB permission) at 5 restart attempts
+# per 5 minutes instead of ~8,640/day (RestartSec=10 with no limit) —
+# systemd marks the unit failed instead of retrying forever.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=alertavida
+Group=alertavida
+WorkingDirectory=/opt/alertavida
+Environment=ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db
+# The venv's own interpreter, not `uv run` — `uv run` needs a writable HOME
+# (it opens .git dirs under its cache even when the cache is already fully
+# populated) and ProtectSystem=strict makes /opt/alertavida read-only.
+# `uv` is install-time only (deploy/install.sh); the running service never
+# needs it.
+ExecStart=/opt/alertavida/.venv/bin/python -m alertavida.scheduler
+Restart=on-failure
+RestartSec=10
+
+# SIGTERM is systemd's default stop signal but scheduler.py's shutdown path
+# was originally built for Ctrl+C (KeyboardInterrupt). KillSignal=SIGINT
+# routes `systemctl stop`/`restart` through that same path; scheduler.py also
+# installs a real SIGTERM handler as a second line of defense, so either
+# signal drains an in-flight ingestion round instead of killing it mid-write
+# (see wiki/decisions/systemd-vps-deployment.md).
+KillSignal=SIGINT
+
+# Worst case one round: 2 sources x 4 attempts x 30s timeout + backoff
+# (2s+4s+8s) per source = ~268s. Give it comfortable margin above that so a
+# draining round is never SIGKILLed before it finishes.
+TimeoutStopSec=360
+
+# New files (the SQLite DB and its WAL/SHM siblings) are not readable by
+# other local users on a shared host — the DB is not committed and has no
+# reason to be world-readable. 0007 (not 0077) so the `alertavida` GROUP
+# keeps read/write: maintenance scripts run as a real user added to that
+# group don't need `sudo -u alertavida` for routine read/write access (see
+# deploy/README.md's "File permissions" section).
+UMask=0007
+
+# Minimal hardening: this process has no network listeners and only needs to
+# write inside /var/lib/alertavida.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alertavida
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
