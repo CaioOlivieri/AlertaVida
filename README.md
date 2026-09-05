@@ -5,7 +5,7 @@
 | Name                                     |    Stmts |     Miss |   Cover |   Missing |
 |----------------------------------------- | -------: | -------: | ------: | --------: |
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
-| src/alertavida/database.py               |      230 |        4 |     98% |60, 1010, 1068, 1132 |
+| src/alertavida/database.py               |      234 |        4 |     98% |60, 1039, 1097, 1161 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       121 |
 | src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
@@ -19,7 +19,7 @@
 | src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
 | src/alertavida/events.py                 |       54 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
-| src/alertavida/ingestion/orquestrador.py |      125 |        2 |     98% |   234-235 |
+| src/alertavida/ingestion/orquestrador.py |      134 |        2 |     99% |   266-267 |
 | src/alertavida/monitor.py                |       15 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
 | src/alertavida/scheduler.py              |       43 |        0 |    100% |           |
@@ -28,7 +28,7 @@
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                | **1194** |    **8** | **99%** |           |
+| **TOTAL**                                | **1207** |    **8** | **99%** |           |
 
 
 ## Setup coverage badge
