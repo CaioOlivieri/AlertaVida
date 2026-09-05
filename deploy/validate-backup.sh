@@ -35,9 +35,18 @@ fi
 
 echo "== Running the backup unit once =="
 systemctl start alertavida-backup.service
-systemctl status alertavida-backup.service --no-pager
+# Type=oneshot: the start above already blocks until the unit finishes and
+# gates on its exit code. status is display-only — an already-finished
+# oneshot unit reports inactive/dead (exit 3), which must not abort us.
+systemctl status alertavida-backup.service --no-pager || true
 
-NEWEST_BACKUP="$(ls -t "$BACKUP_DIR"/alertavida-*.db 2>/dev/null | head -n1)"
+NEWEST_BACKUP=""
+for f in "$BACKUP_DIR"/alertavida-*.db; do
+    [ -e "$f" ] || continue
+    if [ -z "$NEWEST_BACKUP" ] || [ "$f" -nt "$NEWEST_BACKUP" ]; then
+        NEWEST_BACKUP="$f"
+    fi
+done
 if [ -z "$NEWEST_BACKUP" ]; then
     echo "No backup file found in $BACKUP_DIR" >&2
     exit 1
@@ -76,3 +85,4 @@ if mismatches:
 
 echo
 echo "Restored copy kept at $RESTORED for inspection — delete manually when done."
+echo "=== VALIDATE-BACKUP: ALL CHECKS PASSED ==="
