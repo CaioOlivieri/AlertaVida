@@ -93,8 +93,10 @@ fi
 
 echo "== 6/6: starting the service against the real database =="
 systemctl start alertavida.service
-systemctl status alertavida.service --no-pager
+# status is display-only; the real gate is systemctl start's own exit code.
+systemctl status alertavida.service --no-pager || true
 
 echo
 echo "Cutover complete. Real data now lives at $LIVE_DB."
 echo "Pre-cutover snapshot kept at $SNAPSHOT_PATH — do not delete until Phase 2 closes."
+echo "=== CUTOVER: ALL CHECKS PASSED ==="

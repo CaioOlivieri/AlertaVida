@@ -104,26 +104,39 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
         continue
     fi
 
-    echo "Attempt $attempt/$MAX_ATTEMPTS: PASS — Iniciando rodada -> aguardando rodada em andamento encerrar -> Rodada concluída -> Scheduler iniciado, strictly in that order, all after the restart was issued."
+    VERDICT="PASS — Iniciando rodada -> aguardando rodada em andamento encerrar -> Rodada concluída -> Scheduler iniciado, strictly in that order, all after the restart was issued."
+    echo "Attempt $attempt/$MAX_ATTEMPTS: $VERDICT"
     SUCCESS=true
     break
 done
+
+if [ "$SUCCESS" != true ]; then
+    VERDICT="FAILED: could not observe a genuine mid-round drain in $MAX_ATTEMPTS attempts."
+fi
 
 kill "$FOLLOW_PID" 2>/dev/null || true
 wait "$FOLLOW_PID" 2>/dev/null || true
 
 {
     echo "### systemctl status alertavida.service"
-    systemctl status alertavida.service --no-pager
+    # status is display-only here (PASS/FAIL is decided above from the
+    # journal, not from this exit code); this block runs under pipefail via
+    # the trailing tee, so a non-zero status must not abort it.
+    systemctl status alertavida.service --no-pager || true
     echo
     echo "### journalctl -u alertavida.service (full capture across all attempts)"
     cat "$JOURNAL_TAIL"
+    echo
+    echo "### Verdict"
+    echo "$VERDICT"
 } | tee "$OUT_FILE"
 
 echo
 echo "Saved to $OUT_FILE"
 
 if [ "$SUCCESS" != true ]; then
-    echo "FAILED: could not observe a genuine mid-round drain in $MAX_ATTEMPTS attempts." >&2
+    echo "$VERDICT" >&2
     exit 1
 fi
+
+echo "=== VALIDATE-DRAIN: ALL CHECKS PASSED ==="
