@@ -1,0 +1,20 @@
+[Unit]
+Description=AlertaVida SQLite backup (WAL-safe)
+
+[Service]
+Type=oneshot
+User=alertavida
+Group=alertavida
+WorkingDirectory=/opt/alertavida
+Environment=ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db
+Environment=ALERTAVIDA_BACKUP_DIR=/var/lib/alertavida/backups
+Environment=ALERTAVIDA_BACKUP_RETENTION_DAYS=30
+ExecStart=/opt/alertavida/deploy/backup.sh
+UMask=0007
+
+# Same hardening as alertavida.service — this unit also has no network
+# listeners and only needs to write inside /var/lib/alertavida.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alertavida
