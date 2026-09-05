@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-09-04
+updated: 2026-09-05
 
 # AlertaVida Wiki Index
 
@@ -79,3 +79,4 @@ updated: 2026-09-04
 - [[decisions/rtree-spatial-index-blocking]] — R-Tree confirmed available on both CI OSes (empirical evidence in PR #76), used for the blocking spatial index; no fallback needed
 - [[decisions/incidente-representante-blocking]] — a candidate incident's most recently joined member represents it for the blocking-stage decidir_correlacao call
 - [[decisions/incident-lifecycle-wiring]] — issue #61 wiring: aplicar_resultado_deteccao returns alerta ids, merge-survivor is the older incident, REATIVADO/RESOLVIDO lifecycle handling walks the merge tree
+- [[decisions/systemd-vps-deployment]] — issue #78: minimal VPS + systemd (no Docker), DB path moved outside the git checkout, backup via sqlite3.Connection.backup() (CLI not assumed present), KillSignal=SIGINT + a real SIGTERM handler + shutdown(wait=True) so a restart drains an in-flight round instead of orphaning an alert from #61's lifecycle
