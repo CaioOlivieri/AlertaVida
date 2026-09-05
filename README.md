@@ -22,13 +22,13 @@
 | src/alertavida/ingestion/orquestrador.py |      125 |        2 |     98% |   234-235 |
 | src/alertavida/monitor.py                |       15 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
-| src/alertavida/scheduler.py              |       36 |        0 |    100% |           |
+| src/alertavida/scheduler.py              |       43 |        0 |    100% |           |
 | src/alertavida/sources/\_\_init\_\_.py   |        5 |        0 |    100% |           |
 | src/alertavida/sources/\_http.py         |       85 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
 | src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       119 |
 | src/alertavida/sources/nasa\_eonet.py    |       88 |        0 |    100% |           |
-| **TOTAL**                                | **1187** |    **8** | **99%** |           |
+| **TOTAL**                                | **1194** |    **8** | **99%** |           |
 
 
 ## Setup coverage badge
