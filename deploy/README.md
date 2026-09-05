@@ -186,16 +186,64 @@ That leaves routine maintenance — `scripts/reclassificar_escopos.py`,
 copying the database for `EXPLAIN QUERY PLAN` work (#89) — needing access
 too. Two options, pick the one that matches the host:
 
-- **Shared group (recommended for a single-maintainer machine, including
-  this WSL install):** add your own user to the `alertavida` group —
-  `sudo usermod -aG alertavida $(whoami)` — then start a new shell (or run
-  `sg alertavida -c '<command>'` to pick up the membership immediately
-  without logging out). Your user can then read and write the database
-  directly, no `sudo` needed for routine work.
-- **`sudo -u alertavida` per command**, no group change, on a host where
-  you'd rather not add your own login to the service's group (e.g. a
-  multi-admin production box): `sudo -u alertavida uv run --frozen python
-  scripts/reclassificar_escopos.py`.
+- **Shared group** — **not verified** against a real second user on this
+  install (the maintainer is not currently a member). Requires adding your
+  login to the `alertavida` group — `sudo usermod -aG alertavida
+  <your-username>` — **and starting a new login session** (a plain `sudo
+  usermod` does not take effect in an already-open shell; `sg alertavida -c
+  '<command>'` picks it up immediately without logging out). Once active,
+  your user can read and write the database directly, no `sudo` needed.
+- **`sudo -u alertavida` per command** (verified below), no group change —
+  run against `/opt/alertavida`, not a personal checkout: `alertavida` has
+  no login shell, and the maintainer's own home directory is typically not
+  traversable by other users (`drwxr-x---`), so `sudo -u alertavida` cannot
+  reach a script under a personal checkout regardless. Under `sudo -u
+  alertavida`, `HOME` resolves to `/opt/alertavida` itself, which **is**
+  writable by that user — unlike the systemd unit, where
+  `ProtectSystem=strict` makes `/opt` read-only (see
+  [[decisions/systemd-vps-deployment]]) and is why `ExecStart=` cannot use
+  `uv run` there. See "The `ALERTAVIDA_DB_PATH` trap" below for the exact
+  command.
+
+### The `ALERTAVIDA_DB_PATH` trap
+
+`db_path()` (`src/alertavida/database.py`) resolves from `ALERTAVIDA_DB_PATH`,
+falling back to `data/alertavida.db` **relative to the checkout** when the
+variable is unset. The unit file sets it to
+`/var/lib/alertavida/alertavida.db` — but a plain shell in a checkout does
+not inherit that. Running `python -m alertavida.monitor` or
+`scripts/reclassificar_escopos.py` from there without the variable set
+**silently creates a new, empty database in `data/`** instead of touching
+production — no error, no warning.
+
+Three more things compound this for the `sudo -u alertavida` path
+specifically, each verified against this install:
+
+- `sudo -u alertavida VAR=value cmd` is rejected by Ubuntu's default
+  `env_reset` — use `sudo -u alertavida env VAR=value cmd` instead, the same
+  pattern `deploy/install.sh` already uses for `runuser`.
+- `uv` itself needs a writable `HOME` to run at all — that's why it fails
+  under the unit (`ProtectSystem=strict` makes `/opt` read-only there) but
+  works fine under `sudo -u alertavida`, where `HOME` resolves to the
+  writable `/opt/alertavida` (verified by the `uv sync --frozen` in "Update
+  cycle" above). The command below still calls the venv's own interpreter
+  directly (`/opt/alertavida/.venv/bin/python`) rather than `uv run`, since
+  it needs no `HOME` at all to import the package.
+- Paths must be absolute and under `/opt/alertavida` — not a relative
+  script path, which resolves against whatever directory the caller
+  happened to be in (`sudo` does not change cwd), and not a personal
+  checkout path, per the traversal problem above.
+
+Verified end to end on this install:
+
+```bash
+sudo -u alertavida env ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db \
+  /opt/alertavida/.venv/bin/python -c "from alertavida.database import db_path; print(db_path())"
+# -> /var/lib/alertavida/alertavida.db
+
+sudo -u alertavida env ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db \
+  /opt/alertavida/.venv/bin/python /opt/alertavida/scripts/reclassificar_escopos.py
+```
 
 ## This deployment is a stopgap on WSL, not the permanent host
 
