@@ -17,6 +17,7 @@ from alertavida.database import (
     adicionar_membro_incidente,
     aplicar_resultado_deteccao,
     avaliar_candidatos_correlacao,
+    buscar_alertas_orfaos,
     buscar_incidente_atual,
     buscar_snapshots,
     criar_incidente,
@@ -54,6 +55,7 @@ class RelatorioFonte:
     incidentes_juntados: int = 0
     incidentes_fundidos: int = 0
     incidentes_revisao: int = 0
+    incidentes_orfaos_recuperados: int = 0
 
     def __post_init__(self) -> None:
         if not self.falha_coleta:
@@ -84,6 +86,7 @@ class RelatorioFonte:
                 self.incidentes_juntados,
                 self.incidentes_fundidos,
                 self.incidentes_revisao,
+                self.incidentes_orfaos_recuperados,
             )
             if any(z != 0 for z in zerados):
                 raise ValueError(
@@ -187,7 +190,8 @@ def _correlacionar_rodada(
     eventos: Sequence[EventoDetectado],
     ids_por_codigo: dict[str, int],
     agora: str,
-) -> tuple[int, int, int, int]:
+    fonte: FonteDado,
+) -> tuple[int, int, int, int, int]:
     """Aplica o ciclo de vida de Incidente (Round 1, Q6 — forward-only)
     sobre os eventos de UMA fonte já persistidos nesta rodada.
 
@@ -216,8 +220,36 @@ def _correlacionar_rodada(
     rodada. Uma virada real de categoria não fica se corrigir sozinha em
     v1 — gap aceito dado o viés para separar (Round 2) e REVISAO ser
     barato; dado a #63 calibrar.
+
+    ANTES de processar os eventos desta rodada: varredura de reconciliação
+    (issue #87, ver [[decisions/incident-boundary-reconciliation-sweep]]).
+    É RECUPERAÇÃO, não prevenção — pega um órfão deixado por uma rodada
+    ANTERIOR (processo morto entre `avaliar_candidatos_correlacao` e
+    `criar_incidente`/`adicionar_membro_incidente`), nunca da rodada
+    corrente. Um alerta CRIADO NESTA rodada já está persistido e `ATIVO`
+    (via `aplicar_resultado_deteccao`, que roda antes desta função) mas
+    ainda sem membership — exatamente a forma de um órfão — então o
+    `WHERE` de `buscar_alertas_orfaos` sozinho não distingue "órfão de
+    rodada passada" de "CRIADO desta rodada, ainda não processado pelo
+    loop abaixo". Os ids em `ids_por_codigo` (todos desta rodada) são
+    excluídos explicitamente do resultado da varredura por isso — sem essa
+    exclusão, o loop abaixo tentaria correlacionar o mesmo `alerta_id` uma
+    segunda vez e violaria `UNIQUE (alerta_id)` em `incidente_membros`.
+    Roda por fonte, reaproveitando o loop desta função — uma query a mais
+    por fonte por rodada, vazia no caso normal.
     """
     criados = juntados = fundidos = revisao = 0
+    orfaos_recuperados = 0
+    ids_desta_rodada = set(ids_por_codigo.values())
+
+    for alerta_id in buscar_alertas_orfaos(fonte):
+        if alerta_id in ids_desta_rodada:
+            continue
+        acao, teve_revisao = _abrir_ou_juntar_incidente(alerta_id, agora)
+        criados, juntados, fundidos, revisao = _acumular_contadores(
+            criados, juntados, fundidos, revisao, acao, teve_revisao
+        )
+        orfaos_recuperados += 1
 
     for evento in eventos:
         if evento.tipo is TipoEventoDetectado.CRIADO:
@@ -248,7 +280,7 @@ def _correlacionar_rodada(
             ):
                 resolver_incidente(incidente_id, alerta_id, agora)
 
-    return criados, juntados, fundidos, revisao
+    return criados, juntados, fundidos, revisao, orfaos_recuperados
 
 
 def executar_ingestao(
@@ -311,9 +343,13 @@ def executar_ingestao(
             alertas_por_codigo,
             agora_iso,
         )
-        incidentes_criados, incidentes_juntados, incidentes_fundidos, incidentes_revisao = (
-            _correlacionar_rodada(resultado_det.eventos, ids_por_codigo, agora_iso)
-        )
+        (
+            incidentes_criados,
+            incidentes_juntados,
+            incidentes_fundidos,
+            incidentes_revisao,
+            incidentes_orfaos_recuperados,
+        ) = _correlacionar_rodada(resultado_det.eventos, ids_por_codigo, agora_iso, fonte)
 
         criados_count = sum(
             1 for e in resultado_det.eventos if e.tipo is TipoEventoDetectado.CRIADO
@@ -344,6 +380,7 @@ def executar_ingestao(
                 incidentes_juntados=incidentes_juntados,
                 incidentes_fundidos=incidentes_fundidos,
                 incidentes_revisao=incidentes_revisao,
+                incidentes_orfaos_recuperados=incidentes_orfaos_recuperados,
             )
         )
 

@@ -17,7 +17,7 @@ import pytest
 
 from alertavida import database as db_module
 from alertavida.database import SchemaIncompativelError, conectar
-from alertavida.domain.enums import TipoEvento
+from alertavida.domain.enums import FonteDado, TipoEvento
 from tests.fixtures.schemas_legados import (
     aplicar_schema_eventos_sem_fk,
     aplicar_schema_pos_a1_pre_a2,
@@ -1562,6 +1562,44 @@ def _marcar_resolvido(db_path: Path, alerta_id: int) -> None:
             (alerta_id,),
         )
         conexao.commit()
+
+
+class TestBuscarAlertasOrfaos:
+    """Issue #87 — varredura de reconciliação: alertas `ATIVO` da fonte sem
+    linha em `incidente_membros` (mecanismo compensatório do invariante 4,
+    ver wiki/decisions/incident-boundary-reconciliation-sweep.md)."""
+
+    def test_alerta_sem_membership_eh_orfao(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        assert db_module.buscar_alertas_orfaos(FonteDado.CEMADEN) == [alerta_id]
+
+    def test_alerta_com_membership_nao_eh_orfao(self, db_temporario):
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        db_module.criar_incidente(alerta_id, 1.0, "fundador", "2026-08-12T00:00:00")
+        assert db_module.buscar_alertas_orfaos(FonteDado.CEMADEN) == []
+
+    def test_alerta_resolvido_sem_membership_nao_conta(self, db_temporario):
+        """Órfão que já transitou para RESOLVIDO fica fora do escopo —
+        mesma severidade branda que um alerta pré-#61 nunca correlacionado
+        (wiki/decisions/incident-lifecycle-wiring.md)."""
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            conexao.execute(
+                "UPDATE alertas SET status_interno = 'RESOLVIDO' WHERE id = ?",
+                (alerta_id,),
+            )
+            conexao.commit()
+        assert db_module.buscar_alertas_orfaos(FonteDado.CEMADEN) == []
+
+    def test_filtra_por_fonte(self, db_temporario):
+        alerta_cemaden = _inserir_alerta(db_temporario, "A1")
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            conexao.execute(
+                "INSERT INTO alertas (fonte, cod_alerta, latitude, longitude, detectado_em) "
+                "VALUES ('EONET', 'B1', -10.0, -40.0, '2026-08-12T00:00:00')"
+            )
+            conexao.commit()
+        assert db_module.buscar_alertas_orfaos(FonteDado.CEMADEN) == [alerta_cemaden]
 
 
 class TestBuscarIncidenteAtual:
