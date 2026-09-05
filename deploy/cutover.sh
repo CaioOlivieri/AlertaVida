@@ -10,7 +10,11 @@
 #   4. move the real database into place, fix ownership/permissions
 #   5. verify the moved file (integrity_check + row count vs. the snapshot);
 #      abort and restore the snapshot if either disagrees
-#   6. start the service again
+#   6. start the service again and arm alertavida-backup.timer — this is the
+#      first point at which a real database exists to back up.
+#      deploy/install.sh cannot arm it earlier (deploy/backup.sh exits 1
+#      against an empty database), and a README-only manual step is exactly
+#      the failure mode this issue already hit twice
 #
 #   sudo bash deploy/cutover.sh <path-to-real-alertavida.db>
 #
@@ -91,7 +95,7 @@ sys.exit(0 if (integrity == 'ok' and n_live == n_snap) else 1)
     exit 1
 fi
 
-echo "== 6/6: starting the service against the real database =="
+echo "== 6/6: starting the service and arming the backup timer =="
 systemctl start alertavida.service
 # status is display-only; the real gate is systemctl start's own exit code.
 systemctl status alertavida.service --no-pager || true
@@ -99,4 +103,11 @@ systemctl status alertavida.service --no-pager || true
 echo
 echo "Cutover complete. Real data now lives at $LIVE_DB."
 echo "Pre-cutover snapshot kept at $SNAPSHOT_PATH — do not delete until Phase 2 closes."
-echo "=== CUTOVER: ALL CHECKS PASSED ==="
+
+# First point a real database exists to back up — install.sh can't arm this
+# earlier (backup.py exits 1 against an empty database), and a README-only
+# manual step is exactly the failure mode this issue already hit twice.
+systemctl enable --now alertavida-backup.timer
+
+echo "Backup timer armed (alertavida-backup.timer enabled and started)."
+echo "=== CUTOVER: ALL CHECKS PASSED — backup timer armed ==="

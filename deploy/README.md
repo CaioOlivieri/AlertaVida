@@ -51,10 +51,14 @@ Then start it:
 
 ```bash
 systemctl enable --now alertavida.service
-systemctl enable --now alertavida-backup.timer
 systemctl status alertavida.service
 journalctl -u alertavida -f
 ```
+
+Note: this does **not** arm `alertavida-backup.timer` — there is no database
+to back up yet at this point (`deploy/backup.sh` exits 1 against an empty
+`/var/lib/alertavida`). `deploy/cutover.sh` arms the timer once the real
+database is in place; see "Migrating an existing database" below.
 
 `deploy/uninstall.sh` reverses steps 1, 3 and 5. It never touches step 2's
 `/var/lib/alertavida` (the live database) unless you pass `--purge-data` —
@@ -84,7 +88,18 @@ sudo bash deploy/cutover.sh <path-to-existing-alertavida.db>
    prior test database) — a stale WAL next to a freshly moved main file is
    exactly the inconsistency this whole approach avoids.
 4. Moves the real database into place, fixes ownership/permissions.
-5. Starts the service again.
+5. Verifies the moved file (`integrity_check` + row count vs. the snapshot);
+   aborts and restores the snapshot if either disagrees.
+6. Starts the service again and arms `alertavida-backup.timer`. This is the
+   first point a real database exists to back up — `deploy/install.sh` can't
+   arm it earlier (`deploy/backup.sh` exits 1 against an empty database),
+   and a README-only manual step is exactly the failure mode this issue hit
+   twice already (once for the install `cp`, once for a validation script
+   aborting silently). Confirm it landed:
+
+   ```bash
+   systemctl list-timers alertavida-backup.timer
+   ```
 
 Refuses to run if the *source* database itself has `-wal`/`-shm` siblings
 (checkpoint it first with nothing else connected).
