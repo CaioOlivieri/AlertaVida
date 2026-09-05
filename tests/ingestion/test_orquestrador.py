@@ -996,3 +996,72 @@ def test_correlacao_funde_dois_incidentes_com_redirect_intacto(
     payload = json.loads(evento_fusao[1])
     assert payload["incidente_sobrevivente_id"] == sobrevivente_id
     assert payload["incidente_fundido_id"] == fundido_id
+
+
+def test_correlacao_recupera_alerta_orfao_de_transacao_partida(
+    db_temporario: Path,
+) -> None:
+    """Issue #87: um processo morto entre a transação de
+    `avaliar_candidatos_correlacao` e a de `criar_incidente`/
+    `adicionar_membro_incidente` deixa o alerta ATIVO, persistido, sem
+    linha em `incidente_membros`. Sem varredura isso é permanente — um
+    alerta INALTERADO nunca gera `EventoDetectado`, então `_correlacionar_
+    rodada` nunca mais veria este `cod_alerta` (ver reprodução na issue e
+    wiki/decisions/incident-lifecycle-wiring.md, seção "Correlation failure
+    is permanent").
+
+    Reproduz exatamente o cenário da issue: alerta correlaciona
+    normalmente na rodada 1, a membership é apagada (simulando o crash) e o
+    alerta permanece inalterado no feed pelas rodadas seguintes. A
+    varredura de reconciliação no início de `_correlacionar_rodada`
+    recupera o órfão na PRÓXIMA rodada, sem precisar de nenhuma mudança no
+    alerta — e não reage de novo depois de já ter recuperado."""
+    onset = datetime(2026, 8, 12, 10, 0, tzinfo=UTC)
+    alerta = _alerta(
+        "A1",
+        FonteDado.CEMADEN,
+        lat=-29.84,
+        lon=-56.73,
+        cobrade_codigo="1.2.1.0.0",
+        data_criacao=onset,
+        ult_atualizacao=onset,
+    )
+    source = FakeDataSource.com_rodadas(
+        fonte=FonteDado.CEMADEN,
+        rodadas=[[alerta], [alerta], [alerta]],
+    )
+
+    relatorio_1 = executar_ingestao([source])
+    assert relatorio_1.por_fonte[0].incidentes_criados == 1
+    assert relatorio_1.por_fonte[0].incidentes_orfaos_recuperados == 0
+
+    # Simula o crash entre as duas transações de _abrir_ou_juntar_incidente:
+    # apaga só a membership, exatamente como a reprodução da issue #87.
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        alerta_id = conexao.execute(
+            "SELECT id FROM alertas WHERE cod_alerta = 'A1'"
+        ).fetchone()[0]
+        conexao.execute(
+            "DELETE FROM incidente_membros WHERE alerta_id = ?", (alerta_id,)
+        )
+        conexao.commit()
+
+    # Rodada 2: alerta INALTERADO (ult_atualizacao não muda) — sem a
+    # varredura, nada no loop de eventos tocaria neste alerta.
+    relatorio_2 = executar_ingestao([source])
+    assert relatorio_2.por_fonte[0].novos == 0
+    assert relatorio_2.por_fonte[0].inalterados == 1
+    assert relatorio_2.por_fonte[0].incidentes_orfaos_recuperados == 1
+    assert relatorio_2.por_fonte[0].incidentes_criados == 1
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        membros = conexao.execute(
+            "SELECT COUNT(*) FROM incidente_membros WHERE alerta_id = ?", (alerta_id,)
+        ).fetchone()[0]
+    assert membros == 1
+
+    # Rodada 3: já recuperado — a varredura não encontra mais órfãos.
+    relatorio_3 = executar_ingestao([source])
+    assert relatorio_3.por_fonte[0].incidentes_orfaos_recuperados == 0
+    assert relatorio_3.por_fonte[0].incidentes_criados == 0
+    assert relatorio_3.por_fonte[0].incidentes_juntados == 0

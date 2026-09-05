@@ -1,6 +1,6 @@
 status: integrated
 sources: `src/alertavida/ingestion/orquestrador.py`
-updated: 2026-08-13
+updated: 2026-09-05 (issue #87)
 
 # ingestion-orquestrador
 
@@ -39,8 +39,21 @@ Camada 5 Incidente lifecycle (Round 1, Q6, forward-only — see
   after CRIADO; re-running blocking on every update would almost always
   reproduce the same decision).
 
-`RelatorioFonte` gained four counters — `incidentes_criados`,
-`incidentes_juntados`, `incidentes_fundidos`, `incidentes_revisao` — rendered
+**Reconciliation sweep (issue #87).** Before any of the above,
+`_correlacionar_rodada` calls `buscar_alertas_orfaos(fonte)` and runs each
+result through `_abrir_ou_juntar_incidente` — recovery for an alert left
+`ATIVO` with no `incidente_membros` row by a process killed between
+`avaliar_candidatos_correlacao` and `criar_incidente`/
+`adicionar_membro_incidente` in a *previous* round. Ids already in this
+round's `ids_por_codigo` are excluded (they're mid-flight in the loop
+below, not orphaned). See
+[[decisions/incident-boundary-reconciliation-sweep]] for why this — not a
+shared-connection transaction — was chosen, and invariant 4's now-explicit
+exception for this persistence chain.
+
+`RelatorioFonte` gained five counters — `incidentes_criados`,
+`incidentes_juntados`, `incidentes_fundidos`, `incidentes_revisao`,
+`incidentes_orfaos_recuperados` — rendered
 by `formatar_relatorio` ([[components/reporting]]). Incident *resolution* and
 *reactivation* are deliberately **not** counters here, mirroring the existing
 precedent for alert resolution (`RelatorioFonte` has no `resolvidos` field

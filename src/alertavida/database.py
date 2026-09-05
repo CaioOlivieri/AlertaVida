@@ -855,6 +855,35 @@ def fundir_incidentes(
         conexao.commit()
 
 
+def buscar_alertas_orfaos(fonte: FonteDado) -> list[int]:
+    """Ids de alertas `ATIVO` da fonte sem linha em `incidente_membros`.
+
+    Mecanismo compensatório do invariante 4 para a Camada 5 (issue #87,
+    ver [[decisions/incident-boundary-reconciliation-sweep]]): cobre um
+    processo morto entre a transação de `avaliar_candidatos_correlacao` e a
+    de `criar_incidente`/`adicionar_membro_incidente` — o alerta fica
+    persistido e `ATIVO`, mas sem membership, e nenhuma rodada futura o
+    reprocessa (`ATIVO` sem mudança nunca gera `EventoDetectado`).
+
+    Escopo deliberadamente `status_interno = 'ATIVO'`: um órfão que já
+    transitou para `RESOLVIDO` antes de ser varrido fica de fora — mesmo
+    tratamento que [[decisions/incident-lifecycle-wiring]] já dá a um
+    alerta pré-#61 que resolve sem nunca ter sido correlacionado (severidade
+    branda, não vale abrir um Incidente para um alerta morto).
+    """
+    with conectar() as conexao:
+        cursor = conexao.execute(
+            """
+            SELECT a.id
+            FROM alertas a
+            LEFT JOIN incidente_membros m ON m.alerta_id = a.id
+            WHERE a.fonte = ? AND a.status_interno = 'ATIVO' AND m.id IS NULL
+            """,
+            (fonte.value,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def buscar_incidente_atual(alerta_id: int) -> int | None:
     """Segue o redirect de fusão (`fundido_em`) até o Incidente sobrevivente
     ao qual `alerta_id` pertence hoje.

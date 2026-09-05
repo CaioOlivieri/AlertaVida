@@ -1,13 +1,13 @@
 status: integrated
-sources: [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-09-04
+sources: [[raw/claude-md-2026-06-11.pt.md]], issue #87
+updated: 2026-09-05
 
 # Resilience Invariants
 
 1. **Counter assertion in `executar_ingestao`** — `novos + atualizados + reativados + inalterados + descartados == coletados` per source. If you add a new outcome path, increment the matching counter.
 2. **Per-item `try/except` in the ingestion loop** — one bad alert must never stop the rest of the batch. Errors are counted, not raised.
 3. **Retry only on 5xx / 408 / 429 / URLError / socket.timeout** — 4xx (other than 408/429) re-raise immediately.
-4. **Transactional outbox** — INSERTs into alerts and outbox events must happen in the same SQLite transaction.
+4. **Transactional outbox** — INSERTs into alerts and outbox events must happen in the same SQLite transaction. Scope: `aplicar_resultado_deteccao` only. Camada 5's own Incidente lifecycle (`avaliar_candidatos_correlacao` → `criar_incidente`/`adicionar_membro_incidente` → `fundir_incidentes`) is an explicit, documented **exception** — each step commits its own transaction, so a process killed between `avaliar_candidatos_correlacao` and the next step can leave an alert `ATIVO` with no `incidente_membros` row. Compensated by a reconciliation sweep the next round, not fixed at the transaction boundary. See [[decisions/incident-boundary-reconciliation-sweep]].
 5. **`ChangeDetector` is pure** — no I/O, no database, no network.
 6. **`BlockingScheduler`** — the scheduler process has no other work on its main thread; `start()` blocks and a `try/except (KeyboardInterrupt, SystemExit)` around it calls `scheduler.shutdown(wait=False)` for clean `Ctrl+C` teardown. Replaced the earlier `BackgroundScheduler` + `time.sleep(1)` loop (issue #21) — the swap was of keep-alive mechanism, not of scheduling policy. See [[decisions/scheduler-background-jobs]].
 7. **`max_instances=1, coalesce=True, misfire_grace_time=60`** — prevents pile-up.

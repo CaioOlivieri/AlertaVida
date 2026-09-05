@@ -26,7 +26,8 @@ def formatar_relatorio(relatorio: RelatorioIngestao) -> str:
                 f"[incidentes: {rf.incidentes_criados} criados, "
                 f"{rf.incidentes_juntados} juntados, "
                 f"{rf.incidentes_fundidos} fundidos, "
-                f"{rf.incidentes_revisao} revisão] "
+                f"{rf.incidentes_revisao} revisão, "
+                f"{rf.incidentes_orfaos_recuperados} órfãos recuperados] "
                 f"em {rf.duracao_segundos:.2f}s"
             )
     linhas.append(f"Total: {relatorio.total} alertas")

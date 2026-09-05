@@ -1,6 +1,6 @@
 status: integrated
 sources: `src/alertavida/database.py`
-updated: 2026-08-13
+updated: 2026-09-05 (issue #87)
 
 # database
 
@@ -20,6 +20,8 @@ SQLite persistence layer. Key contracts:
 Five state-change functions, each its own `with conectar()` transaction covering the state write **and** its outbox event (invariant 4): `criar_incidente`, `adicionar_membro_incidente`, `resolver_incidente`, `reativar_incidente`, `fundir_incidentes`. All funnel through `_inserir_evento_outbox`, which validates the runtime invariant `agregado_incidente_id IS NOT NULL` iff `tipo` is one of the five incident event types (`IncidenteCriado`/`Atualizado`/`Resolvido`/`Reativado`/`Fundido`) — not a `CHECK` constraint, since SQLite can't add one via `ALTER TABLE`. `agregado_id` (the #22 FK to `alertas`) stays `NOT NULL` and is populated with the *triggering alert* on every incident event too — see [[decisions/agregado-incidente-id]] for why `eventos` needed a second, independent nullable FK column rather than reusing `agregado_id` or a payload-only reference, and why no incident event type lacks a triggering alert.
 
 Three read-only helpers added by issue #61 for the ingestion integration's lifecycle decisions (all in `with conectar()`, no writes): `buscar_incidente_atual(alerta_id) -> int | None` follows the `fundido_em` redirect chain to the current survivor (or `None` if the alert was never correlated); `status_incidente(incidente_id) -> str` reads `ATIVO`/`RESOLVIDO` (raises `ValueError` if the id doesn't exist); `todos_membros_resolvidos(incidente_id) -> bool` runs a `WITH RECURSIVE` query over the *merge tree* rooted at the given incident (not just its own `incidente_membros` rows) — necessary because `fundir_incidentes` never moves membership rows, so a merged-away incident's members still carry its old `incidente_id`. See [[decisions/incident-lifecycle-wiring]].
+
+A fourth read-only helper, `buscar_alertas_orfaos(fonte: FonteDado) -> list[int]` (issue #87), returns `ATIVO` alert ids for the source with no `incidente_membros` row — a process killed between `avaliar_candidatos_correlacao`'s transaction and `criar_incidente`/`adicionar_membro_incidente`'s leaves exactly this shape. Scoped to `ATIVO` deliberately: an orphan that already resolved is out of scope, same severity judgment as a pre-#61 alert that resolves uncorrelated. Consumed by `_correlacionar_rodada`'s reconciliation sweep — see [[decisions/incident-boundary-reconciliation-sweep]] and invariant 4's now-explicit exception for this persistence chain in [[patterns/resilience-invariants]].
 
 DB defaults to `data/alertavida.db` (gitignored), overridable via `ALERTAVIDA_DB_PATH`; the default is computed relative to `database.py`, so it works regardless of CWD. `pythonpath = ["src"]` in pytest config.
 
