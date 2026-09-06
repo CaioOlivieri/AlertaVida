@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-09-05
+updated: 2026-09-06
 
 # AlertaVida Wiki Index
 
@@ -17,6 +17,7 @@ updated: 2026-09-05
 - [[_integration-state]] — module-by-module wiring table
 - [[_glossary]] — domain terminology
 - [[changelog]] — project history (translated from §10)
+- [[handoff-2026-09-06]] — project state, machine map, field-data measurements and open-issue order as of 2026-09-06
 
 ### Projects (8-layer roadmap)
 - [[projects/layer-1-ingestion]]
