@@ -174,6 +174,59 @@ ls -la /var/lib/alertavida/backups/
 once, restores the newest file into a third scratch path, runs `PRAGMA
 integrity_check`, and compares row counts against the live database.
 
+## WeatherNext surge watch (issue #70)
+
+Two independent jobs support the Round 2 centroide-vs-risco discriminator
+([[projects/layer-5-correlation]]): a daily forecast check
+(`scripts/weathernext_surge_watch.py`) and a high-frequency raw CEMADEN
+capture gated on it (`scripts/weathernext_cemaden_capture.py`). Design
+recorded in [[decisions/weathernext-surge-watch-design]].
+
+**Not installed by `deploy/install.sh` and does not run as `alertavida`.**
+Both scripts need the BigQuery `bq` CLI authenticated with the maintainer's
+own Google credentials (Application Default Credentials under
+`~/.config/gcloud/`) — the `alertavida` service account has no reason to
+read those and no login shell to run `bq` interactively even if it did. They
+run as **user systemd units** (`systemctl --user`), installed under your own
+`~/.config/systemd/user/`, no root needed to install or enable:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/weathernext-surge-watch.service deploy/weathernext-surge-watch.timer \
+   deploy/weathernext-cemaden-capture.service deploy/weathernext-cemaden-capture.timer \
+   ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now weathernext-surge-watch.timer
+systemctl --user enable --now weathernext-cemaden-capture.timer
+```
+
+**User units only run while you have an active session, unless lingering is
+enabled** — without it, both timers stop the moment you log out. Enable it
+once (needs root, one time only):
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+This host is WSL — same caveat as ["This deployment is a stopgap on
+WSL"](#this-deployment-is-a-stopgap-on-wsl-not-the-permanent-host) below:
+lingering keeps the units running across logout, but **not** across a
+Windows reboot or WSL shutdown. If the rainy season needs this covered
+through a Windows restart, that is the same Phase 2 (always-on host) gap
+already tracked there — nothing new introduced by this issue.
+
+Verify:
+
+```bash
+systemctl --user list-timers 'weathernext-*'
+cat data/weathernext_surge_watch.json   # generated after the first run
+ls data/weathernext_cemaden_captures/   # populated only once watch_mode is true
+```
+
+`data/` here is the git checkout's own `data/` (gitignored) — not
+`/var/lib/alertavida` — because these jobs run as the maintainer, not
+`alertavida` (see the decision page for why).
+
 ## File permissions
 
 The SQLite file is created with the process's `UMask=0007` (both units) —
