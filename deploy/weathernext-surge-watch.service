@@ -1,0 +1,15 @@
+[Unit]
+Description=AlertaVida WeatherNext surge watch (daily forecast artifact)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projetos/AlertaVida
+# %h/.local/bin/uv is where the standard uv installer places it for a
+# per-user install (verified on the maintainer's own host, 2026-09-05) --
+# distinct from /usr/local/bin/uv, which is the system-wide path
+# deploy/install.sh bootstraps for the `alertavida` service user. This unit
+# intentionally runs as whoever installs it (no `User=` line), not
+# `alertavida` -- see wiki/decisions/weathernext-surge-watch-design.md for
+# why (the ADC credential this script needs lives under the maintainer's own
+# home and the `alertavida` service account has no reason to read it).
+ExecStart=%h/.local/bin/uv run --directory %h/Projetos/AlertaVida python -m scripts.weathernext_surge_watch

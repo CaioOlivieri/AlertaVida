@@ -1,0 +1,11 @@
+[Unit]
+Description=AlertaVida high-frequency raw CEMADEN capture (surge watch)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projetos/AlertaVida
+# Fast no-op unless weathernext-surge-watch.timer's artifact has watch_mode
+# on -- see scripts/weathernext_cemaden_capture.py::em_modo_vigilancia. Same
+# reasoning as the surge-watch service for why no `User=` line: runs as
+# whoever installs it.
+ExecStart=%h/.local/bin/uv run --directory %h/Projetos/AlertaVida python -m scripts.weathernext_cemaden_capture

@@ -1,0 +1,14 @@
+[Unit]
+Description=High-frequency AlertaVida CEMADEN capture check (surge watch)
+
+[Timer]
+# Same cadence as the production ingestion poll (alertavida.service, 5 min)
+# -- "high-frequency" is relative to the daily forecast check, not to what
+# the collector already does against this same CEMADEN endpoint every day.
+# Each tick is a no-op (no network call at all) unless watch_mode is on, so
+# running it always-on costs nothing outside an actual surge.
+OnCalendar=*:0/5
+Persistent=false
+
+[Install]
+WantedBy=timers.target
