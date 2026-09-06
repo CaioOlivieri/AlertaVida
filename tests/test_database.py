@@ -188,8 +188,7 @@ class TestMigrationAditiva:
         assert "assinatura" not in colunas_depois
 
     def test_schema_a1_perde_indices_especulativos(self, tmp_path, monkeypatch):
-        """Manutenibilidade #11 D3: idx_uf/idx_evento/idx_nivel são removidos;
-        idx_fonte/idx_escopo_geografico permanecem (uso plausível)."""
+        """Manutenibilidade #11 D3: idx_uf/idx_evento/idx_nivel são removidos."""
         db_path = tmp_path / "a1_com_indices.db"
         with contextlib.closing(sqlite3.connect(db_path)) as conexao:
             aplicar_schema_pos_a1_pre_a2(conexao)
@@ -204,8 +203,30 @@ class TestMigrationAditiva:
         assert "idx_uf" not in indices_depois
         assert "idx_evento" not in indices_depois
         assert "idx_nivel" not in indices_depois
-        assert "idx_fonte" in indices_depois
-        assert "idx_escopo_geografico" in indices_depois
+
+    def test_schema_a1_perde_idx_fonte_e_idx_escopo_geografico(
+        self, tmp_path, monkeypatch
+    ):
+        """Manutenibilidade #89: idx_escopo_geografico é especulativo pelo
+        mesmo critério da #11 D3 (nenhuma query filtra por essa coluna).
+        idx_fonte é redundante — sqlite_autoindex_alertas_1 (do UNIQUE
+        (fonte, cod_alerta)) tem `fonte` como coluna líder e serve o mesmo
+        WHERE de buscar_snapshots (EQP confirmado em banco populado, PR #89:
+        planner cai em sqlite_autoindex_alertas_1, sem table scan)."""
+        db_path = tmp_path / "a1_com_indices_fonte_escopo.db"
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            aplicar_schema_pos_a1_pre_a2(conexao)
+        _patch_db_path(monkeypatch, db_path)
+
+        indices_antes = _indices_de(db_path, "alertas")
+        assert {"idx_fonte", "idx_escopo_geografico"}.issubset(indices_antes)
+
+        db_module.criar_banco()
+
+        indices_depois = _indices_de(db_path, "alertas")
+        assert "idx_fonte" not in indices_depois
+        assert "idx_escopo_geografico" not in indices_depois
+        assert "sqlite_autoindex_alertas_1" in indices_depois
 
     def test_schema_a1_recebe_coluna_descricao(self, tmp_path, monkeypatch):
         """Manutenibilidade #11 D4: descricao é adicionada por _migrar_banco()."""
@@ -289,9 +310,10 @@ class TestCriacaoSchemaAtual:
         assert esperadas.issubset(colunas)
 
         indices = _indices_de(db_path, "alertas")
-        # Índices especulativos nunca criados (manutenibilidade #11 D3)
+        # Índices especulativos nunca criados (manutenibilidade #11 D3, #89)
         assert not {"idx_uf", "idx_evento", "idx_nivel"} & indices
-        assert {"idx_fonte", "idx_escopo_geografico"}.issubset(indices)
+        assert not {"idx_fonte", "idx_escopo_geografico"} & indices
+        assert "sqlite_autoindex_alertas_1" in indices
 
     def test_cria_tabela_eventos(self, tmp_path, monkeypatch):
         db_path = tmp_path / "novo.db"
