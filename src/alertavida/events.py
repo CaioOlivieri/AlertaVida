@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Callable
 
-from alertavida.database import conectar
+from alertavida.database import _TIPOS_EVENTO_INCIDENTE, conectar
 
 logger = logging.getLogger(__name__)
 
@@ -136,4 +136,6 @@ def criar_bus_producao() -> EventBus:
     bus.subscribe("AlertaAtualizado", log_handler)
     bus.subscribe("AlertaResolvido", log_handler)
     bus.subscribe("AlertaReativado", log_handler)
+    for tipo in _TIPOS_EVENTO_INCIDENTE:
+        bus.subscribe(tipo, log_handler)
     return bus

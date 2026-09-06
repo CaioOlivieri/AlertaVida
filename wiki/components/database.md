@@ -1,6 +1,6 @@
 status: integrated
 sources: `src/alertavida/database.py`
-updated: 2026-09-05 (issue #87)
+updated: 2026-09-06 (issue #88)
 
 # database
 
@@ -12,6 +12,12 @@ SQLite persistence layer. Key contracts:
 - `_verificar_compatibilidade_schema()` — two rejection paths, both raising `SchemaIncompativelError` with distinct messages: a pre-A.1 `alertas` table (missing `id`/`fonte`), and an `eventos` table that exists **without** the FK (pre-#22 database). Neither has an automatic migration — SQLite adds neither a surrogate PK nor a FK via `ALTER TABLE`, and `_migrar_banco()` stays additive-only. See [[decisions/foreign-key-eventos-agregado-id]].
 - `buscar_snapshots(fonte: FonteDado)` — reads all alert snapshots (any status) with safety net via `FonteDado.from_string()`.
 - `aplicar_resultado_deteccao(resultado, alertas_por_codigo, agora) -> dict[str, int]` — single transaction: INSERT/UPDATE alerts + INSERT outbox events. UPDATE branches (ATUALIZADO/REATIVADO/RESOLVIDO) use `UPDATE … RETURNING id` via the `_executar_retornando_id` helper — one query instead of UPDATE-then-SELECT. ATUALIZADO and REATIVADO share one branch (REATIVADO adds `status_interno = 'ATIVO'`). Since issue #61, returns `{cod_alerta: alerta_id}` for every event with a resolved `agregado_id` — the ingestion integration point needs exactly those ids right after persistence to correlate CRIADO/REATIVADO/RESOLVIDO alerts; see [[decisions/incident-lifecycle-wiring]].
+
+## `alertas.descricao` is write-once, never read (issue #88 finding, not fixed here)
+
+`descricao` (added additively, issue #11 D4, to stop it being write-only in the domain model) is populated on INSERT in `aplicar_resultado_deteccao`'s CRIADO branch but is absent from the UPDATE issued by the ATUALIZADO/REATIVADO branch, and no `SELECT` in the codebase reads it back. As of 2026-09-04, 567 of 574 `alertas` rows had it filled and zero call sites consumed it.
+
+The practical effect: if a source's description for an event changes after creation (e.g. an EONET title edit), the stored value stays frozen at whatever it was on INSERT. This is latent, not yet a bug — it only becomes one once something starts reading `descricao` and trusting it as current, most likely Camada 6 (`GET /incidentes`/alert serialization). **Not fixed here** — whoever wires the first reader should either add `descricao` to the UPDATE branch or confirm staleness is acceptable for that consumer.
 
 ## Incident persistence (Camada 5, issue #59)
 

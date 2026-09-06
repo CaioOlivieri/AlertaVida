@@ -2,6 +2,7 @@ import contextlib
 import logging
 import sqlite3
 
+from alertavida.database import _TIPOS_EVENTO_INCIDENTE
 from alertavida.events import (
     EventBus,
     OutboxDispatcher,
@@ -196,13 +197,15 @@ def test_log_handler_loga_evento(caplog) -> None:
     assert "C1" in caplog.text
 
 
-def test_criar_bus_producao_inscreve_os_quatro_tipos() -> None:
+def test_criar_bus_producao_inscreve_alertas_e_incidentes() -> None:
     bus = criar_bus_producao()
 
     assert bus.handler_count("AlertaCriado") == 1
     assert bus.handler_count("AlertaAtualizado") == 1
     assert bus.handler_count("AlertaResolvido") == 1
     assert bus.handler_count("AlertaReativado") == 1
+    for tipo in _TIPOS_EVENTO_INCIDENTE:
+        assert bus.handler_count(tipo) == 1
 
 
 def test_criar_bus_producao_devolve_instancias_independentes() -> None:
