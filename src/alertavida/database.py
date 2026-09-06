@@ -199,6 +199,16 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     conexao.execute("DROP INDEX IF EXISTS idx_evento")
     conexao.execute("DROP INDEX IF EXISTS idx_nivel")
 
+    # Manutenibilidade #89 — idx_escopo_geografico era especulativo pelo
+    # mesmo critério da #11 D3 (nenhuma query filtra por escopo_geografico).
+    # idx_fonte é redundante: UNIQUE (fonte, cod_alerta) já cria
+    # sqlite_autoindex_alertas_1 com `fonte` como coluna líder, que serve o
+    # WHERE de buscar_snapshots igualmente bem — confirmado por EXPLAIN QUERY
+    # PLAN em banco populado (609 linhas), planner cai em
+    # sqlite_autoindex_alertas_1 sem table scan. DROP INDEX não afeta dados.
+    conexao.execute("DROP INDEX IF EXISTS idx_fonte")
+    conexao.execute("DROP INDEX IF EXISTS idx_escopo_geografico")
+
     # Manutenibilidade #11 D4 — descricao era write-only no domínio (NasaEonetSource
     # já a populava com o título do evento, mas o dado morria na ingestão).
     if "descricao" not in colunas_existentes:
@@ -264,10 +274,6 @@ def criar_banco() -> None:
                 UNIQUE (fonte, cod_alerta)
             )
             """
-        )
-        conexao.execute("CREATE INDEX IF NOT EXISTS idx_fonte ON alertas (fonte)")
-        conexao.execute(
-            "CREATE INDEX IF NOT EXISTS idx_escopo_geografico ON alertas (escopo_geografico)"
         )
         conexao.execute(
             """
