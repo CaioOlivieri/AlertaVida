@@ -44,7 +44,8 @@ What it does:
    under this unit's `ProtectSystem=strict`).
 4. Clones the given ref into `/opt/alertavida` and runs `uv sync --frozen`
    as the `alertavida` user, creating `/opt/alertavida/.venv`.
-5. Copies the three unit files into `/etc/systemd/system/` and runs
+5. Copies the five unit files (service, backup service + timer, upload
+   service + timer) into `/etc/systemd/system/` and runs
    `systemctl daemon-reload`.
 
 Then start it:
@@ -117,6 +118,14 @@ sudo -u alertavida /usr/local/bin/uv sync --frozen
 systemctl restart alertavida.service
 ```
 
+`git pull` does not touch `/etc/systemd/system/`. When a release adds or
+changes a file under `deploy/*.service` / `deploy/*.timer`, also run:
+
+```bash
+sudo cp /opt/alertavida/deploy/alertavida*.service /opt/alertavida/deploy/alertavida*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
 `systemctl restart` sends `KillSignal=SIGINT` (not the systemd default
 SIGTERM) — see [[decisions/systemd-vps-deployment]] for why this matters:
 without it, a restart mid-round could permanently orphan an alert from any
@@ -173,6 +182,61 @@ ls -la /var/lib/alertavida/backups/
 `deploy/validate-backup.sh` automates the full check: runs the backup unit
 once, restores the newest file into a third scratch path, runs `PRAGMA
 integrity_check`, and compares row counts against the live database.
+
+### Off-host copy: Google Drive upload (issue #120)
+
+The backups above sit on the same disk as the database they protect.
+`alertavida-upload.timer` runs `deploy/upload.sh` once a day at 01:00 (plus
+up to a 5-minute random delay) to copy them to `gdrive:AlertaVida/backups`
+with `rclone`.
+
+The script copies what is not on the remote yet (`--immutable`: an existing
+remote file is never overwritten), verifies size and hash of every local
+backup against the remote (`rclone check --one-way`), and only then writes
+the UTC time to `/var/lib/alertavida/last_upload_ok`. It **never deletes
+anything**: local retention belongs to `deploy/backup.py` alone
+(`ALERTAVIDA_BACKUP_RETENTION_DAYS`, 30), and the remote is append-only —
+nothing prunes the Drive folder, by choice.
+
+One-time manual setup — `install.sh` copies the units but cannot do these:
+
+```bash
+# 1. rclone itself (not installed by install.sh)
+sudo apt install rclone
+
+# 2. the Drive credential, as the service user. Name the remote `gdrive`.
+#    Prefer scope `drive.file` (only files rclone itself created) over
+#    `drive` (the whole Drive).
+sudo install -d -o alertavida -g alertavida -m 0700 /var/lib/alertavida/rclone
+sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf rclone config
+
+# 3. arm the timer
+sudo systemctl enable --now alertavida-upload.timer
+```
+
+`rclone.conf` holds an OAuth refresh token. It is never committed and never
+leaves `/var/lib/alertavida/rclone/` (mode `0700`, owner `alertavida`).
+
+Check the upload ran:
+
+```bash
+cat /var/lib/alertavida/last_upload_ok
+journalctl -u alertavida-upload.service -n 20
+```
+
+A successful run ends with `=== UPLOAD: ALL CHECKS PASSED ===`. The absence
+of that line is the failure signal, even if the unit looks idle.
+
+Restore from the Drive (with the service stopped, into a scratch path first
+— never straight over the live database):
+
+```bash
+sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf \
+  rclone copy gdrive:AlertaVida/backups/alertavida-<timestamp>.db /var/lib/alertavida/restore/
+```
+
+then `PRAGMA integrity_check` on the copy before moving it into place. This
+restore path is documented but has not been exercised end to end yet.
 
 ## WeatherNext surge watch (issue #70)
 

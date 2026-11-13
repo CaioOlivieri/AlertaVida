@@ -21,12 +21,18 @@ SNAPSHOT_DIR=/var/backups/alertavida
 CONFIRMATION_TEXT="DELETE ALERTAVIDA DATA"
 
 echo "== stopping and disabling units =="
-systemctl disable --now alertavida.service alertavida-backup.timer 2>/dev/null || true
+systemctl disable --now alertavida.service alertavida-backup.timer alertavida-upload.timer 2>/dev/null || true
 
 echo "== removing unit files =="
 rm -f /etc/systemd/system/alertavida.service \
       /etc/systemd/system/alertavida-backup.service \
-      /etc/systemd/system/alertavida-backup.timer
+      /etc/systemd/system/alertavida-backup.timer \
+      /etc/systemd/system/alertavida-upload.service \
+      /etc/systemd/system/alertavida-upload.timer
+# Pre-#120 leftovers from when the upload was installed by hand: a drop-in
+# repeating the backup unit's own retention value, and the script's old path.
+rm -rf /etc/systemd/system/alertavida-backup.service.d
+rm -f /usr/local/sbin/alertavida-upload.sh
 systemctl daemon-reload
 
 echo "== removing application code ($APP_DIR) =="
