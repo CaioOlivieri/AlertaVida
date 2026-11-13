@@ -111,6 +111,8 @@ echo "== 7/7: systemd units =="
 cp "$APP_DIR/deploy/alertavida.service" \
    "$APP_DIR/deploy/alertavida-backup.service" \
    "$APP_DIR/deploy/alertavida-backup.timer" \
+   "$APP_DIR/deploy/alertavida-upload.service" \
+   "$APP_DIR/deploy/alertavida-upload.timer" \
    /etc/systemd/system/
 systemctl daemon-reload
 
