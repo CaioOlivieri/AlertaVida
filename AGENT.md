@@ -45,7 +45,11 @@ uv run pytest -m integration -v   # CEMADEN contract test (hits real API)
 - Type hints required on all functions
 - Never bare `except:`. Log with context. Decide: re-raise, retry, or fallback
 - Tests mock network and `time.sleep` — suite must run in < 1s
-- Commits: `tipo(escopo): descrição` in Portuguese. Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- Commits, issues and PRs are written in **English** (the domain vocabulary stays Portuguese — `Alerta`, `Incidente`, `codibge` are identifiers, not prose)
+- Commits and PR titles: `type(scope): description`. Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+- Branches: `<area>/<issue-number>-<slug>` (e.g. `auditoria/89-indices-sem-uso`, `docs/98-correlacao-wiring`). All work goes through a branch + PR, documentation included
+- Issue body: `**Read first:**` line → `## Context` → `## Spec` → `## Acceptance criteria` → closing `**Depends on:** / **Related:** / **Parallel-safe:**` line
+- PR body: `## Why` → what changed → `## Scope` (files touched, gates run with real output)
 - Never modify `src/`, `tests/`, `scripts/`, `.github/`, `pyproject.toml`, `README.md`, `uv.lock`, `.gitignore` without explicit ask
 
 ---
