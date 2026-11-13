@@ -1,0 +1,23 @@
+[Unit]
+Description=AlertaVida backup upload to Google Drive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=alertavida
+Group=alertavida
+UMask=0007
+# rclone resolves its cache and config relative to HOME; /opt/alertavida is
+# read-only under ProtectSystem=strict, so HOME points at the one writable
+# path this unit has.
+Environment=HOME=/var/lib/alertavida
+ExecStart=/opt/alertavida/deploy/upload.sh
+
+# Same hardening as alertavida-backup.service. Unlike that unit, this one
+# does open outbound connections (Google Drive API) — it still has no
+# listeners and only needs to write inside /var/lib/alertavida.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alertavida
