@@ -28,7 +28,7 @@ cross-scheme (https→http) redirects — see [[patterns/resilience-invariants]]
   transport `try/except`.
 - `MAX_RESPOSTA_BYTES: int = 20 * 1024 * 1024` (20 MB) — module default for
   `max_resposta_bytes`, sized for real feed volumes (CEMADEN: hundreds of KB;
-  EONET with `limit=500`: a few MB) with headroom, not for worst-case DoS
+  EONET with `days=60`: ~160 KB; unbounded `status=open`: ~5 MB) with headroom, not for worst-case DoS
   payloads.
 - `opener_padrao: Opener` — module's default opener, built via
   `build_opener(_RedirectHTTPSObrigatorioHandler)`. `CemadenSource` and

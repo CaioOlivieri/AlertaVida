@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-09-06 (issue #98)
+updated: 2026-11-14 (issue #124)
 
 ## Module wiring table (single source of truth)
 
@@ -27,7 +27,7 @@ updated: 2026-09-06 (issue #98)
 | `sources/base.py` | `DataSource` ABC (transport-agnostic), `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff + size cap → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener`, `opener_padrao` (HTTPS-only redirect policy); `HttpDataSource(DataSource)` template method (shared `__init__` + concrete `coletar()`, issue #20) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(HttpDataSource)`: `URL`/`USER_AGENT` class constants + payload normalization | `ingestion/orquestrador.py` | integrated |
-| `sources/nasa_eonet.py` | `NasaEonetSource(HttpDataSource)`: EONET v3 `status=open`, builds `Alerta` directly, category→`TipoEvento` map, `mapear_eonet` for COBRADE (C.2), most-recent-fix selection, `nivel_risco=INDETERMINADO` | `monitor.py`, `scheduler.py` | integrated |
+| `sources/nasa_eonet.py` | `NasaEonetSource(HttpDataSource)`: EONET v3 `status=open&days=60` (60-day recency window, no `limit` — #124), builds `Alerta` directly, category→`TipoEvento` map, `mapear_eonet` for COBRADE (C.2), most-recent-fix selection, `nivel_risco=INDETERMINADO` | `monitor.py`, `scheduler.py` | integrated |
 
 ## Current flow
 
