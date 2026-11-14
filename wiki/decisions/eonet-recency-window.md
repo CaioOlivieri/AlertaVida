@@ -81,8 +81,27 @@ Projected from the live API and the 2026-11-14 backup:
   `Incidente`s — one burst of `AlertaResolvido` / `IncidenteResolvido`.
 - 12 new alerts (`AlertaCriado`), 0 reactivations.
 
-The burst is the correction, not a regression. Real post-deploy numbers are
-recorded below once measured (`_schema.md` rule 1).
+The burst is the correction, not a regression.
+
+### Measured after the deploy (2026-11-14, service at `59c8536`)
+
+Restarted 11:05:34 -03; read from the production database and the journal
+at 11:15:41 -03, right after the third round on the new code.
+
+| | Projected | Measured |
+|---|---|---|
+| Events collected per round | 86 | 86 (three consecutive rounds) |
+| New alerts (`AlertaCriado`) | 12 | 12 (12 `IncidenteCriado`) |
+| Alerts staying `ATIVO` | 74 | 74 |
+| Alerts resolved on the third round | 427 | 426 `AlertaResolvido` |
+| Incidents resolved with them | — | 403 `IncidenteResolvido` |
+
+EONET after the burst: 86 `ATIVO`, 655 `RESOLVIDO`. No orphaned alert, no
+pending outbox event, `NRestarts=0`, no `FALHA`/`ERRO` line in the journal.
+The one-alert difference (427 vs 426) is the feed moving between the
+projection and the deploy. 403 incidents for 426 alerts because an incident
+only resolves when all its members do
+([[decisions/incident-lifecycle-wiring]]).
 
 ## Recorded finding: EONET says nothing about Brazil right now
 
