@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-09-06
+updated: 2026-11-14
 
 # AlertaVida Wiki Index
 
@@ -83,3 +83,4 @@ updated: 2026-09-06
 - [[decisions/systemd-vps-deployment]] — issue #78: minimal VPS + systemd (no Docker), DB path moved outside the git checkout, backup via sqlite3.Connection.backup() (CLI not assumed present), KillSignal=SIGINT + a real SIGTERM handler + shutdown(wait=True) so a restart drains an in-flight round instead of orphaning an alert from #61's lifecycle
 - [[decisions/incident-boundary-reconciliation-sweep]] — issue #87: a reconciliation sweep (not a shared-connection transaction) recovers an alert orphaned by a crash between avaliar_candidatos_correlacao and criar_incidente/adicionar_membro_incidente; invariant 4 gets an explicit exception for Camada 5's own persistence chain, with a written trigger for reconsidering the shared-connection design
 - [[decisions/weathernext-surge-watch-design]] — issue #70: mean table only (deterministic threshold indicator, not ensemble probability), `bq` CLI over the Python client (`--maximum_bytes_billed` as a CLI flag), runs as the maintainer not `alertavida` (ADC credential, not a service-account key), user systemd units with `%h` (no hardcoded username/home path)
+- [[decisions/off-host-backup-upload]] — issue #120: daily rclone upload of the local backups to Google Drive (append-only remote), versioned after a month installed by hand; local retention has one owner (backup.py, 30 days) after a hand-installed script silently pruned at 7
