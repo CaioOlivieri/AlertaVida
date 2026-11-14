@@ -62,9 +62,17 @@ from alertavida.sources._http import HttpDataSource
 from alertavida.sources.base import FalhaDeColeta
 
 EONET_BASE_URL = "https://eonet.gsfc.nasa.gov/api/v3/events"
-# Recorte de produção: apenas eventos abertos/ativos (decisão C.1). Eventos
-# fechados são histórico, ruído para um sistema de alerta em tempo real.
-EONET_PARAMS: Final[dict[str, str | int]] = {"status": "open", "limit": 500}
+# Recorte de produção: eventos abertos E observados nos últimos
+# JANELA_RECENCIA_DIAS dias (issue #124). "Aberto" no EONET só quer dizer que
+# a NASA nunca fechou o evento — em 2026-11-14 eram 7.245 abertos, a maioria
+# sem fix novo há meses ou anos. O recorte antigo (`limit=500`) truncava essa
+# lista pelos 500 mais recentes, e todo evento que escorregava para fora era
+# resolvido por ausência (3 rodadas) embora seguisse aberto na fonte. Com
+# `days`, sair do feed passa a significar "sem observação na janela", e um fix
+# novo traz o evento de volta como AlertaReativado. Sem `limit`: nada trunca.
+# Ver wiki/decisions/eonet-recency-window.md.
+JANELA_RECENCIA_DIAS: Final[int] = 60
+EONET_PARAMS: Final[dict[str, str | int]] = {"status": "open", "days": JANELA_RECENCIA_DIAS}
 URL_EONET = f"{EONET_BASE_URL}?{urlencode(EONET_PARAMS)}"
 
 # Mapeamento categoria EONET v3 → TipoEvento (grupo COBRADE neutro).

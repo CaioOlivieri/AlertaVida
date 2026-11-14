@@ -1,6 +1,6 @@
 status: integrated
 sources: `src/alertavida/sources/nasa_eonet.py`
-updated: 2026-08-07
+updated: 2026-11-14
 
 # sources-nasa-eonet
 
@@ -62,7 +62,10 @@ hard-coded `None`; the change therefore also makes EONET alerts eligible for
 ## Constructor
 
 Keyword-only with injectable `url`, `opener`, `timeout_segundos`. Production query is
-`status=open&limit=500`. The `RespostaHTTP` Protocol and `Opener` type used for
+`status=open&days=60` (`JANELA_RECENCIA_DIAS`) — open upstream **and** observed in the
+last 60 days, no `limit`. It was `status=open&limit=500` until #124, which truncated
+7,245 open events to the 500 most recent and resolved the rest by absence; see
+[[decisions/eonet-recency-window]]. The `RespostaHTTP` Protocol and `Opener` type used for
 strict-by-contract typing live in [[components/sources-http]].
 
 ## Integrated (C.3)

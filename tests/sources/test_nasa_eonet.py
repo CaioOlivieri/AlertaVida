@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 from unittest.mock import Mock
 from urllib.error import URLError
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -15,7 +16,11 @@ from alertavida.domain.enums import (
     TipoEvento,
 )
 from alertavida.sources import FalhaDeColeta
-from alertavida.sources.nasa_eonet import NasaEonetSource
+from alertavida.sources.nasa_eonet import (
+    EONET_BASE_URL,
+    JANELA_RECENCIA_DIAS,
+    NasaEonetSource,
+)
 from tests.fixtures.eonet import (
     CATEGORIA_DESCONHECIDA,
     EVENTO_SEM_GEOMETRY,
@@ -280,6 +285,30 @@ class TestMontarAlerta:
 # ============================================================
 # coletar — invariantes
 # ============================================================
+
+
+class TestUrlDeProducao:
+    """Issue #124 — a query de produção define o que "resolvido" significa.
+
+    `limit=N` trunca a lista de abertos e resolve por ausência eventos que
+    seguem abertos na fonte; a janela `days` substitui o corte. Estes testes
+    travam a forma da query, não a API.
+    """
+
+    def _params(self) -> dict[str, list[str]]:
+        url = urlparse(NasaEonetSource().URL)
+        assert f"{url.scheme}://{url.netloc}{url.path}" == EONET_BASE_URL
+        return parse_qs(url.query)
+
+    def test_somente_eventos_abertos(self):
+        assert self._params()["status"] == ["open"]
+
+    def test_janela_de_recencia_de_60_dias(self):
+        assert JANELA_RECENCIA_DIAS == 60
+        assert self._params()["days"] == ["60"]
+
+    def test_sem_limit_nada_trunca_o_feed(self):
+        assert "limit" not in self._params()
 
 
 class TestColetar:
