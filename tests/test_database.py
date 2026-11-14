@@ -18,6 +18,7 @@ import pytest
 from alertavida import database as db_module
 from alertavida.database import SchemaIncompativelError, conectar
 from alertavida.domain.enums import FonteDado, TipoEvento
+from alertavida.sources.cemaden import CemadenSource
 from tests.fixtures.schemas_legados import (
     aplicar_schema_eventos_sem_fk,
     aplicar_schema_pos_a1_pre_a2,
@@ -1775,3 +1776,181 @@ class TestAplicarResultadoDeteccaoRetornaIds:
                 "SELECT id FROM alertas WHERE cod_alerta = 'A1'"
             ).fetchone()[0]
         assert ids["A1"] == alerta_id_real
+
+
+# ----------------------------------------------------------------------
+# Issue #127 — migration única do fuso do CEMADEN, protegida por user_version
+# ----------------------------------------------------------------------
+
+
+def _user_version(db_path: Path) -> int:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        return conexao.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _tempos_de(db_path: Path, cod_alerta: str) -> tuple[str | None, str | None]:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        return conexao.execute(
+            "SELECT datahoracriacao, ult_atualizacao FROM alertas WHERE cod_alerta = ?",
+            (cod_alerta,),
+        ).fetchone()
+
+
+def _banco_pre_127(
+    db_path: Path, linhas: list[tuple[str, str, str | None, str | None]]
+) -> None:
+    """Deixa um banco no estado anterior à #127: schema atual, linhas com os
+    timestamps como o código antigo gravava, `user_version = 0`.
+
+    Cada linha: (fonte, cod_alerta, datahoracriacao, ult_atualizacao).
+    """
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        conexao.executemany(
+            """
+            INSERT INTO alertas (
+                fonte, cod_alerta, latitude, longitude, detectado_em,
+                datahoracriacao, ult_atualizacao
+            ) VALUES (?, ?, -10.0, -40.0, '2026-11-13T21:00:00+00:00', ?, ?)
+            """,
+            linhas,
+        )
+        conexao.execute("PRAGMA user_version = 0")
+        conexao.commit()
+
+
+def _como_o_codigo_antigo_gravava(bruto: str) -> str:
+    """Pré-#127: string sem offset do painel lida como UTC."""
+    return datetime.fromisoformat(bruto).replace(tzinfo=timezone.utc).isoformat()
+
+
+class TestMigracaoFusoCemaden:
+    def test_banco_novo_ja_nasce_na_versao_1(self, db_temporario):
+        assert _user_version(db_temporario) == 1
+
+    def test_desloca_3h_so_as_linhas_do_cemaden(self, db_temporario):
+        _banco_pre_127(
+            db_temporario,
+            [
+                (
+                    "CEMADEN",
+                    "3423",
+                    "2026-11-13T17:31:22.137000+00:00",
+                    "2026-11-13T22:05:00+00:00",
+                ),
+                (
+                    "EONET",
+                    "EONET_1",
+                    "2026-11-13T17:31:22+00:00",
+                    "2026-11-13T22:05:00+00:00",
+                ),
+            ],
+        )
+
+        db_module.criar_banco()
+
+        assert _tempos_de(db_temporario, "3423") == (
+            "2026-11-13T20:31:22.137000+00:00",
+            "2026-11-14T01:05:00+00:00",  # cruza a meia-noite
+        )
+        assert _tempos_de(db_temporario, "EONET_1") == (
+            "2026-11-13T17:31:22+00:00",
+            "2026-11-13T22:05:00+00:00",
+        )
+        assert _user_version(db_temporario) == 1
+
+    def test_roda_uma_unica_vez(self, db_temporario):
+        _banco_pre_127(
+            db_temporario,
+            [("CEMADEN", "1", "2026-11-13T17:00:00+00:00", "2026-11-13T17:00:00+00:00")],
+        )
+
+        db_module.criar_banco()
+        db_module.criar_banco()
+        db_module.criar_banco()
+
+        assert _tempos_de(db_temporario, "1") == (
+            "2026-11-13T20:00:00+00:00",
+            "2026-11-13T20:00:00+00:00",
+        )
+
+    def test_preserva_timestamp_nulo(self, db_temporario):
+        _banco_pre_127(
+            db_temporario, [("CEMADEN", "1", "2026-11-13T17:00:00+00:00", None)]
+        )
+
+        db_module.criar_banco()
+
+        assert _tempos_de(db_temporario, "1") == ("2026-11-13T20:00:00+00:00", None)
+
+    @pytest.mark.parametrize(
+        "bruto",
+        [
+            "2026-11-13 17:31:22.137",  # formato real do painel
+            "2026-11-13 22:05:00.000",  # fração zerada + cruza a meia-noite
+            "2026-04-09T07:08:15",
+        ],
+    )
+    def test_valor_migrado_e_identico_ao_do_parser_corrigido(self, db_temporario, bruto):
+        """O detector compara `ult_atualizacao` como STRING contra o snapshot.
+        Se a migration e o parser divergissem em um caractere, a primeira
+        rodada pós-deploy emitiria AlertaAtualizado espúrio para todo alerta
+        ATIVO do CEMADEN."""
+        antigo = _como_o_codigo_antigo_gravava(bruto)
+        _banco_pre_127(db_temporario, [("CEMADEN", "1", antigo, antigo)])
+
+        db_module.criar_banco()
+
+        alerta = CemadenSource()._montar_alerta(
+            {
+                "cod_alerta": "1",
+                "evento": "Risco Hidrológico - Moderado",
+                "nivel": "Moderado",
+                "datahoracriacao": bruto,
+                "ult_atualizacao": bruto,
+                "latitude": -10.0,
+                "longitude": -40.0,
+            }
+        )
+        assert alerta.ult_atualizacao is not None
+        assert _tempos_de(db_temporario, "1") == (
+            alerta.data_criacao.isoformat(),
+            alerta.ult_atualizacao.isoformat(),
+        )
+
+    def test_falha_no_meio_nao_deixa_migration_pela_metade(self, db_temporario, monkeypatch):
+        """Linhas deslocadas com `user_version` ainda em 0 fariam a próxima
+        inicialização somar outras 3h. UPDATEs e bump de versão têm de cair
+        no mesmo commit — ou em nenhum."""
+        _banco_pre_127(
+            db_temporario,
+            [
+                ("CEMADEN", "1", "2026-11-13T17:00:00+00:00", "2026-11-13T17:00:00+00:00"),
+                ("CEMADEN", "2", "2026-11-13T18:00:00+00:00", "2026-11-13T18:00:00+00:00"),
+            ],
+        )
+        original = db_module._deslocar_iso
+        chamadas = 0
+
+        def _falha_na_segunda_linha(valor, delta):
+            nonlocal chamadas
+            chamadas += 1
+            if chamadas > 2:  # 2 colunas por linha: estoura na 2ª linha
+                raise RuntimeError("falha simulada no meio da migration")
+            return original(valor, delta)
+
+        monkeypatch.setattr(db_module, "_deslocar_iso", _falha_na_segunda_linha)
+        with pytest.raises(RuntimeError, match="falha simulada"):
+            db_module.criar_banco()
+
+        assert _user_version(db_temporario) == 0
+        assert _tempos_de(db_temporario, "1") == (
+            "2026-11-13T17:00:00+00:00",
+            "2026-11-13T17:00:00+00:00",
+        )
+
+        monkeypatch.setattr(db_module, "_deslocar_iso", original)
+        db_module.criar_banco()
+
+        assert _user_version(db_temporario) == 1
+        assert _tempos_de(db_temporario, "1")[0] == "2026-11-13T20:00:00+00:00"
+        assert _tempos_de(db_temporario, "2")[0] == "2026-11-13T21:00:00+00:00"

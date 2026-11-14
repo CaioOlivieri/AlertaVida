@@ -19,6 +19,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -242,6 +243,66 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
         WHERE id NOT IN (SELECT id FROM idx_alertas_espacial)
         """
     )
+
+    # Issue #127 — por último: é a única migration de VALOR (não de schema).
+    _corrigir_fuso_cemaden(conexao)
+
+
+# Issue #127 — versão de schema em `PRAGMA user_version`. Até aqui toda
+# migration era idempotente por inspeção (coluna existe? índice existe?); um
+# deslocamento de valor não tem como ser inspecionado — rodar duas vezes
+# somaria 6h. 0 = banco anterior à #127; 1 = timestamps do CEMADEN já em UTC.
+_VERSAO_SCHEMA_FUSO_CEMADEN: Final[int] = 1
+
+# Constante CONGELADA da migration, de propósito NÃO importada de
+# sources/cemaden.py: descreve o erro que os dados gravados até a #127
+# carregam (lidos como UTC, eram UTC-3), não o fuso corrente do painel. Se
+# FUSO_PAINEL_CEMADEN mudar um dia, esta migration continua correta.
+_DESLOCAMENTO_FUSO_CEMADEN: Final[timedelta] = timedelta(hours=3)
+
+
+def _deslocar_iso(valor: str | None, delta: timedelta) -> str | None:
+    """Soma `delta` a um timestamp ISO gravado, preservando NULL/vazio.
+
+    Via `datetime` e não aritmética de string/SQL: o resultado tem de ser
+    byte a byte o `.isoformat()` que o parser corrigido produz para o mesmo
+    dado bruto — o detector compara `ult_atualizacao` como string.
+    """
+    if not valor:
+        return valor
+    return (datetime.fromisoformat(valor) + delta).isoformat()
+
+
+def _corrigir_fuso_cemaden(conexao: sqlite3.Connection) -> None:
+    """Migration única (#127): timestamps do CEMADEN gravados como UTC eram
+    horário de Brasília — soma 3h a `datahoracriacao` e `ult_atualizacao`.
+
+    Protegida por `user_version`, que é transacional no SQLite: os UPDATEs e
+    o bump de versão entram no mesmo commit de `criar_banco()`, então uma
+    falha no meio não deixa linhas deslocadas com a versão ainda em 0 (o que
+    faria a próxima inicialização deslocar de novo).
+
+    Fora do alcance, por decisão: `eventos.payload` (histórico append-only
+    da outbox) mantém os valores antigos. Ver
+    wiki/decisions/cemaden-timestamps-brasilia-time.md.
+    """
+    versao = conexao.execute("PRAGMA user_version").fetchone()[0]
+    if versao >= _VERSAO_SCHEMA_FUSO_CEMADEN:
+        return
+    linhas = conexao.execute(
+        "SELECT id, datahoracriacao, ult_atualizacao FROM alertas WHERE fonte = 'CEMADEN'"
+    ).fetchall()
+    for id_, criacao, atualizacao in linhas:
+        conexao.execute(
+            "UPDATE alertas SET datahoracriacao = ?, ult_atualizacao = ? WHERE id = ?",
+            (
+                _deslocar_iso(criacao, _DESLOCAMENTO_FUSO_CEMADEN),
+                _deslocar_iso(atualizacao, _DESLOCAMENTO_FUSO_CEMADEN),
+                id_,
+            ),
+        )
+    # PRAGMA não aceita parâmetro bind; o valor é constante de módulo.
+    conexao.execute(f"PRAGMA user_version = {_VERSAO_SCHEMA_FUSO_CEMADEN}")
 
 
 def criar_banco() -> None:

@@ -388,8 +388,9 @@ def test_from_dict_com_ult_atualizacao_popula() -> None:
         "longitude": -46.63,
     }
     alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
-    assert alerta.ult_atualizacao is not None
-    assert alerta.ult_atualizacao.utcoffset() == timedelta(hours=-3)
+    # Offset explícito é respeitado e o instante é normalizado para UTC (#127).
+    assert alerta.ult_atualizacao == datetime(2026, 5, 1, 11, 30, tzinfo=timezone.utc)
+    assert alerta.ult_atualizacao.utcoffset() == timedelta(0)
 
 
 def test_from_dict_sem_ult_atualizacao_none() -> None:
@@ -435,7 +436,44 @@ def test_from_dict_data_criacao_com_timezone_preserva() -> None:
         "longitude": -46.63,
     }
     alerta = Alerta.from_dict(payload, fonte=FonteDado.CEMADEN)
-    assert alerta.data_criacao.utcoffset() == timedelta(hours=-3)
+    # Offset explícito é respeitado e o instante é normalizado para UTC (#127).
+    assert alerta.data_criacao == datetime(2026, 4, 29, 13, 0, tzinfo=timezone.utc)
+    assert alerta.data_criacao.utcoffset() == timedelta(0)
+
+
+def test_from_dict_naive_usa_fuso_se_naive_da_fonte() -> None:
+    """Issue #127: string sem offset é lida no fuso que a source declara."""
+    payload = {
+        "cod_alerta": "10",
+        "evento": "Queimada",
+        "nivel": "ALTO",
+        "datahoracriacao": "2026-04-29 10:00:00.500",
+        "ult_atualizacao": "2026-04-29 23:30:00",
+        "latitude": -23.55,
+        "longitude": -46.63,
+    }
+    alerta = Alerta.from_dict(
+        payload, fonte=FonteDado.CEMADEN, fuso_se_naive=timezone(timedelta(hours=-3))
+    )
+    assert alerta.data_criacao == datetime(2026, 4, 29, 13, 0, 0, 500000, tzinfo=timezone.utc)
+    # 23:30 em UTC-3 já é o dia seguinte em UTC.
+    assert alerta.ult_atualizacao == datetime(2026, 4, 30, 2, 30, tzinfo=timezone.utc)
+
+
+def test_from_dict_offset_explicito_vence_fuso_se_naive() -> None:
+    """Issue #127: `fuso_se_naive` só vale para string SEM offset."""
+    payload = {
+        "cod_alerta": "10",
+        "evento": "Queimada",
+        "nivel": "ALTO",
+        "datahoracriacao": "2026-04-29T10:00:00+00:00",
+        "latitude": -23.55,
+        "longitude": -46.63,
+    }
+    alerta = Alerta.from_dict(
+        payload, fonte=FonteDado.CEMADEN, fuso_se_naive=timezone(timedelta(hours=-3))
+    )
+    assert alerta.data_criacao == datetime(2026, 4, 29, 10, 0, tzinfo=timezone.utc)
 
 
 # ============================================================

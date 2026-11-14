@@ -18,7 +18,7 @@ Invariantes do `Alerta`:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone, tzinfo
 from typing import Annotated, Any
 
 from pydantic import (
@@ -103,7 +103,13 @@ class Alerta(BaseModel):
         return self
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any], *, fonte: FonteDado) -> "Alerta":
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        fonte: FonteDado,
+        fuso_se_naive: tzinfo = timezone.utc,
+    ) -> "Alerta":
         """Parser dedicado ao shape real do CEMADEN — único consumidor hoje.
 
         Chaves reconhecidas são exatamente as observadas empiricamente em 475
@@ -112,6 +118,10 @@ class Alerta(BaseModel):
         não usa este parser (constrói `Alerta` diretamente — shape divergente
         demais). Quando uma nova fonte chegar (INMET/INPE), o precedente do
         EONET é o caminho: parser próprio, não estender os aliases daqui.
+
+        `fuso_se_naive` é o fuso em que a fonte publica `datahoracriacao` /
+        `ult_atualizacao` quando a string vem sem offset (issue #127). Quem
+        conhece esse fuso é a source, não este parser — default UTC.
         """
         cod_raw = _pick(data, "cod_alerta")
         if cod_raw is None:
@@ -146,7 +156,7 @@ class Alerta(BaseModel):
         if dt_raw is None or not str(dt_raw).strip():
             raise ValueError("Alerta sem data_criacao")
         try:
-            data_criacao = parse_iso_utc(str(dt_raw))
+            data_criacao = parse_iso_utc(str(dt_raw), fuso_se_naive=fuso_se_naive)
         except ValueError:
             raise ValueError("Alerta sem data_criacao válido") from None
 
@@ -154,7 +164,7 @@ class Alerta(BaseModel):
         ult_atualizacao = None
         if ult_raw is not None and str(ult_raw).strip():
             try:
-                ult_atualizacao = parse_iso_utc(str(ult_raw))
+                ult_atualizacao = parse_iso_utc(str(ult_raw), fuso_se_naive=fuso_se_naive)
             except ValueError:
                 ult_atualizacao = None
 

@@ -21,6 +21,9 @@ Invariantes do contrato CEMADEN:
 
 from __future__ import annotations
 
+from datetime import timedelta, timezone
+from typing import Final
+
 from alertavida.domain import Alerta
 from alertavida.domain.cobrade import mapear_cemaden
 from alertavida.domain.enums import FonteClassificacao, FonteDado, TipoEvento
@@ -29,6 +32,18 @@ from alertavida.sources._http import HttpDataSource
 from alertavida.sources.base import FalhaDeColeta
 
 URL_CEMADEN = "https://painelalertas.cemaden.gov.br/wsAlertas2"
+
+# O painel publica `datahoracriacao`/`ult_atualizacao` SEM offset
+# ("2026-11-13 17:31:22.137") e em horário de Brasília, não UTC (issue #127).
+# Medido, não lido em documentação: em 756 alertas de produção, lidos como
+# UTC, `detectado_em - datahoracriacao` nunca ficou abaixo de 180,7 min, com
+# 60 alertas entre 180 e 190 min — um coletor de 5 em 5 minutos não chega
+# sempre 3h atrasado e nunca antes. Offset fixo em vez de
+# zoneinfo("America/Sao_Paulo"): o Brasil não tem horário de verão desde
+# 2019, e zoneinfo exigiria o pacote `tzdata` no Windows (CI) — dependência
+# de runtime nova para uma constante. Se o horário de verão voltar, é aqui.
+# Ver wiki/decisions/cemaden-timestamps-brasilia-time.md.
+FUSO_PAINEL_CEMADEN: Final[timezone] = timezone(timedelta(hours=-3))
 
 
 class CemadenSource(HttpDataSource):
@@ -82,7 +97,7 @@ class CemadenSource(HttpDataSource):
         """
         if not isinstance(item, dict):
             raise ValueError(f"item deve ser dict, recebido {type(item).__name__}")
-        alerta = Alerta.from_dict(item, fonte=self.fonte)
+        alerta = Alerta.from_dict(item, fonte=self.fonte, fuso_se_naive=FUSO_PAINEL_CEMADEN)
         escopo = classificar_escopo(alerta.coordenadas)
 
         categoria = self._categoria_do_evento(item)
