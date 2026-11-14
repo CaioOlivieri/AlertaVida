@@ -1,6 +1,6 @@
 status: integrated
 sources: `src/alertavida/database.py`
-updated: 2026-09-06 (issue #89)
+updated: 2026-11-14 (issue #127)
 
 # database
 
@@ -42,3 +42,12 @@ DB defaults to `data/alertavida.db` (gitignored), overridable via `ALERTAVIDA_DB
 `correlacao_observacoes` — append-only instrumentation table, one row per `(alerta_id, incidente_id)` pair evaluated, including `NAO_VINCULA` and the `incidente_id IS NULL` "no candidate at all" case (Round 1, Q1, "instrument before calibrating"; the dataset issue #63 will calibrate window/threshold constants from). Indexed on `alerta_id` and `incidente_id`.
 
 `avaliar_candidatos_correlacao(alerta_id, agora)` — the public entry point: reads the triggering alert, runs `_buscar_incidentes_candidatos` (blocking: R-Tree bbox test against a buffered position — `BUFFER_BLOQUEIO_GRAUS`, derived from `domain.correlacao.DISTANCIA_MAXIMA_KM`, valid for Brazilian latitudes only — joined to `incidente_membros`/`incidentes` filtered to `status = 'ATIVO' AND fundido_em IS NULL`, then a per-type time window check in Python against `JANELA_ABERTA_SEGUNDOS_POR_TIPO`), evaluates every surviving candidate through `domain.correlacao.decidir_correlacao` (#58 — no decision logic reimplemented here), and writes one `correlacao_observacoes` row per pair. `JANELA_ABERTA_SEGUNDOS_POR_TIPO` maps each `TipoEvento` to `(janela_antes, janela_depois)` — asymmetric *structure* per the issue, both sides currently equal — and the window check compares `delta_t`'s sign against the matching side, not `abs(delta_t)`. Returns `list[ObservacaoCandidato]` (`incidente_id | None`, `DecisaoCorrelacao`) so a caller (#61) can act on `VINCULA`/`REVISAO` without re-querying. Does **not** mutate `incidentes`/`incidente_membros` itself — see [[decisions/incidente-representante-blocking]] for how a multi-member candidate incident is reduced to one comparison point (and the resulting temporal-drift sampling bias for #63).
+
+## Schema version (`PRAGMA user_version`, #127)
+
+`_migrar_banco` ends with `_corrigir_fuso_cemaden`, the first **value** migration:
+it shifts CEMADEN timestamps +3h once, gated by `PRAGMA user_version` (0 → 1).
+Inspection-based idempotency (does the column exist?) cannot protect a value shift;
+the version can, and it commits in the same transaction as the `UPDATE`s. Fresh
+databases start at 1. The next value migration bumps to 2. See
+[[decisions/cemaden-timestamps-brasilia-time]].

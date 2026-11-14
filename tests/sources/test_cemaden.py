@@ -56,7 +56,24 @@ class TestMontarAlerta:
         assert out.nivel_risco.value == "MODERADO"
         assert out.coordenadas.latitude == -22.91
         assert out.escopo_geografico.value == "BRASIL"
-        assert out.data_criacao == datetime(2025, 12, 20, 14, 30, tzinfo=timezone.utc)
+        # Issue #127: o painel publica horário de Brasília sem offset —
+        # 14:30 em UTC-3 é 17:30 UTC.
+        assert out.data_criacao == datetime(2025, 12, 20, 17, 30, tzinfo=timezone.utc)
+
+    def test_timestamp_no_formato_real_do_painel_vira_utc(self):
+        """Issue #127 — formato exato do payload real ("YYYY-MM-DD HH:MM:SS.mmm",
+        sem offset), nos dois campos. O `.isoformat()` resultante é o que vai
+        para o banco e o que o detector compara como string."""
+        item = {
+            **_ITEM_VALIDO,
+            "datahoracriacao": "2026-11-13 17:31:22.137",
+            "ult_atualizacao": "2026-11-13 22:05:00.000",
+        }
+        out = CemadenSource()._montar_alerta(item)
+        assert out.data_criacao.isoformat() == "2026-11-13T20:31:22.137000+00:00"
+        assert out.ult_atualizacao is not None
+        # 22:05 em UTC-3 cruza a meia-noite em UTC.
+        assert out.ult_atualizacao.isoformat() == "2026-11-14T01:05:00+00:00"
 
     def test_aliases_especulativos_nao_sao_mais_reconhecidos(self):
         """Regressão (issue #19): antes da poda, from_dict aceitava nomes
