@@ -1,6 +1,6 @@
-status: implemented
+status: done
 sources: `scripts/weathernext_surge_watch.py`, `scripts/weathernext_cemaden_capture.py`, `deploy/weathernext-*.{service,timer}`, issue #70, [[decisions/weathernext-anticipation-not-datasource]], [[raw/analise-weathernext-skill-2026-08-24]]
-updated: 2026-09-05
+updated: 2026-11-16
 
 # WeatherNext surge watch — design (issue #70)
 
@@ -9,6 +9,10 @@ Phase B of the WeatherNext track. #69's qualified PASS
 proceed; this page records the four design decisions #70 required before any
 code, each resolved with the maintainer during the session rather than
 assumed.
+
+> **Retired 2026-11-16 (#136).** Both timers are disabled; the code, tests
+> and unit files stay in the repository. See "Retired" at the end of this
+> page for why and how to bring it back.
 
 ## Why this exists
 
@@ -208,3 +212,50 @@ this date (early September, outside the Oct–Mar rainy season — expected).
 - Whether 50mm/48h is the right band for the *capture* trigger (as opposed
   to a user-facing alert) will only be answerable once a real surge is
   observed against it.
+
+## Retired, 2026-11-16 (#136)
+
+**The job is done.** The surge watch existed to collect same-municipality
+CEMADEN alerts for the Round 2 centroid-vs-risk-point discriminator. Run on
+2026-11-16 over the production database and 966 archived captures, it gave
+an unambiguous answer: a fixed point per municipality, very likely the
+polygon centroid ([[raw/analise-coordenada-cemaden-2026-11-16]],
+[[projects/layer-5-correlation]]).
+
+**Nothing else consumed it.** The daily artifact's only reader was the
+high-frequency capture. #71 (dormant) would need the *historic* WeatherNext
+table, not a daily snapshot of cells over threshold; #72 is dormant behind
+Camada 7 and a legal path. Keeping the forecast running would have cost
+BigQuery quota every day and failed noisily the day the maintainer's ADC
+credential expires — for an output nobody reads.
+
+**Also found before retiring:** the trigger no longer discriminated. Watch
+mode was on for 24 of the 31 days before 2026-11-13 (621 cells over the
+50 mm / 48 h threshold on 2026-11-16) — in the rainy season some cell almost
+always exceeds it. Had the capture had another purpose, the threshold would
+have needed re-labelling.
+
+**Maintainer decision (2026-11-16): disable both timers, keep everything
+else.**
+
+| Kept | Why |
+|---|---|
+| `scripts/weathernext_surge_watch.py` + tests | the validated BigQuery query and cost guard — the piece #71/#72 would reuse |
+| `scripts/weathernext_cemaden_capture.py` + tests | cheap to keep, reproducible |
+| `deploy/weathernext-*.{service,timer}` and their copies in `~/.config/systemd/user/` | re-enabling is one command |
+| `data/weathernext_cemaden_captures_archive/` (966 files, 7.8 MB, gitignored) | the evidence behind the Round 2 verdict |
+
+The live capture directory keeps pruning at 30 days only when the capture
+runs, so with the timer off it simply stops changing.
+
+To bring it back:
+
+```bash
+systemctl --user enable --now weathernext-surge-watch.timer weathernext-cemaden-capture.timer
+```
+
+Verified after disabling: `systemctl --user is-enabled` → `disabled` for
+both, `is-active` → `inactive`, `list-timers 'weathernext-*'` → 0 timers.
+Linger (`loginctl enable-linger`) was left on: harmless without user timers,
+and needed again if they come back.
+
