@@ -1,6 +1,6 @@
 status: implemented
 sources: `src/alertavida/sources/cemaden.py`, `src/alertavida/domain/tempo.py`, `src/alertavida/domain/alerta.py`, `src/alertavida/database.py`, issue #127, production database (2026-11-14), `data/weathernext_cemaden_captures/`
-updated: 2026-11-14
+updated: 2026-11-16
 
 # CEMADEN timestamps are Brasília time: source-owned zone + one-time migration
 
@@ -92,4 +92,17 @@ On a `.backup()` copy of `alertavida-20261114T135031Z.db`, running the new
 - Simulated next round (live painel payload, new parser, migrated
   snapshots): 3 alerts, **0 events** — no spurious `AlertaAtualizado`.
 
-Post-deploy numbers are recorded below once measured (`_schema.md` rule 1).
+### Measured after the deploy (2026-11-16, service at `82d491c`)
+
+The redeploy happened two days after the merge (2026-11-16 17:40 -03), so
+the migration ran against 777 CEMADEN rows, not 756. Read from the production
+database and the journal at 17:50 -03:
+
+| | Measured |
+|---|---|
+| `PRAGMA user_version` | 1 |
+| Minimum `detectado_em − datahoracriacao`, 777 CEMADEN rows | **0.7 min**, 0 negative (was 180.7 min) |
+| Spurious CEMADEN `AlertaAtualizado` after the restart | **0** |
+| First round | CEMADEN 20 collected (17 new, 3 unchanged); EONET 82 |
+| Following rounds | all unchanged |
+| Restarts / error lines in the journal | 0 / 0 |
