@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-11-14
+updated: 2026-11-16
 
 # AlertaVida Wiki Index
 
@@ -18,6 +18,7 @@ updated: 2026-11-14
 - [[_glossary]] — domain terminology
 - [[changelog]] — project history (translated from §10)
 - [[handoff-2026-09-06]] — project state, machine map, field-data measurements and open-issue order as of 2026-09-06
+- [[audit-2026-11-13]] — maintainability audit after the two-month pause: every finding with its status (fixed / corrected by measurement / filed as #129–#136 / left alone) and evidence
 
 ### Projects (8-layer roadmap)
 - [[projects/layer-1-ingestion]]
@@ -86,3 +87,4 @@ updated: 2026-11-14
 - [[decisions/off-host-backup-upload]] — issue #120: daily rclone upload of the local backups to Google Drive (append-only remote), versioned after a month installed by hand; local retention has one owner (backup.py, 30 days) after a hand-installed script silently pruned at 7
 - [[decisions/eonet-recency-window]] — issue #124: EONET query `status=open&days=60` instead of `limit=500`; the truncation was resolving still-open events by absence (184 of 229), and "open" upstream does not mean live (7,245 open, 86 observed in 60 days); global ingestion kept, Brazil-bbox + reactivation plan rejected after measuring
 - [[decisions/cemaden-timestamps-brasilia-time]] — issue #127: the CEMADEN painel publishes naive Brasília time; the source declares UTC−3 (`parse_iso_utc(fuso_se_naive=)`), 756 stored rows migrated +3h once, gated by `PRAGMA user_version` (first versioned migration); outbox payloads left as history
+- [[decisions/municipality-is-the-incident-boundary]] — maintainer decision 2026-11-16: one storm over two municipalities is two incidents; structural gate on different known IBGE codes (#129); 746 CEMADEN REVISAO rows become NAO_VINCULA by definition, #71 goes dormant

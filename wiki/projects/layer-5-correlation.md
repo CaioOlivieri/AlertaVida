@@ -149,6 +149,9 @@ scales when INMET/INPE bring finer codes.
 
 - **Same event** (identity) — e.g. one storm seen by CEMADEN and by EONET.
   This is what forms an `Incidente`.
+  **Bounded by the municipality** (maintainer decision, 2026-11-16): one storm
+  over two municipalities is two incidents — see
+  [[decisions/municipality-is-the-incident-boundary]] (#129).
 - **Causal cascade** (triggering) — storm → flash flood → landslide. The 2025
   UNDRR/ISC HIPs edition explicitly moves toward a multi-hazard reading in which
   hazards interact and cascade.
