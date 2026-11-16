@@ -238,13 +238,36 @@ def _pontuar(
 def decidir_correlacao(a: CandidatoCorrelacao, b: CandidatoCorrelacao) -> DecisaoCorrelacao:
     """Decide VINCULA / NAO_VINCULA / REVISAO para um par de candidatos.
 
-    Dois portões estruturais valem ANTES de qualquer limiar de score — não
+    Três portões estruturais valem ANTES de qualquer limiar de score — não
     dependem de calibração e não podem ser contornados por reajuste de pesos
-    (#63): tipos INCOMPATIVEL nunca vinculam, e `TipoEvento.INDETERMINADO`
-    nunca vincula sozinho (no máximo REVISAO, quando o resto da evidência é
-    forte).
+    (#63): alertas em municípios diferentes nunca vinculam (#129), tipos
+    INCOMPATIVEL nunca vinculam, e `TipoEvento.INDETERMINADO` nunca vincula
+    sozinho (no máximo REVISAO, quando o resto da evidência é forte).
+
+    O score é calculado mesmo quando um portão decide — `correlacao_observacoes`
+    registra a evidência de todo par avaliado (instrument before calibrating).
     """
     score, compatibilidade, distancia_km, delta_t_segundos = _pontuar(a, b)
+
+    # Portão de município (#129, decisão do mantenedor em 2026-11-16): um
+    # Incidente nunca atravessa dois municípios — a mesma chuva em dois
+    # municípios vizinhos é dois incidentes, porque as áreas são afetadas de
+    # formas diferentes. Só vale com os DOIS códigos conhecidos; código
+    # ausente (todo EONET hoje) segue para o score, com a distância como
+    # fallback até a #62. Ver
+    # wiki/decisions/municipality-is-the-incident-boundary.md.
+    if (
+        a.codigo_ibge is not None
+        and b.codigo_ibge is not None
+        and a.codigo_ibge != b.codigo_ibge
+    ):
+        return DecisaoCorrelacao(
+            resultado=ResultadoDecisao.NAO_VINCULA,
+            score=score,
+            motivo="municipios_diferentes",
+            distancia_km=distancia_km,
+            delta_t_segundos=delta_t_segundos,
+        )
 
     if compatibilidade is ResultadoCompatibilidadeTipo.INCOMPATIVEL:
         return DecisaoCorrelacao(

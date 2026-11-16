@@ -1,4 +1,4 @@
-status: proposal
+status: implemented
 sources: maintainer decision 2026-11-16, production database (2026-11-16), issue #129
 updated: 2026-11-16
 
@@ -28,7 +28,34 @@ When either code is missing — every EONET alert today — nothing changes:
 distance stays the fallback until #62 places EONET points inside a
 municipality.
 
-Implementation is #129; this page moves to `implemented` with it.
+Implemented in #129: the gate runs **first**, before the type gates — when
+both apply, the recorded `motivo` is `municipios_diferentes`, the more
+fundamental boundary. The score, distance and Δt are still computed and
+written to `correlacao_observacoes`, so the evidence of every evaluated pair
+is kept.
+
+## Replay of the recorded pairs (2026-11-16)
+
+Every `correlacao_observacoes` row with a candidate, re-decided with the new
+core against the production backup `alertavida-20261116T030847Z.db`
+(read-only). Each row is joined to every member its incident had at the
+time, so multi-member incidents appear more than once — the counts are
+pair evaluations, not rows:
+
+| Recorded | Re-decided | Count |
+|---|---|---|
+| `REVISAO` | `NAO_VINCULA` / `municipios_diferentes` | **744** |
+| `NAO_VINCULA` | `NAO_VINCULA` / `municipios_diferentes` | 1,957 |
+| `NAO_VINCULA` | `NAO_VINCULA` (score) | 105 |
+| `VINCULA` | `VINCULA` | 106 |
+| `REVISAO` | `REVISAO` | 67 |
+| `REVISAO` | `VINCULA` | 1 |
+
+**No `VINCULA` changes outcome.** The single `REVISAO → VINCULA` is an
+artifact of the replay joining a row to a member other than the one the
+blocking stage picked as representative
+([[decisions/incidente-representante-blocking]]); it involves no IBGE code
+and the gate cannot cause it.
 
 ## Measured on the production database (2026-11-16)
 

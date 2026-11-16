@@ -1954,3 +1954,44 @@ class TestMigracaoFusoCemaden:
         assert _user_version(db_temporario) == 1
         assert _tempos_de(db_temporario, "1")[0] == "2026-11-13T20:00:00+00:00"
         assert _tempos_de(db_temporario, "2")[0] == "2026-11-13T21:00:00+00:00"
+
+
+# ----------------------------------------------------------------------
+# Issue #129 — portão de município, ponta a ponta pelo banco
+# ----------------------------------------------------------------------
+
+
+class TestPortaoDeMunicipio:
+    def test_mesma_chuva_em_municipios_vizinhos_vira_dois_incidentes(self, db_temporario):
+        """Dois alertas CEMADEN a ~1 km, mesmo instante, mesmo subgrupo —
+        antes da #129 vinculariam. Com códigos IBGE diferentes, o segundo
+        abre o próprio Incidente e a observação registra o motivo."""
+        agora = "2026-11-16T10:00:00+00:00"
+        a_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="A",
+            codibge=3550308,
+            latitude=-23.55,
+            longitude=-46.63,
+            datahoracriacao=agora,
+        )
+        incidente_a = db_module.criar_incidente(a_id, 1.0, "fundador", agora)
+        b_id = _inserir_alerta_correlacao(
+            db_temporario,
+            cod_alerta="B",
+            codibge=3548708,
+            latitude=-23.56,
+            longitude=-46.63,
+            datahoracriacao=agora,
+        )
+
+        resultados = db_module.avaliar_candidatos_correlacao(b_id, agora)
+
+        assert [r.incidente_id for r in resultados] == [incidente_a]
+        assert resultados[0].decisao.resultado.value == "NAO_VINCULA"
+        assert resultados[0].decisao.motivo == "municipios_diferentes"
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            observacao = conexao.execute(
+                "SELECT mesmo_codibge, decisao, motivo FROM correlacao_observacoes"
+            ).fetchone()
+        assert observacao == (0, "NAO_VINCULA", "municipios_diferentes")

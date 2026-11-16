@@ -148,7 +148,9 @@ def test_indeterminado_com_evidencia_fraca_nao_vincula() -> None:
         cod="2",
         fonte=FonteDado.EONET,
         tipo_evento=TipoEvento.INDETERMINADO,
-        codigo_ibge=2,
+        # EONET real não tem código; com códigos diferentes o portão de
+        # município (#129) decidiria antes do caminho INDETERMINADO.
+        codigo_ibge=None,
         latitude=35.68,
         longitude=139.69,
         momento_onset=_ONSET + timedelta(days=3),
@@ -197,7 +199,7 @@ def test_nao_vincula_alcancavel_com_evidencia_fraca() -> None:
         cod="2",
         tipo_evento=TipoEvento.HIDROLOGICO,
         cobrade_codigo="1.2.0.0.0",
-        codigo_ibge=2,
+        codigo_ibge=None,  # sem código: exercita o score, não o portão de município (#129)
         latitude=35.68,
         longitude=139.69,
         momento_onset=_ONSET + timedelta(days=3),
@@ -248,3 +250,63 @@ def test_distancia_e_simetrica() -> None:
     assert distancia_haversine_km(*_RECIFE, *sp) == pytest.approx(
         distancia_haversine_km(*sp, *_RECIFE), rel=1e-12
     )
+
+
+# ============================================================
+# decidir_correlacao — portão de município (#129)
+# ============================================================
+
+
+def test_municipios_diferentes_nunca_vinculam_mesmo_com_evidencia_maxima() -> None:
+    """Decisão do mantenedor (2026-11-16): um Incidente nunca atravessa dois
+    municípios. Mesmo ponto, mesmo instante, mesmo subgrupo COBRADE — com
+    códigos IBGE conhecidos e diferentes, NAO_VINCULA."""
+    a = _candidato(cobrade_codigo="1.2.0.0.0", codigo_ibge=2611606)
+    b = _candidato(cod="2", cobrade_codigo="1.2.0.0.0", codigo_ibge=2609600)
+    decisao = decidir_correlacao(a, b)
+    assert decisao.resultado is ResultadoDecisao.NAO_VINCULA
+    assert decisao.motivo == "municipios_diferentes"
+
+
+def test_portao_de_municipio_ainda_registra_a_evidencia() -> None:
+    """O portão decide, mas score/distância/Δt continuam calculados — a linha
+    de correlacao_observacoes guarda a evidência de todo par avaliado."""
+    a = _candidato(codigo_ibge=1, latitude=-8.0, longitude=-34.88)
+    b = _candidato(
+        cod="2",
+        codigo_ibge=2,
+        latitude=-8.2,
+        longitude=-34.88,
+        momento_onset=_ONSET + timedelta(hours=3),
+    )
+    decisao = decidir_correlacao(a, b)
+    assert decisao.motivo == "municipios_diferentes"
+    assert decisao.score > 0
+    assert decisao.distancia_km == pytest.approx(22.2, abs=0.1)
+    assert decisao.delta_t_segundos == 3 * 3600
+
+
+def test_portao_de_municipio_vence_tipos_incompativeis() -> None:
+    """Com os dois portões aplicáveis, o motivo registrado é o de município —
+    a fronteira de identidade é a mais fundamental."""
+    a = _candidato(tipo_evento=TipoEvento.HIDROLOGICO, codigo_ibge=1)
+    b = _candidato(cod="2", tipo_evento=TipoEvento.GEOLOGICO, codigo_ibge=2)
+    assert decidir_correlacao(a, b).motivo == "municipios_diferentes"
+
+
+def test_mesmo_municipio_nao_e_afetado_pelo_portao() -> None:
+    a = _candidato(cobrade_codigo="1.2.0.0.0", codigo_ibge=1)
+    b = _candidato(cod="2", cobrade_codigo="1.2.0.0.0", codigo_ibge=1)
+    assert decidir_correlacao(a, b).resultado is ResultadoDecisao.VINCULA
+
+
+@pytest.mark.parametrize(("ibge_a", "ibge_b"), [(1, None), (None, 1), (None, None)])
+def test_codigo_ausente_em_qualquer_lado_cai_no_score(ibge_a, ibge_b) -> None:
+    """Sem os dois códigos não há como afirmar municípios diferentes — todo
+    EONET hoje. A distância segue como fallback até a #62."""
+    a = _candidato(cobrade_codigo="1.2.0.0.0", codigo_ibge=ibge_a)
+    b = _candidato(cod="2", fonte=FonteDado.EONET, cobrade_codigo="1.2.0.0.0", codigo_ibge=ibge_b)
+    decisao = decidir_correlacao(a, b)
+    assert decisao.motivo != "municipios_diferentes"
+    assert decisao.resultado is ResultadoDecisao.VINCULA
+
