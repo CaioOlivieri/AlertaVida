@@ -106,7 +106,7 @@ the legal path rather than on engineering.
 |---|---|---|---|
 | Kickoff | #68 | this page | done |
 | A | #69 | data access + offline skill validation over known Brazilian events (CC BY historic; **STOP gate for the whole track**) | **done, 2026-08-24 — qualified PASS, see below** |
-| B | #70 | surge watch: daily forecast artifact (`scripts/`, outside the runtime) + high-frequency CEMADEN capture for the Round 2 discriminator | **done, 2026-09-05 — see [[decisions/weathernext-surge-watch-design]]** |
+| B | #70 | surge watch: daily forecast artifact (`scripts/`, outside the runtime) + high-frequency CEMADEN capture for the Round 2 discriminator | **done, 2026-09-05; retired 2026-11-16 after answering the discriminator (#136) — see [[decisions/weathernext-surge-watch-design]]** |
 | C | #71 | physical-plausibility annotation on `REVISAO` rows, input to #63 labelling | after #61 + #70 |
 | D | #72 | public worsening-trend indicator on `Incidente` (Non-Retrievable VAS or Maps Platform Weather API) | dormant — after Camada 7 + written legal path |
 

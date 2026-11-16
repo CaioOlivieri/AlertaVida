@@ -240,6 +240,18 @@ restore path is documented but has not been exercised end to end yet.
 
 ## WeatherNext surge watch (issue #70)
 
+> **Retired on 2026-11-16 (#136): both timers are disabled.** The surge watch
+> answered the question it was built for (CEMADEN coordinates are a fixed
+> point per municipality) and nothing else reads its output. Code and unit
+> files are kept; to bring it back:
+>
+> ```bash
+> systemctl --user enable --now weathernext-surge-watch.timer weathernext-cemaden-capture.timer
+> ```
+>
+> Why: [[decisions/weathernext-surge-watch-design]], section "Retired". The
+> rest of this section is the original install procedure.
+
 Two independent jobs support the Round 2 centroide-vs-risco discriminator
 ([[projects/layer-5-correlation]]): a daily forecast check
 (`scripts/weathernext_surge_watch.py`) and a high-frequency raw CEMADEN
