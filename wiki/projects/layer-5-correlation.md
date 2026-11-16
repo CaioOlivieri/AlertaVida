@@ -1,6 +1,6 @@
 status: done
 sources: [[raw/context-md-2026-06-11.pt.md]] (§3)
-updated: 2026-08-13
+updated: 2026-11-16
 
 # Layer 5: Event Correlation (complete)
 
@@ -269,6 +269,35 @@ alerts **within the same municipality** — identical coordinates ⇒ centroid,
 varying coordinates ⇒ risk point. Not runnable at time of writing (one alert in
 the whole country). Re-run during an alert surge in the rainy season.
 
+**Result, 2026-11-16 (#136): a fixed point per municipality.** Run in the
+rainy season on the production database and the surge-watch captures
+([[raw/analise-coordenada-cemaden-2026-11-16]]):
+
+- **187 of 187** municipalities with two or more alerts (566 alerts) have a
+  single coordinate — spread 0.000 km, across hydrological and geological
+  alerts, over three months.
+- **0 of 363** alerts changed coordinate across 14,497 successive payload
+  observations.
+- The point sits 3–61 km from the municipal seat, displaced toward where the
+  territory extends (Manaus 61 km north, Rio 25 km west, São Paulo 11 km
+  south) — the signature of a **polygon centroid**. Not verified against the
+  IBGE mesh; #62 will have it.
+
+Consequences:
+
+- **The CEMADEN coordinate carries no information inside the municipality.**
+  Two CEMADEN alerts in the same municipality are always at distance 0; the
+  distance between two municipalities is the distance between their
+  centroids. For CEMADEN × CEMADEN the IBGE code is the only real spatial
+  evidence — which the municipality gate already enforces
+  ([[decisions/municipality-is-the-incident-boundary]]).
+- **For CEMADEN × EONET, distance to a CEMADEN point is misleading.** An
+  EONET event 30 km from a Manaus alert's point may be inside Manaus or
+  outside it; the point cannot tell. Point-in-polygon (#62) is the only
+  correct comparison — its priority goes up.
+- **The surge-watch capture has done its job.** The discriminator it was
+  built for ([[decisions/weathernext-surge-watch-design]]) is answered.
+
 **Why it no longer blocks planning:** either answer reinforces the Round 1
 decision. A single point standing for 5,702 km² carries tens of km of positional
 ambiguity whichever it is, so the preference for the `codigo_ibge`
@@ -301,7 +330,7 @@ window. Cost of revising it later is low: it moves thresholds, not architecture.
 | Q2 spatial predicate | Decided (Round 1); semantics measured (Round 2) |
 | Merge-vs-split posture | Decided (Round 2) |
 | Q1 per-type window values | **Calibration-time**, not planning-time — requires a maintainer-confirmed pair set that cannot exist before the layer runs |
-| CEMADEN centroid vs. risk point | **Tracked**, not blocking — re-run the discriminator in the rainy season |
+| CEMADEN centroid vs. risk point | **Settled 2026-11-16** — fixed point per municipality, almost certainly the polygon centroid; see the Round 2 follow-up below (#136) |
 
 Nothing on this page blocks technical planning of Camada 5 any longer.
 
