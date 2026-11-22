@@ -57,14 +57,17 @@ RESTORED="$SCRATCH_DIR/restored-$(date -u +%Y%m%dT%H%M%SZ).db"
 cp "$NEWEST_BACKUP" "$RESTORED"
 
 echo "== Integrity check + row-count comparison (service stopped, live DB static) =="
-python3 -c "
+# Paths as argv to a quoted heredoc, never pasted into Python source (#133).
+python3 - "$RESTORED" "$LIVE_DB" <<'PY'
 import sqlite3
+import sys
 
-restored = sqlite3.connect('$RESTORED')
+restored_path, live_path = sys.argv[1], sys.argv[2]
+restored = sqlite3.connect(restored_path)
 integrity = restored.execute('PRAGMA integrity_check').fetchone()[0]
-print(f'PRAGMA integrity_check ({\"$RESTORED\"}): {integrity}')
+print(f'PRAGMA integrity_check ({restored_path}): {integrity}')
 
-live = sqlite3.connect('$LIVE_DB')
+live = sqlite3.connect(live_path)
 mismatches = []
 for table in ('alertas', 'eventos', 'incidentes'):
     n_live = live.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
@@ -81,7 +84,7 @@ if integrity != 'ok':
     raise SystemExit('integrity_check did not return ok')
 if mismatches:
     raise SystemExit(f'row count mismatch in: {mismatches}')
-"
+PY
 
 echo
 echo "Restored copy kept at $RESTORED for inspection — delete manually when done."

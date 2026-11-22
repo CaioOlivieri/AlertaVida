@@ -19,14 +19,19 @@ if [ ! -f "$SOURCE_DB" ]; then
 fi
 
 echo "== Copying $SOURCE_DB -> $LIVE_DB (disposable test copy) =="
-python3 -c "
+# Paths go in as argv to a quoted heredoc, never pasted into the Python
+# source: this runs as root, and a path containing a quote would otherwise
+# become code (#133).
+python3 - "$SOURCE_DB" "$LIVE_DB" <<'PY'
 import sqlite3
-src = sqlite3.connect('$SOURCE_DB')
-dst = sqlite3.connect('$LIVE_DB')
+import sys
+
+src = sqlite3.connect(sys.argv[1])
+dst = sqlite3.connect(sys.argv[2])
 src.backup(dst)
 dst.close()
 src.close()
-"
+PY
 chown "$SERVICE_USER:$SERVICE_GROUP" "$LIVE_DB"
 chmod 660 "$LIVE_DB"
 

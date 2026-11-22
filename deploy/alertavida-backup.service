@@ -18,3 +18,35 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/alertavida
+
+# Sandboxing (#133). None of these processes needs devices, kernel
+# tunables/modules/logs, other users' processes, namespaces, realtime
+# scheduling, SUID binaries or any capability — denying them limits what
+# code running under this unit could do if a dependency were ever
+# exploited. Verified on the Azure VM with `systemd-analyze security`
+# before/after and a real run of each unit (wiki/decisions/systemd-sandboxing.md).
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# No network at all: the backup only copies a local file.
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX

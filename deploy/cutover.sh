@@ -36,7 +36,7 @@ fi
 if [ -f "${REAL_DB}-wal" ] || [ -f "${REAL_DB}-shm" ]; then
     echo "Refusing to move: $REAL_DB has -wal/-shm siblings, meaning it may" >&2
     echo "have uncommitted frames. With nothing else connected to it, run:" >&2
-    echo "  python3 -c \"import sqlite3; sqlite3.connect('$REAL_DB').execute('PRAGMA wal_checkpoint(TRUNCATE)')\"" >&2
+    echo "  python3 -c 'import sqlite3, sys; sqlite3.connect(sys.argv[1]).execute(\"PRAGMA wal_checkpoint(TRUNCATE)\")' \"$REAL_DB\"" >&2
     echo "then re-run this script." >&2
     exit 1
 fi
@@ -47,14 +47,18 @@ systemctl stop alertavida.service
 echo "== 2/6: pre-cutover snapshot (kept until Phase 2 replaces this host) =="
 mkdir -p "$SNAPSHOT_DIR"
 SNAPSHOT_PATH="$SNAPSHOT_DIR/pre-cutover-$TIMESTAMP.db"
-python3 -c "
+# Paths as argv to a quoted heredoc, never pasted into Python source — this
+# script runs as root (#133).
+python3 - "$REAL_DB" "$SNAPSHOT_PATH" <<'PY'
 import sqlite3
-src = sqlite3.connect('$REAL_DB')
-dst = sqlite3.connect('$SNAPSHOT_PATH')
+import sys
+
+src = sqlite3.connect(sys.argv[1])
+dst = sqlite3.connect(sys.argv[2])
 src.backup(dst)
 dst.close()
 src.close()
-"
+PY
 chmod 600 "$SNAPSHOT_PATH"
 echo "snapshot: $SNAPSHOT_PATH"
 
@@ -67,16 +71,16 @@ chown "$SERVICE_USER:$SERVICE_GROUP" "$LIVE_DB"
 chmod 660 "$LIVE_DB"
 
 echo "== 5/6: verifying the moved database against the snapshot =="
-if ! python3 -c "
+if ! python3 - "$LIVE_DB" "$SNAPSHOT_PATH" <<'PY'
 import sqlite3
 import sys
 
-live = sqlite3.connect('$LIVE_DB')
+live = sqlite3.connect(sys.argv[1])
 integrity = live.execute('PRAGMA integrity_check').fetchone()[0]
 n_live = live.execute('SELECT COUNT(*) FROM alertas').fetchone()[0]
 live.close()
 
-snap = sqlite3.connect('$SNAPSHOT_PATH')
+snap = sqlite3.connect(sys.argv[2])
 n_snap = snap.execute('SELECT COUNT(*) FROM alertas').fetchone()[0]
 snap.close()
 
@@ -84,7 +88,8 @@ print(f'integrity_check: {integrity}')
 print(f'alertas: moved={n_live} snapshot={n_snap}')
 
 sys.exit(0 if (integrity == 'ok' and n_live == n_snap) else 1)
-"; then
+PY
+then
     echo "Verification FAILED — restoring from the pre-cutover snapshot and aborting." >&2
     echo "The service is left STOPPED; the moved file was NOT started against." >&2
     # cp, not mv: keep $SNAPSHOT_PATH itself intact as the safety net even
