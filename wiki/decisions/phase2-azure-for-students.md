@@ -74,6 +74,16 @@ although the image ships 3.12).
 5. WSL decommissioned: the Windows Startup script removed (byte-identical
    copy in `deploy/wsl/alertavida-wsl.vbs`); the old database kept untouched
    for a week as a fallback.
+6. **A third hand-installed piece, found after the PC rebooted:** a Windows
+   scheduled task `AlertaVida-WSL` (created 2026-09-06 03:52, right after the
+   handoff suggested it), running `wsl.exe -d Ubuntu-26.04 --exec /bin/true`
+   at every logon. It woke WSL (~1.3 GB of `vmmemWSL`) with nothing left to
+   run. The audit missed it because it only looked at the Startup folder.
+   Removed by the maintainer on 2026-11-22 (deleting a root-folder task needs
+   an elevated shell); definition kept in `deploy/wsl/AlertaVida-WSL-task.xml`
+   with the machine name, Windows account and SID stripped. Verified after:
+   no scheduled task references `wsl`, Startup folder holds only
+   `desktop.ini`.
 
 ## Backups
 
