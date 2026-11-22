@@ -4,11 +4,29 @@ Minimal VPS + systemd. No Docker, no PaaS, no orchestrator — see
 [[decisions/systemd-vps-deployment]] for why. One process, one SQLite file,
 zero exposed ports.
 
-## Provision (manual, cannot be automated from here)
+## Where it runs
 
-- A small VPS (1 vCPU / 512MB–1GB RAM is enough), Debian/Ubuntu-family.
-- SSH key access; disable password auth.
-- Firewall: SSH only. Nothing else listens until Camada 6 (FastAPI).
+**Production host since 2026-11-22: an Azure for Students VM** (#141) —
+`Standard_B2ats_v2`, Ubuntu 24.04, region `northcentralus`, admin user
+`maintainer`, SSH key only. Why Azure, why that region and size:
+[[decisions/phase2-azure-for-students]]. The public IP is not written in
+this repository; find it with:
+
+```bash
+az vm show -d -g alertavida-rg -n alertavida-vm --query publicIps -o tsv
+```
+
+The WSL host that ran production from 2026-09-05 to 2026-11-22 is
+decommissioned (service and timers disabled, Windows Startup script removed
+— a byte-identical copy is kept in `deploy/wsl/alertavida-wsl.vbs`).
+
+## Provision
+
+- **Azure:** `bash deploy/azure/create-vm.sh` after `az login` — creates the
+  resource group, VM, disk, public IP and NSG (SSH only).
+- **Any other VPS:** 1 vCPU / 512 MB–1 GB RAM is enough (the collector peaks
+  at ~70 MB), Debian/Ubuntu-family, SSH key access with password auth
+  disabled, firewall allowing SSH only. Nothing else listens until Camada 6.
 
 ## One-time setup
 
@@ -163,7 +181,7 @@ systemctl status alertavida.service
 ```
 
 `systemctl is-active` reporting `failed` (rather than `inactive`) is the
-signal to look for this specifically — see the stopgap check below.
+signal to look for this specifically — see "Is it still collecting?" below.
 
 ## Backups
 
@@ -204,18 +222,41 @@ One-time manual setup — `install.sh` copies the units but cannot do these:
 # 1. rclone itself (not installed by install.sh)
 sudo apt install rclone
 
-# 2. the Drive credential, as the service user. Name the remote `gdrive`.
-#    Prefer scope `drive.file` (only files rclone itself created) over
-#    `drive` (the whole Drive).
+# 2. the private credential directory
 sudo install -d -o alertavida -g alertavida -m 0700 /var/lib/alertavida/rclone
-sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf rclone config
 
-# 3. arm the timer
+# 3. create the remote with the restricted scope, then attach the token
+sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf \
+  rclone config create gdrive drive scope=drive.file config_is_local=false
+sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf \
+  rclone config reconnect gdrive:
+# answer `n` to "Use auto config?" (the server has no browser); run the
+# `rclone authorize "drive" "..."` it prints on a machine WITH a browser,
+# signed in to the backup account; paste the result back; `n` to Shared Drive.
+
+# 4. arm the timer
 sudo systemctl enable --now alertavida-upload.timer
 ```
 
+**Use a dedicated Google account for backups, never a personal one**
+([[decisions/off-host-backup-upload]]): with `scope = drive.file` the token
+sees only files rclone created, and with a separate account a compromised
+server cannot reach anyone's personal Drive at all. Backups grow ~1.5 GB a
+year; the free 15 GB is plenty. Turn on 2-step verification on that account.
+
+On rclone 1.60, `config create ... config_is_local=false` exits without
+asking for the token (the file ends up with `scope` but no `token`), hence
+the explicit `reconnect`. Check without printing the token:
+
+```bash
+sudo grep -E "^\[|^scope" /var/lib/alertavida/rclone/rclone.conf
+sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf \
+  HOME=/var/lib/alertavida rclone about gdrive:
+```
+
 `rclone.conf` holds an OAuth refresh token. It is never committed and never
-leaves `/var/lib/alertavida/rclone/` (mode `0700`, owner `alertavida`).
+leaves `/var/lib/alertavida/rclone/` (directory `0700`, file `0600`, owner
+`alertavida`).
 
 Check the upload ran:
 
@@ -284,12 +325,9 @@ once (needs root, one time only):
 sudo loginctl enable-linger "$USER"
 ```
 
-This host is WSL — same caveat as ["This deployment is a stopgap on
-WSL"](#this-deployment-is-a-stopgap-on-wsl-not-the-permanent-host) below:
-lingering keeps the units running across logout, but **not** across a
-Windows reboot or WSL shutdown. If the rainy season needs this covered
-through a Windows restart, that is the same Phase 2 (always-on host) gap
-already tracked there — nothing new introduced by this issue.
+These user units ran on the old WSL host: lingering kept them running across
+logout, but **not** across a Windows reboot or WSL shutdown. They are retired
+(see the notice at the top of this section).
 
 Verify:
 
@@ -302,6 +340,47 @@ ls data/weathernext_cemaden_captures/   # populated only once watch_mode is true
 `data/` here is the git checkout's own `data/` (gitignored) — not
 `/var/lib/alertavida` — because these jobs run as the maintainer, not
 `alertavida` (see the decision page for why).
+
+## Failure alerting: heartbeat (issue #141)
+
+`alertavida-heartbeat.timer` runs `deploy/heartbeat.py` every 5 minutes. It
+reads `MAX(visto_ultima_vez)` — the clock of the last completed round — and
+pings a [healthchecks.io](https://healthchecks.io) check: the plain URL when
+the last round is at most 15 minutes old, `<url>/fail` with the reason
+otherwise. The external check alerts on a `/fail` ping **and on silence**,
+which covers what the script cannot report itself: host down, network down,
+timer not running.
+
+Only meaningful on an always-on host — on the old WSL host every deliberate
+PC shutdown would have paged.
+
+One-time setup:
+
+1. On healthchecks.io (free, no card): Add Check → Schedule **Simple**,
+   Period **5 minutes**, Grace Time **30 minutes**; e-mail integration on.
+2. Write the Ping URL on the server — never in git (anyone holding it can
+   send fake pings):
+
+   ```bash
+   sudo install -d -m 0750 -o root -g alertavida /etc/alertavida
+   echo 'HEARTBEAT_URL=https://hc-ping.com/<uuid>' | sudo tee /etc/alertavida/heartbeat.env >/dev/null
+   sudo chown root:alertavida /etc/alertavida/heartbeat.env
+   sudo chmod 0640 /etc/alertavida/heartbeat.env
+   ```
+
+   The line must start with `HEARTBEAT_URL=` — a bare URL makes the script
+   exit with `HEARTBEAT_URL ausente`.
+3. `sudo systemctl enable --now alertavida-heartbeat.timer`
+
+Check:
+
+```bash
+journalctl -u alertavida-heartbeat.service -n 3   # === HEARTBEAT OK: ... ===
+```
+
+The unit needs `ReadWritePaths=/var/lib/alertavida`, not `ReadOnlyPaths`:
+even a read-only SQLite connection to a WAL database must create the `-shm`
+file beside it. The script still opens the database with `mode=ro`.
 
 ## File permissions
 
@@ -374,27 +453,19 @@ sudo -u alertavida env ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db \
   /opt/alertavida/.venv/bin/python /opt/alertavida/scripts/reclassificar_escopos.py
 ```
 
-## This deployment is a stopgap on WSL, not the permanent host
+## Is it still collecting?
 
-WSL does not survive a Windows reboot or sleep/suspend — `agendar_ingestao`
-resuming here closes the collection gap *today*, but it is not what issue
-#78 originally specified as the target host. **Phase 2 — a VPS that stays
-up through reboots — remains necessary** and is deferred to a separate
-session in September 2026, ahead of the October–March rainy season. Running
-this install script on the real VPS when that session starts is the same
-`deploy/install.sh` used here.
-
-Check whether it's still collecting:
+Ask the database, not the process: `systemctl is-active` answers `active`
+even when a running process has stopped collecting.
 
 ```bash
-systemctl is-active alertavida.service
-journalctl -u alertavida --since "10 minutes ago" | grep "Rodada concluída"
+sudo -u alertavida python3 -c "import sqlite3;c=sqlite3.connect('file:/var/lib/alertavida/alertavida.db?mode=ro',uri=True);print('ultima rodada:',c.execute('SELECT MAX(visto_ultima_vez) FROM alertas').fetchone()[0])"
+systemctl status alertavida.service
+journalctl -u alertavida-heartbeat.service -n 3
 ```
 
-If `systemctl is-active` prints anything other than `active`, or the
-`journalctl` line above finds nothing in the last ~10 minutes (rounds run
-every 5), collection has stopped — check `systemctl status alertavida.service`
-for why, and whether the WSL instance itself is still running at all.
+On the always-on host the heartbeat asks the same question every 5 minutes
+and e-mails when the answer is wrong.
 
 ## Validation
 

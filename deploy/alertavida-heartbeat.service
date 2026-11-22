@@ -1,0 +1,55 @@
+[Unit]
+Description=AlertaVida heartbeat (dead-man's switch, issue #141)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=alertavida
+Group=alertavida
+UMask=0007
+Environment=ALERTAVIDA_DB_PATH=/var/lib/alertavida/alertavida.db
+# HEARTBEAT_URL=https://hc-ping.com/<uuid> — never committed: anyone holding
+# it can send fake pings. Missing file => the script exits 1 with a clear
+# message, and the external check alerts on the missing pings.
+EnvironmentFile=-/etc/alertavida/heartbeat.env
+ExecStart=/opt/alertavida/.venv/bin/python /opt/alertavida/deploy/heartbeat.py
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# Not ReadOnlyPaths: even a read-only SQLite connection to a WAL database
+# must create the -shm file next to it, and fails with "unable to open
+# database file" in a read-only directory (reproduced on the VM). The
+# script still opens the database with mode=ro, so it cannot change data.
+ReadWritePaths=/var/lib/alertavida
+# Sandboxing (#133). None of these processes needs devices, kernel
+# tunables/modules/logs, other users' processes, namespaces, realtime
+# scheduling, SUID binaries or any capability — denying them limits what
+# code running under this unit could do if a dependency were ever
+# exploited. Verified on the Azure VM with `systemd-analyze security`
+# before/after and a real run of each unit (wiki/decisions/systemd-sandboxing.md).
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# Outbound HTTPS plus local DNS (systemd-resolved over AF_UNIX/loopback).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

@@ -41,10 +41,9 @@ Verified with real runs after installing the units:
 - backup: `Backup gravado em .../alertavida-20261122T171551Z.db`,
   `Result=success`.
 
-**Not yet verified: the upload.** rclone is not configured on the VM yet
-(#141). Its first real run under these limits is part of that step;
-`MemoryDenyWriteExecute` is the directive to look at first if it fails
-(rclone is a Go binary, which normally does not need W+X).
+- upload (verified 2026-11-22, once rclone was configured — #141):
+  `0 differences found`, `=== UPLOAD: ALL CHECKS PASSED ===`;
+- heartbeat, added later with the same block (#141): 1.2 OK, pings sent.
 
 ## No shell values pasted into root-run Python
 
@@ -72,6 +71,5 @@ removes the class.
 
 ## Still open from #133
 
-- **Drive OAuth scope** (`drive.file` vs `drive`): checked when rclone is
-  configured on the VM (#141); `rclone.conf` on the old WSL host was never
-  readable during the audit.
+- **Drive OAuth scope:** resolved in #141 — a dedicated account with
+  `scope = drive.file` ([[decisions/off-host-backup-upload]]).
