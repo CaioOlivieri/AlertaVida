@@ -1,6 +1,6 @@
 status: implemented
 sources: `deploy/upload.sh`, `deploy/alertavida-upload.{service,timer}`, `deploy/backup.py`, issue #120, PR #122
-updated: 2026-11-14
+updated: 2026-11-22
 
 # Off-host backup copy: daily `rclone` upload to Google Drive
 
@@ -93,3 +93,31 @@ the maintainer's Google account. It is created by a one-time manual
   `drive.file` is preferable; changing it needs a new `rclone config`.
 - **Restore has never been exercised** from the Drive. The runbook
   documents the path; a drill would turn it into verified behavior.
+
+## Update 2026-11-22: dedicated account, restricted scope (#141)
+
+When the collector moved to the Azure VM, the upload moved off the
+maintainer's **personal** Google account (5 TB, personal files) to a
+**dedicated free account** created only for these backups, with 2-step
+verification.
+
+The token now carries `scope = drive.file`: it sees only files rclone itself
+created. Together:
+
+| If the VM is compromised, the attacker can… | Before (personal account) | Now |
+|---|---|---|
+| read or delete the maintainer's personal files | depends on the scope; with `drive`, all 5 TB | **no** — different account, and the token cannot list anything it did not create |
+| delete the AlertaVida backups on the Drive | yes | yes — still 30 days of local copies on the VM |
+
+The free 15 GB lasts years at ~1.5 GB of backups per year. Client-side
+encryption (rclone `crypt`) was considered and not adopted: the data is
+public alert data, and a lost key would make every backup unreadable.
+
+Verified: `rclone about gdrive:` shows the new account (15 GiB, empty before
+the first upload); first sandboxed upload `0 differences found`,
+`=== UPLOAD: ALL CHECKS PASSED ===`; second run idempotent.
+
+Left with the maintainer: the old backups in the personal account's
+`AlertaVida/backups` (keep until the VM has run a week), and revoking the old
+rclone grant at myaccount.google.com/permissions.
+

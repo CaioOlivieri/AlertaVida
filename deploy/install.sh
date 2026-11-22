@@ -113,6 +113,8 @@ cp "$APP_DIR/deploy/alertavida.service" \
    "$APP_DIR/deploy/alertavida-backup.timer" \
    "$APP_DIR/deploy/alertavida-upload.service" \
    "$APP_DIR/deploy/alertavida-upload.timer" \
+   "$APP_DIR/deploy/alertavida-heartbeat.service" \
+   "$APP_DIR/deploy/alertavida-heartbeat.timer" \
    /etc/systemd/system/
 systemctl daemon-reload
 

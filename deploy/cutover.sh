@@ -101,7 +101,10 @@ then
 fi
 
 echo "== 6/6: starting the service and arming the backup timer =="
-systemctl start alertavida.service
+# enable --now, not start: a started-but-disabled unit does not come back
+# after a reboot. Found on the Azure VM's cutover (#141), where install.sh
+# had run but the README's `enable` step had not.
+systemctl enable --now alertavida.service
 # status is display-only; the real gate is systemctl start's own exit code.
 systemctl status alertavida.service --no-pager || true
 

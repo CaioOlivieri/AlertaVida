@@ -1,0 +1,12 @@
+[Unit]
+Description=AlertaVida heartbeat every 5 minutes
+
+[Timer]
+# Same cadence as the ingestion rounds. The external check expects a ping
+# every 5 min with a grace period; it alerts on a /fail ping or on silence.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

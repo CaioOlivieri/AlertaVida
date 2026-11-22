@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-11-16
+updated: 2026-11-22
 
 # AlertaVida Wiki Index
 
@@ -89,3 +89,4 @@ updated: 2026-11-16
 - [[decisions/cemaden-timestamps-brasilia-time]] — issue #127: the CEMADEN painel publishes naive Brasília time; the source declares UTC−3 (`parse_iso_utc(fuso_se_naive=)`), 756 stored rows migrated +3h once, gated by `PRAGMA user_version` (first versioned migration); outbox payloads left as history
 - [[decisions/municipality-is-the-incident-boundary]] — maintainer decision 2026-11-16: one storm over two municipalities is two incidents; structural gate on different known IBGE codes (#129); 746 CEMADEN REVISAO rows become NAO_VINCULA by definition, #71 goes dormant
 - [[decisions/systemd-sandboxing]] — issue #133: sandboxing directives on the three system units (systemd-analyze 8.5 EXPOSED → 1.2/0.5/1.2), and root-run deploy scripts pass paths as argv to quoted heredocs instead of pasting them into `python3 -c` (injection proved on the old form)
+- [[decisions/phase2-azure-for-students]] — issue #141: production moved off WSL (~14 % uptime, PC shut down by hand, power spikes) to an Azure for Students VM (no card, no spending); region/size measured against the subscription's policy; cutover with `enable` bug found and fixed; dedicated backup account; healthchecks.io dead-man's switch proved end to end
