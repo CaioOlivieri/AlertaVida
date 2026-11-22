@@ -116,6 +116,9 @@ cp "$APP_DIR/deploy/alertavida.service" \
    "$APP_DIR/deploy/alertavida-heartbeat.service" \
    "$APP_DIR/deploy/alertavida-heartbeat.timer" \
    /etc/systemd/system/
+# journald size cap (#134) — a few MB a day does not need the 4 GiB default.
+install -D -m 0644 "$APP_DIR/deploy/journald-alertavida.conf" /etc/systemd/journald.conf.d/alertavida.conf
+systemctl restart systemd-journald
 systemctl daemon-reload
 
 echo

@@ -276,8 +276,19 @@ sudo -u alertavida env RCLONE_CONFIG=/var/lib/alertavida/rclone/rclone.conf \
   rclone copy gdrive:AlertaVida/backups/alertavida-<timestamp>.db /var/lib/alertavida/restore/
 ```
 
-then `PRAGMA integrity_check` on the copy before moving it into place. This
-restore path is documented but has not been exercised end to end yet.
+then `PRAGMA integrity_check` on the copy before moving it into place.
+
+**Restore drill** — proves the path works, without touching production:
+
+```bash
+sudo bash /opt/alertavida/deploy/restore-drill.sh      # KEEP=1 to keep the copy
+```
+
+It downloads the newest Drive backup into a scratch directory, compares its
+SHA-256 with the local copy, runs `integrity_check`, compares row counts,
+and opens it with the current release (`criar_banco()` + `buscar_snapshots()`).
+Ends with `=== RESTORE DRILL: ALL CHECKS PASSED ===`. First run 2026-11-22:
+passed (#134). Worth re-running after any change to backup, upload or schema.
 
 ## WeatherNext surge watch (issue #70)
 
@@ -381,6 +392,17 @@ journalctl -u alertavida-heartbeat.service -n 3   # === HEARTBEAT OK: ... ===
 The unit needs `ReadWritePaths=/var/lib/alertavida`, not `ReadOnlyPaths`:
 even a read-only SQLite connection to a WAL database must create the `-shm`
 file beside it. The script still opens the database with `mode=ro`.
+
+## Journal size
+
+`install.sh` installs `deploy/journald-alertavida.conf` as
+`/etc/systemd/journald.conf.d/alertavida.conf`: `SystemMaxUse=500M`,
+`MaxRetentionSec=6month`. The default (10 % of the disk, up to 4 GiB) is far
+more than a service writing a few MB a day needs. Check:
+
+```bash
+journalctl --disk-usage
+```
 
 ## File permissions
 
