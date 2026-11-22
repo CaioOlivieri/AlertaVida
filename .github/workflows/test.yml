@@ -11,6 +11,9 @@ on:
   schedule:
     - cron: "0 9 * * *"   # todo dia às 09:00 UTC (06:00 Brasília)
 
+# Every action is pinned to a full commit SHA, version in the comment (#135):
+# a moved tag must not run new code, least of all in the coverage job, which
+# has contents: write. Dependabot (github-actions) proposes the upgrades.
 jobs:
   test:
     name: pytest (${{ matrix.os }})
@@ -22,10 +25,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
@@ -44,9 +47,23 @@ jobs:
       - name: Run tests
         run: uv run pytest -v --cov=src --cov-report=term-missing
 
+      # The coverage job reuses this run's data instead of running the whole
+      # suite a second time (#135). `.coverage` is a hidden file, which
+      # upload-artifact skips unless told otherwise.
+      - name: Upload coverage data
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-data
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   coverage:
     name: coverage comment
     runs-on: ubuntu-latest
+    needs: test
     # Roda em push na main e em PRs do próprio repo (dependabot incluso).
     # PRs de forks são pulados: lá o GITHUB_TOKEN é read-only e o comentário
     # exigiria o padrão workflow_run separado. A cobertura segue sendo medida
@@ -58,24 +75,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+      - name: Download coverage data from the test job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          enable-cache: true
-
-      - name: Install Python from .python-version
-        run: uv python install
-
-      - name: Sync dependencies
-        run: uv sync --frozen
-
-      - name: Run tests with coverage
-        run: uv run pytest --cov=src --cov-report=
+          name: coverage-data
 
       - name: Coverage comment
-        uses: py-cov-action/python-coverage-comment-action@v3
+        uses: py-cov-action/python-coverage-comment-action@50d15ff8768f6d897b04e5a0805bd1a98f7096c4 # v3 as of 2026-11-22 (65 commits past v3.41, untagged)
         with:
           GITHUB_TOKEN: ${{ github.token }}
           MINIMUM_GREEN: 90
@@ -88,10 +96,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
 
