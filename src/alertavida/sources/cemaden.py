@@ -63,21 +63,28 @@ class CemadenSource(HttpDataSource):
         return FonteDado.CEMADEN
 
     def _normalize_payload(self, payload: object) -> list[dict]:
-        if isinstance(payload, list):
-            return payload
+        """Extrai `alertas` do envelope real do painel.
+
+        O envelope é sempre `{"alertas": [...], "atualizado": "..."}` —
+        confirmado em 966 capturas cruas de 2026-10-18 a 2026-11-16
+        (wiki/raw/analise-coordenada-cemaden-2026-11-16.md). As variantes
+        especulativas aceitas antes (lista no topo, chaves `data`/`items`/
+        `results`) nunca apareceram e saíram na #130. Formato diferente vira
+        FalhaDeColeta (invariante 23) — e o teste de contrato diário
+        (`tests/test_contrato_cemaden.py`) acusa a mudança no mesmo dia.
+        """
         if isinstance(payload, dict):
-            for key in ("alertas", "data", "items", "results"):
-                value = payload.get(key)
-                if isinstance(value, list):
-                    return value
+            alertas = payload.get("alertas")
+            if isinstance(alertas, list):
+                return alertas
             raise FalhaDeColeta(
                 fonte=self.fonte,
                 causa="formato de payload não reconhecido: dict sem chave "
-                "conhecida ('alertas', 'data', 'items', 'results') contendo uma lista",
+                "'alertas' contendo uma lista",
             )
         raise FalhaDeColeta(
             fonte=self.fonte,
-            causa=f"formato de payload inesperado: esperado list ou dict, "
+            causa=f"formato de payload inesperado: esperado dict com 'alertas', "
             f"recebido {type(payload).__name__}",
         )
 
