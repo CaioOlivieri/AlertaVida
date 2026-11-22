@@ -1,6 +1,6 @@
 status: implemented
 sources: `deploy/upload.sh`, `deploy/alertavida-upload.{service,timer}`, `deploy/backup.py`, issue #120, PR #122
-updated: 2026-11-22
+updated: 2026-11-22 (restore drill)
 
 # Off-host backup copy: daily `rclone` upload to Google Drive
 
@@ -120,4 +120,27 @@ the first upload); first sandboxed upload `0 differences found`,
 Left with the maintainer: the old backups in the personal account's
 `AlertaVida/backups` (keep until the VM has run a week), and revoking the old
 rclone grant at myaccount.google.com/permissions.
+
+## Restore drill, 2026-11-22 (#134)
+
+The open item "restore has never been exercised" is closed.
+`deploy/restore-drill.sh`, run on the VM against the dedicated account:
+
+```
+== 1/6: newest backup on gdrive:AlertaVida/backups ==
+alertavida-20261122T171551Z.db
+== 3/6: SHA-256 against the local copy ==
+identical (a87208f6b4804218…)
+integrity_check: ok
+user_version: 1
+alertas: 1651 | eventos: 6831 | incidentes: 1608 | incidente_membros: 1651 | correlacao_observacoes: 4193
+row counts equal to the local copy
+== 6/6: current release opens the restored copy ==
+CEMADEN: 895 snapshots
+EONET: 756 snapshots
+=== RESTORE DRILL: ALL CHECKS PASSED — alertavida-20261122T171551Z.db ===
+```
+
+The scratch copy lives under `/var/lib/alertavida/restore-drill/` and is
+deleted at the end; the live database and the service are never touched.
 
