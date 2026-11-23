@@ -1,5 +1,4 @@
 import logging
-import os
 import signal
 from datetime import datetime
 from types import FrameType
@@ -7,12 +6,11 @@ from types import FrameType
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.blocking import BlockingScheduler
 
+from alertavida.bootstrap import configurar_logging, fontes_producao
 from alertavida.database import criar_banco
 from alertavida.events import OutboxDispatcher, criar_bus_producao
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
-from alertavida.sources.cemaden import CemadenSource
-from alertavida.sources.nasa_eonet import NasaEonetSource
 
 INTERVALO_MINUTOS = 5
 logger = logging.getLogger(__name__)
@@ -26,7 +24,7 @@ def _on_job_error(event: JobExecutionEvent) -> None:
 def _rodar_rodada() -> None:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logger.info("[%s] Iniciando rodada de ingestão...", timestamp)
-    relatorio = executar_ingestao([CemadenSource(), NasaEonetSource()])
+    relatorio = executar_ingestao(fontes_producao())
     logger.info("Rodada concluída:\n%s", formatar_relatorio(relatorio))
     logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
 
@@ -79,8 +77,5 @@ def agendar_ingestao() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=os.getenv("LOG_LEVEL", "INFO"),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configurar_logging()
     agendar_ingestao()

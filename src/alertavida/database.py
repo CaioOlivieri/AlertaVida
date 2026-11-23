@@ -567,19 +567,16 @@ def aplicar_resultado_deteccao(
 
             if agregado_id is not None:
                 ids_por_codigo[evento.cod_alerta] = agregado_id
-                conexao.execute(
-                    """
-                    INSERT INTO eventos (
-                        tipo, agregado_id, payload, schema_versao,
-                        criado_em, processado_em, tentativas
-                    ) VALUES (?, ?, ?, 1, ?, NULL, 0)
-                    """,
-                    (
-                        evento.tipo,
-                        agregado_id,
-                        json.dumps(evento.payload, ensure_ascii=False),
-                        agora,
-                    ),
+                # Mesmo INSERT dos eventos de Incidente (#131): um só lugar
+                # escreve na outbox, e a invariante de agregado_incidente_id
+                # vale também para os eventos de Alerta (sempre None aqui).
+                _inserir_evento_outbox(
+                    conexao,
+                    tipo=evento.tipo.value,
+                    agregado_id=agregado_id,
+                    agregado_incidente_id=None,
+                    payload=evento.payload,
+                    criado_em=agora,
                 )
 
         codigos_com_evento = {e.cod_alerta for e in resultado.eventos}
@@ -622,7 +619,7 @@ def aplicar_resultado_deteccao(
 # SQL da outbox onde strings são a representação canônica").
 # ---------------------------------------------------------------------------
 
-_TIPOS_EVENTO_INCIDENTE: Final[frozenset[str]] = frozenset(
+TIPOS_EVENTO_INCIDENTE: Final[frozenset[str]] = frozenset(
     {
         "IncidenteCriado",
         "IncidenteAtualizado",
@@ -652,7 +649,7 @@ def _inserir_evento_outbox(
     `Incidente._validar_invariante_resolucao`. Ver
     [[decisions/agregado-incidente-id]].
     """
-    eh_evento_incidente = tipo in _TIPOS_EVENTO_INCIDENTE
+    eh_evento_incidente = tipo in TIPOS_EVENTO_INCIDENTE
     tem_agregado_incidente = agregado_incidente_id is not None
     if eh_evento_incidente != tem_agregado_incidente:
         raise ValueError(

@@ -6,7 +6,8 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Callable
 
-from alertavida.database import _TIPOS_EVENTO_INCIDENTE, conectar
+from alertavida.database import TIPOS_EVENTO_INCIDENTE, conectar
+from alertavida.domain.detector import TipoEventoDetectado
 
 logger = logging.getLogger(__name__)
 
@@ -132,10 +133,9 @@ def criar_bus_producao() -> EventBus:
     ambiente (produção, testes, `monitor.py` one-shot) escolhe o seu conjunto.
     """
     bus = EventBus()
-    bus.subscribe("AlertaCriado", log_handler)
-    bus.subscribe("AlertaAtualizado", log_handler)
-    bus.subscribe("AlertaResolvido", log_handler)
-    bus.subscribe("AlertaReativado", log_handler)
-    for tipo in _TIPOS_EVENTO_INCIDENTE:
+    # Os tipos vêm das fontes de verdade, não de literais (#131): um tipo novo
+    # em TipoEventoDetectado ou em TIPOS_EVENTO_INCIDENTE ganha handler sem
+    # ninguém lembrar de editar esta lista.
+    for tipo in (*(t.value for t in TipoEventoDetectado), *sorted(TIPOS_EVENTO_INCIDENTE)):
         bus.subscribe(tipo, log_handler)
     return bus

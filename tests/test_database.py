@@ -1818,3 +1818,60 @@ class TestMigracao89:
         db_module.criar_banco()
 
         assert not {"idx_fonte", "idx_escopo_geografico"} & _indices_de(db_temporario, "alertas")
+
+
+# ----------------------------------------------------------------------
+# Issue #131 — eventos de Alerta passam pelo mesmo INSERT da outbox
+# ----------------------------------------------------------------------
+
+
+def test_evento_de_alerta_grava_a_mesma_linha_de_antes(db_temporario):
+    """Consolidar o INSERT em `_inserir_evento_outbox` não pode mudar o que
+    a outbox recebe: tipo como string pura, agregado_incidente_id NULL,
+    schema_versao 1, pendente, payload JSON idêntico."""
+    from alertavida.domain.alerta import Alerta
+    from alertavida.domain.coordenadas import Coordenadas
+    from alertavida.domain.detector import EventoDetectado, ResultadoDeteccao, TipoEventoDetectado
+    from alertavida.domain.enums import NivelRisco
+
+    alerta = Alerta(
+        cod_alerta="E1",
+        fonte=FonteDado.EONET,
+        tipo_evento=TipoEvento.CLIMATOLOGICO,
+        nivel_risco=NivelRisco.INDETERMINADO,
+        coordenadas=Coordenadas(latitude=-3.0, longitude=-60.0),
+        data_criacao=datetime(2026, 5, 18, tzinfo=timezone.utc),
+    )
+    payload = {"cod_alerta": "E1", "fonte": "EONET", "descricao": "Queimada ção"}
+    resultado = ResultadoDeteccao(
+        eventos=[
+            EventoDetectado(
+                tipo=TipoEventoDetectado.CRIADO, cod_alerta="E1", fonte=FonteDado.EONET,
+                payload=payload,
+            )
+        ],
+        codigos_vistos={"E1"},
+        codigos_ausentes=set(),
+        fonte_por_codigo={"E1": FonteDado.EONET},
+    )
+
+    ids = db_module.aplicar_resultado_deteccao(
+        resultado, {"E1": alerta}, "2026-11-23T00:00:00+00:00"
+    )
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        linha = conexao.execute(
+            "SELECT tipo, typeof(tipo), agregado_id, agregado_incidente_id, payload, "
+            "schema_versao, criado_em, processado_em, tentativas FROM eventos"
+        ).fetchone()
+    assert linha == (
+        "AlertaCriado",
+        "text",
+        ids["E1"],
+        None,
+        json.dumps(payload, ensure_ascii=False),
+        1,
+        "2026-11-23T00:00:00+00:00",
+        None,
+        0,
+    )

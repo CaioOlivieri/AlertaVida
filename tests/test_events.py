@@ -2,7 +2,8 @@ import contextlib
 import logging
 import sqlite3
 
-from alertavida.database import _TIPOS_EVENTO_INCIDENTE
+from alertavida.database import TIPOS_EVENTO_INCIDENTE
+from alertavida.domain.detector import TipoEventoDetectado
 from alertavida.events import (
     EventBus,
     OutboxDispatcher,
@@ -204,8 +205,18 @@ def test_criar_bus_producao_inscreve_alertas_e_incidentes() -> None:
     assert bus.handler_count("AlertaAtualizado") == 1
     assert bus.handler_count("AlertaResolvido") == 1
     assert bus.handler_count("AlertaReativado") == 1
-    for tipo in _TIPOS_EVENTO_INCIDENTE:
+    for tipo in TIPOS_EVENTO_INCIDENTE:
         assert bus.handler_count(tipo) == 1
+
+
+def test_todo_tipo_de_evento_que_a_outbox_grava_tem_handler() -> None:
+    """#131: a lista de inscrições sai das fontes de verdade. Um tipo novo em
+    TipoEventoDetectado ou TIPOS_EVENTO_INCIDENTE não pode ficar sem handler."""
+    bus = criar_bus_producao()
+    tipos = [t.value for t in TipoEventoDetectado] + sorted(TIPOS_EVENTO_INCIDENTE)
+
+    assert len(tipos) == 9
+    assert all(bus.handler_count(tipo) == 1 for tipo in tipos)
 
 
 def test_criar_bus_producao_devolve_instancias_independentes() -> None:
