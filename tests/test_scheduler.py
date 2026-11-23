@@ -109,26 +109,20 @@ def test_sigterm_aciona_shutdown_com_espera(caplog):
     assert "SIGTERM recebido, aguardando rodada em andamento encerrar..." in caplog.text
 
 
-def test_rodar_rodada_chama_ambas_as_fontes():
-    """_rodar_rodada deve executar ingestão com CemadenSource e NasaEonetSource."""
+def test_rodar_rodada_usa_as_fontes_de_producao():
+    """_rodar_rodada executa a ingestão com `bootstrap.fontes_producao()` (#131)."""
     mock_executar = MagicMock()
     mock_relatorio = MagicMock()
     mock_executar.return_value = mock_relatorio
     mock_formatar = MagicMock()
-    mock_cemaden = MagicMock()
-    mock_nasa = MagicMock()
+    fontes = [MagicMock(), MagicMock()]
 
     with (
         patch("alertavida.scheduler.executar_ingestao", mock_executar),
         patch("alertavida.scheduler.formatar_relatorio", mock_formatar),
-        patch("alertavida.scheduler.CemadenSource", mock_cemaden),
-        patch("alertavida.scheduler.NasaEonetSource", mock_nasa),
+        patch("alertavida.scheduler.fontes_producao", return_value=fontes),
     ):
         scheduler._rodar_rodada()
 
-    mock_cemaden.assert_called_once()
-    mock_nasa.assert_called_once()
-    mock_executar.assert_called_once_with(
-        [mock_cemaden.return_value, mock_nasa.return_value]
-    )
+    mock_executar.assert_called_once_with(fontes)
     mock_formatar.assert_called_once_with(mock_relatorio)

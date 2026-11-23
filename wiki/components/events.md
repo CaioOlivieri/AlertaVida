@@ -10,11 +10,11 @@ Design decision: EventBus operates on raw `dict` payloads — no domain dependen
 
 ## Handler composition lives in a factory, not at import time (issue #24)
 
-`criar_bus_producao() -> EventBus` returns a **fresh** bus with `log_handler` subscribed to the four event types (`AlertaCriado`, `AlertaAtualizado`, `AlertaResolvido`, `AlertaReativado`). The module has no mutable module-level state: importing `events` registers nothing, so import order carries no meaning and nothing leaks between callers.
+`criar_bus_producao() -> EventBus` returns a **fresh** bus with `log_handler` subscribed to the four alert event types — taken from `TipoEventoDetectado`, not written as literals (#131). The module has no mutable module-level state: importing `events` registers nothing, so import order carries no meaning and nothing leaks between callers.
 
 `scheduler.py` is the only composition root — it calls the factory once in `agendar_ingestao()` and injects the bus into `OutboxDispatcher`. `monitor.py` (one-shot debug run) deliberately gets no dispatcher and no handlers; before #24 that was true only by accident of not importing `events`, now it is a consequence of the design. Tests build whatever bus they need (`EventBus()` directly, or the factory when asserting the production handler set).
 
-Since issue #88, the same `log_handler` is also subscribed to all five `Incidente*` types, derived from `database._TIPOS_EVENTO_INCIDENTE` so a future sixth type can't silently diverge from what the outbox actually emits. Before #88 these events reached `OutboxDispatcher.publish` with no handler at all — `processar_pendentes` still marked them `processado_em` (no handler means nothing to fail), so Camada 5 ran with zero log trace of any Incidente lifecycle transition.
+Since issue #88, the same `log_handler` is also subscribed to all five `Incidente*` types, derived from `database.TIPOS_EVENTO_INCIDENTE` (public since #131) so a future sixth type can't silently diverge from what the outbox actually emits. Before #88 these events reached `OutboxDispatcher.publish` with no handler at all — `processar_pendentes` still marked them `processado_em` (no handler means nothing to fail), so Camada 5 ran with zero log trace of any Incidente lifecycle transition.
 
 ## The dispatcher holds its write lock across the whole batch (issue #88 finding, not fixed here)
 

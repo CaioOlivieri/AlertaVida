@@ -33,6 +33,7 @@ uv run pytest -m integration -v   # CEMADEN contract test (hits real API)
 - `database.py` — SQLite persistence: schema bootstrap, snapshots, transactional outbox
 - `events.py` — in-memory EventBus + `OutboxDispatcher`
 - `reporting.py` — shared report formatting for `monitor.py`
+- `bootstrap.py` — the one list of production sources (`fontes_producao()`) and the entrypoints' logging setup; a new source goes here only
 - `domain/` — `Alerta`, enums (`FonteDado`, `TipoEvento`, etc.), `ChangeDetector`, COBRADE mapper, geographic classifier, `correlacao`/`incidente` (event correlation, Camada 5)
 - `ingestion/orquestrador.py` — `executar_ingestao()`: collects → detects → persists per source
 - `sources/` — `DataSource` ABC, `HttpDataSource` template, `CemadenSource`, `NasaEonetSource`, `ResultadoColeta`, `FalhaDeColeta`
