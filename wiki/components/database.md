@@ -58,3 +58,10 @@ Since 2026-11-22 `_migrar_banco` only carries the #89 index drops and the #127
 timezone shift; databases older than the production one (created 2026-08-13)
 are refused by `_verificar_compatibilidade_schema` with the list of what is
 missing. See [[decisions/retire-pre-production-migrations]].
+
+## Schema version 2 and batched stamping (#132)
+
+`idx_eventos_pendentes` is a partial index (`WHERE processado_em IS NULL`), installed by the
+`user_version` 1 → 2 step. `aplicar_resultado_deteccao` stamps seen/absent alerts with one
+`UPDATE ... IN (...)` per source (chunks of 500) via `_atualizar_em_lote`. See
+[[decisions/database-and-dispatcher-132]].

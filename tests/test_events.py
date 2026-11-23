@@ -232,3 +232,68 @@ def test_criar_bus_producao_devolve_instancias_independentes() -> None:
     assert primeiro is not segundo
     assert primeiro.handler_count("AlertaCriado") == 2
     assert segundo.handler_count("AlertaCriado") == 1
+
+
+def _inserir_pendentes(db_path, n: int) -> None:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        conexao.executemany(
+            "INSERT INTO eventos (tipo, agregado_id, payload, schema_versao, criado_em, "
+            "processado_em, tentativas) VALUES ('AlertaCriado', ?, '{}', 1, ?, NULL, 0)",
+            [(i, f"2026-11-23T00:00:0{i}") for i in range(1, n + 1)],
+        )
+        conexao.commit()
+
+
+def test_handlers_rodam_sem_transacao_de_escrita_aberta(db_temporario) -> None:
+    """#132: enquanto um handler roda, ninguém pode estar segurando o lock de
+    escrita — senão um handler lento trava a rodada de ingestão. O handler
+    tenta escrever por outra conexão SEM esperar (timeout=0); no código
+    antigo isso falhava a partir do 2º evento, porque o UPDATE do 1º já
+    tinha aberto a transação."""
+    _inserir_pendentes(db_temporario, 3)
+    escritas_ok: list[bool] = []
+
+    def handler_que_escreve(_: dict) -> None:
+        with contextlib.closing(sqlite3.connect(db_temporario, timeout=0)) as outra:
+            try:
+                outra.execute("BEGIN IMMEDIATE")
+                outra.execute("ROLLBACK")
+                escritas_ok.append(True)
+            except sqlite3.OperationalError:
+                escritas_ok.append(False)
+
+    bus = EventBus()
+    bus.subscribe("AlertaCriado", handler_que_escreve)
+
+    assert OutboxDispatcher(bus).processar_pendentes() == 3
+    assert escritas_ok == [True, True, True]
+
+
+def test_lote_inteiro_marcado_de_uma_vez(db_temporario) -> None:
+    _inserir_pendentes(db_temporario, 3)
+    bus = EventBus()
+
+    assert OutboxDispatcher(bus).processar_pendentes() == 3
+    assert OutboxDispatcher(bus).processar_pendentes() == 0  # nada reentregue
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        linhas = conexao.execute(
+            "SELECT COUNT(DISTINCT processado_em), MIN(tentativas), MAX(tentativas), "
+            "SUM(processado_em IS NULL) FROM eventos"
+        ).fetchone()
+    assert linhas == (1, 1, 1, 0)
+
+
+def test_sem_pendentes_nao_abre_transacao_de_escrita(db_temporario, monkeypatch) -> None:
+    chamadas = []
+    import alertavida.events as events_module
+
+    original = events_module.conectar
+
+    def conectar_contado():
+        chamadas.append(1)
+        return original()
+
+    monkeypatch.setattr(events_module, "conectar", conectar_contado)
+    assert OutboxDispatcher(EventBus()).processar_pendentes() == 0
+    assert len(chamadas) == 1  # só a leitura

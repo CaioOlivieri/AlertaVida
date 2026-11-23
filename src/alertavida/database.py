@@ -169,8 +169,9 @@ def _migrar_banco(conexao: sqlite3.Connection) -> None:
     conexao.execute("DROP INDEX IF EXISTS idx_fonte")
     conexao.execute("DROP INDEX IF EXISTS idx_escopo_geografico")
 
-    # Issue #127 — por último: é a única migration de VALOR (não de schema).
-    _corrigir_fuso_cemaden(conexao)
+    # Passos numerados por user_version, em ordem.
+    _corrigir_fuso_cemaden(conexao)  # 0 -> 1 (#127, migração de valor)
+    _indice_pendentes_parcial(conexao)  # 1 -> 2 (#132)
 
 
 # Issue #127 — versão de schema em `PRAGMA user_version`. Até aqui toda
@@ -230,6 +231,30 @@ def _corrigir_fuso_cemaden(conexao: sqlite3.Connection) -> None:
     conexao.execute(f"PRAGMA user_version = {_VERSAO_SCHEMA_FUSO_CEMADEN}")
 
 
+# Issue #132 — versão 2: idx_eventos_pendentes passa a ser parcial.
+_VERSAO_SCHEMA_INDICE_PENDENTES: Final[int] = 2
+
+
+def _indice_pendentes_parcial(conexao: sqlite3.Connection) -> None:
+    """Passo de schema 2 (#132): `idx_eventos_pendentes` vira índice parcial.
+
+    O dispatcher só consulta `WHERE processado_em IS NULL ORDER BY
+    criado_em`, e quase toda a outbox já foi processada — o índice
+    completo sobre `(processado_em, criado_em)` era 12 % do arquivo de
+    produção para indexar ~0 linhas. O parcial cobre exatamente a
+    consulta e fica do tamanho da fila pendente. `CREATE INDEX IF NOT
+    EXISTS` em `criar_banco` não substitui um índice existente de mesmo
+    nome, por isso o DROP + CREATE explícito aqui, uma vez.
+    """
+    if conexao.execute("PRAGMA user_version").fetchone()[0] >= _VERSAO_SCHEMA_INDICE_PENDENTES:
+        return
+    conexao.execute("DROP INDEX IF EXISTS idx_eventos_pendentes")
+    conexao.execute(
+        "CREATE INDEX idx_eventos_pendentes ON eventos (criado_em) WHERE processado_em IS NULL"
+    )
+    conexao.execute(f"PRAGMA user_version = {_VERSAO_SCHEMA_INDICE_PENDENTES}")
+
+
 def criar_banco() -> None:
     with conectar() as conexao:
         conexao.execute("PRAGMA journal_mode=WAL")
@@ -281,7 +306,7 @@ def criar_banco() -> None:
         conexao.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_eventos_pendentes
-            ON eventos (processado_em, criado_em)
+            ON eventos (criado_em) WHERE processado_em IS NULL
             """
         )
         # SQLite recomenda indexar a child key da FK (issue #22, item B).
@@ -437,6 +462,37 @@ def _executar_retornando_id(conexao: sqlite3.Connection, sql: str, params: tuple
     return row[0] if row is not None else None
 
 
+# Teto de parâmetros por UPDATE em lote — bem abaixo do limite do SQLite
+# (32.766 desde 3.32), para nunca depender da versão embutida no Python.
+_TAMANHO_LOTE: Final[int] = 500
+
+
+def _atualizar_em_lote(
+    conexao: sqlite3.Connection,
+    clausula_set: str,
+    agora: str,
+    codigos: set[str],
+    fonte_por_codigo: dict[str, FonteDado],
+) -> None:
+    """Um UPDATE por fonte (e por lote de 500), em vez de um por alerta (#132).
+
+    `clausula_set` é literal constante do chamador, com exatamente um `?`
+    (o carimbo `agora`) — nunca entrada externa. Os códigos vão como
+    parâmetros.
+    """
+    por_fonte: dict[FonteDado, list[str]] = {}
+    for cod in sorted(codigos):
+        por_fonte.setdefault(fonte_por_codigo[cod], []).append(cod)
+    for fonte, lista in por_fonte.items():
+        for inicio in range(0, len(lista), _TAMANHO_LOTE):
+            lote = lista[inicio : inicio + _TAMANHO_LOTE]
+            marcadores = ", ".join("?" * len(lote))
+            conexao.execute(
+                f"UPDATE alertas {clausula_set} WHERE fonte = ? AND cod_alerta IN ({marcadores})",
+                (agora, fonte.value, *lote),
+            )
+
+
 def aplicar_resultado_deteccao(
     resultado: ResultadoDeteccao,
     alertas_por_codigo: dict[str, "Alerta"],
@@ -580,28 +636,20 @@ def aplicar_resultado_deteccao(
                 )
 
         codigos_com_evento = {e.cod_alerta for e in resultado.eventos}
-        for cod in resultado.codigos_vistos - codigos_com_evento:
-            fonte_cod = resultado.fonte_por_codigo[cod]
-            conexao.execute(
-                """
-                UPDATE alertas
-                SET visto_ultima_vez = ?, rodadas_ausente = 0
-                WHERE fonte = ? AND cod_alerta = ?
-                """,
-                (agora, fonte_cod.value, cod),
-            )
-
-        for cod in resultado.codigos_ausentes:
-            fonte_cod = resultado.fonte_por_codigo[cod]
-            conexao.execute(
-                """
-                UPDATE alertas
-                SET rodadas_ausente = rodadas_ausente + 1,
-                    visto_ultima_vez = ?
-                WHERE fonte = ? AND cod_alerta = ?
-                """,
-                (agora, fonte_cod.value, cod),
-            )
+        _atualizar_em_lote(
+            conexao,
+            "SET visto_ultima_vez = ?, rodadas_ausente = 0",
+            agora,
+            resultado.codigos_vistos - codigos_com_evento,
+            resultado.fonte_por_codigo,
+        )
+        _atualizar_em_lote(
+            conexao,
+            "SET rodadas_ausente = rodadas_ausente + 1, visto_ultima_vez = ?",
+            agora,
+            resultado.codigos_ausentes,
+            resultado.fonte_por_codigo,
+        )
 
         conexao.commit()
     return ids_por_codigo
