@@ -144,3 +144,15 @@ EONET: 756 snapshots
 The scratch copy lives under `/var/lib/alertavida/restore-drill/` and is
 deleted at the end; the live database and the service are never touched.
 
+### Defect found on the drill's first run, fixed the same day
+
+The drill opened the local backup with `mode=ro`, and a read-only SQLite
+connection to a WAL-mode file still creates empty `-wal`/`-shm` files beside
+it — the first run left a pair in `/var/lib/alertavida/backups/` on the VM
+(found while validating #130). Reproduced: `mode=ro` creates both,
+`mode=ro&immutable=1` creates neither. The drill now uses `immutable=1`,
+which is safe only because backups never change — the heartbeat, which reads
+the live database, must keep plain `mode=ro`. The stray files were removed
+on the VM and on the old WSL host (where the same pattern came from ad-hoc
+read-only analyses); the re-run on the VM left none.
+
