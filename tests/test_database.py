@@ -19,12 +19,6 @@ from alertavida import database as db_module
 from alertavida.database import SchemaIncompativelError, conectar
 from alertavida.domain.enums import FonteDado, TipoEvento
 from alertavida.sources.cemaden import CemadenSource
-from tests.fixtures.schemas_legados import (
-    aplicar_schema_eventos_sem_fk,
-    aplicar_schema_pos_a1_pre_a2,
-    aplicar_schema_pos_camada_3,
-    aplicar_schema_pre_camada_3,
-)
 
 # ----------------------------------------------------------------------
 # Helpers
@@ -68,227 +62,6 @@ def _inserir_alerta(db_path: Path, cod_alerta: str) -> int:
         assert cursor.lastrowid is not None
         return cursor.lastrowid
 
-
-# ----------------------------------------------------------------------
-# Verificação de compatibilidade (Caminho 3, formalizado em 12/05/2026)
-# ----------------------------------------------------------------------
-
-class TestVerificacaoCompatibilidade:
-    """criar_banco() detecta schemas pré-A.1 e levanta erro explícito."""
-
-    def test_banco_inexistente_passa(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "novo.db"
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()
-
-        assert db_path.exists()
-
-    def test_banco_pre_camada_3_levanta(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_c2.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pre_camada_3(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        # match no ramo `alertas` (não no de `eventos`, adicionado na #22):
-        # o schema pré-C3 falha por falta de coluna, não por FK ausente.
-        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
-            db_module.criar_banco()
-
-    def test_banco_pos_camada_3_levanta(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_c3.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_camada_3(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        # C3 tem `eventos` sem FK (dispararia o erro da #22), mas a verificação
-        # da `alertas` roda antes: o match garante que é o motivo pré-A.1.
-        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
-            db_module.criar_banco()
-
-    def test_mensagem_erro_lista_colunas_faltantes(self, tmp_path, monkeypatch):
-        """Mensagem de erro deve listar as colunas que faltam, não só a primeira."""
-        db_path = tmp_path / "legado.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pre_camada_3(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        with pytest.raises(SchemaIncompativelError) as exc_info:
-            db_module.criar_banco()
-
-        msg = str(exc_info.value)
-        # Schema pré-C3 não tem nem id nem fonte
-        assert "id" in msg
-        assert "fonte" in msg
-
-    def test_banco_pre_a1_nao_recebe_colunas_a2_silenciosamente(
-        self, tmp_path, monkeypatch
-    ):
-        """Regressão: _migrar_banco() NÃO deve adicionar cobrade_codigo
-        / fonte_classificacao em bancos pré-A.1. A verificação tem que
-        abortar antes do migrar_banco rodar.
-
-        Sem esta proteção, um banco C3 receberia colunas A.2 e viraria
-        uma quimera C3+A.2 onde queries do código atual quebram em runtime.
-        """
-        db_path = tmp_path / "quimera_potencial.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_camada_3(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        # match no ramo `alertas`: prova que abortou pela ruptura pré-A.1
-        # (antes do _migrar_banco), não pela FK ausente em `eventos` (#22).
-        with pytest.raises(SchemaIncompativelError, match=r"`alertas` sem coluna"):
-            db_module.criar_banco()
-
-        # Verifica que o schema NÃO foi alterado
-        colunas = _colunas_de(db_path, "alertas")
-        assert "cobrade_codigo" not in colunas
-        assert "fonte_classificacao" not in colunas
-
-
-# ----------------------------------------------------------------------
-# Migration aditiva (caminho feliz: A.1 -> A.2)
-# ----------------------------------------------------------------------
-
-class TestMigrationAditiva:
-    """Schemas que JÁ têm id+fonte recebem aditivos A.2 corretamente."""
-
-    def test_schema_a1_recebe_colunas_a2(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "a1.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        # Antes: sem colunas A.2
-        colunas_antes = _colunas_de(db_path, "alertas")
-        assert "cobrade_codigo" not in colunas_antes
-        assert "fonte_classificacao" not in colunas_antes
-
-        # Roda criar_banco — deve passar pela verificação e aditivar
-        db_module.criar_banco()
-
-        # Depois: colunas A.2 presentes
-        colunas_depois = _colunas_de(db_path, "alertas")
-        assert "cobrade_codigo" in colunas_depois
-        assert "fonte_classificacao" in colunas_depois
-
-    def test_schema_a1_perde_coluna_assinatura(self, tmp_path, monkeypatch):
-        """Manutenibilidade #8 B1: assinatura é removida por _migrar_banco()."""
-        db_path = tmp_path / "a1_com_assinatura.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        colunas_antes = _colunas_de(db_path, "alertas")
-        assert "assinatura" in colunas_antes
-
-        db_module.criar_banco()
-
-        colunas_depois = _colunas_de(db_path, "alertas")
-        assert "assinatura" not in colunas_depois
-
-    def test_schema_a1_perde_indices_especulativos(self, tmp_path, monkeypatch):
-        """Manutenibilidade #11 D3: idx_uf/idx_evento/idx_nivel são removidos."""
-        db_path = tmp_path / "a1_com_indices.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        indices_antes = _indices_de(db_path, "alertas")
-        assert {"idx_uf", "idx_evento", "idx_nivel"}.issubset(indices_antes)
-
-        db_module.criar_banco()
-
-        indices_depois = _indices_de(db_path, "alertas")
-        assert "idx_uf" not in indices_depois
-        assert "idx_evento" not in indices_depois
-        assert "idx_nivel" not in indices_depois
-
-    def test_schema_a1_perde_idx_fonte_e_idx_escopo_geografico(
-        self, tmp_path, monkeypatch
-    ):
-        """Manutenibilidade #89: idx_escopo_geografico é especulativo pelo
-        mesmo critério da #11 D3 (nenhuma query filtra por essa coluna).
-        idx_fonte é redundante — sqlite_autoindex_alertas_1 (do UNIQUE
-        (fonte, cod_alerta)) tem `fonte` como coluna líder e serve o mesmo
-        WHERE de buscar_snapshots (EQP confirmado em banco populado, PR #89:
-        planner cai em sqlite_autoindex_alertas_1, sem table scan)."""
-        db_path = tmp_path / "a1_com_indices_fonte_escopo.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        indices_antes = _indices_de(db_path, "alertas")
-        assert {"idx_fonte", "idx_escopo_geografico"}.issubset(indices_antes)
-
-        db_module.criar_banco()
-
-        indices_depois = _indices_de(db_path, "alertas")
-        assert "idx_fonte" not in indices_depois
-        assert "idx_escopo_geografico" not in indices_depois
-        assert "sqlite_autoindex_alertas_1" in indices_depois
-
-    def test_schema_a1_recebe_coluna_descricao(self, tmp_path, monkeypatch):
-        """Manutenibilidade #11 D4: descricao é adicionada por _migrar_banco()."""
-        db_path = tmp_path / "a1_sem_descricao.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        colunas_antes = _colunas_de(db_path, "alertas")
-        assert "descricao" not in colunas_antes
-
-        db_module.criar_banco()
-
-        colunas_depois = _colunas_de(db_path, "alertas")
-        assert "descricao" in colunas_depois
-
-    def test_migrar_banco_e_idempotente_sem_coluna_assinatura(self, tmp_path, monkeypatch):
-        """Rodar criar_banco() de novo após o DROP não levanta erro (idempotência)."""
-        db_path = tmp_path / "a1_ja_migrado.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()
-        db_module.criar_banco()  # segunda rodada — não deve tentar DROP de novo
-
-        colunas = _colunas_de(db_path, "alertas")
-        assert "assinatura" not in colunas
-
-    def test_fonte_classificacao_tem_default_correto(self, tmp_path, monkeypatch):
-        """Linhas A.1 pré-existentes recebem 'INDETERMINADA' como default."""
-        db_path = tmp_path / "a1_com_dados.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-            # Insere uma linha no schema A.1 (sem colunas A.2 ainda)
-            conexao.execute(
-                """
-                INSERT INTO alertas (
-                    fonte, cod_alerta, latitude, longitude, detectado_em
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                ("CEMADEN", "12345", -10.0, -40.0, "2026-05-09T10:00:00"),
-            )
-            conexao.commit()
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()  # aplica migration A.2
-
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            row = conexao.execute(
-                "SELECT cobrade_codigo, fonte_classificacao FROM alertas WHERE cod_alerta = ?",
-                ("12345",),
-            ).fetchone()
-
-        assert row[0] is None  # cobrade_codigo nullable
-        assert row[1] == "INDETERMINADA"  # default A.2
-
-
-# ----------------------------------------------------------------------
-# Criação do schema atual + idempotência
-# ----------------------------------------------------------------------
 
 class TestCriacaoSchemaAtual:
     """criar_banco() em banco vazio produz schema A.2 completo."""
@@ -639,18 +412,6 @@ class TestForeignKeyEventos:
 
         assert n == 1
 
-    def test_banco_legado_com_eventos_sem_fk_levanta(self, tmp_path, monkeypatch):
-        """Banco pré-#22 (eventos sem FK) é barrado por SchemaIncompativelError."""
-        db_path = tmp_path / "eventos_legado.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_eventos_sem_fk(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        # match no ramo `eventos`: prova que é a FK ausente, não a `alertas`.
-        with pytest.raises(SchemaIncompativelError, match="FOREIGN KEY"):
-            db_module.criar_banco()
-
-
 # ----------------------------------------------------------------------
 # Persistência de Incidente (issue #59) — tabelas, proveniência, redirect
 # de fusão, eventos de outbox.
@@ -734,62 +495,6 @@ class TestSchemaIncidente:
 
         assert _colunas_de(db_path, "incidentes") == incidentes_1
         assert _colunas_de(db_path, "incidente_membros") == membros_1
-
-
-class TestMigracaoAgregadoIncidenteId:
-    """eventos.agregado_incidente_id chega via ALTER TABLE em bancos que já
-    tinham `eventos` mas não a coluna (nem `incidentes`) — mesmo padrão
-    aditivo das colunas COBRADE em `alertas` (TestMigrationAditiva)."""
-
-    def test_eventos_legado_recebe_a_coluna(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_pre_59.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        colunas_antes = _colunas_de(db_path, "eventos")
-        assert "agregado_incidente_id" not in colunas_antes
-
-        db_module.criar_banco()
-
-        colunas_depois = _colunas_de(db_path, "eventos")
-        assert "agregado_incidente_id" in colunas_depois
-
-    def test_eventos_legado_recebe_a_fk(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_pre_59_fk.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()
-
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            fks = conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall()
-        fks_para_incidentes = [fk for fk in fks if fk[2] == "incidentes"]
-        assert len(fks_para_incidentes) == 1
-
-    def test_eventos_legado_recebe_o_indice(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_pre_59_idx.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()
-
-        indices = _indices_de(db_path, "eventos")
-        assert "idx_eventos_agregado_incidente_id" in indices
-
-    def test_migracao_e_idempotente(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "legado_pre_59_idem.db"
-        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
-            aplicar_schema_pos_a1_pre_a2(conexao)
-        _patch_db_path(monkeypatch, db_path)
-
-        db_module.criar_banco()
-        db_module.criar_banco()  # segunda rodada — não deve tentar ADD COLUMN de novo
-
-        colunas = _colunas_de(db_path, "eventos")
-        assert "agregado_incidente_id" in colunas
 
 
 class TestForeignKeyIncidentes:
@@ -1995,3 +1700,121 @@ class TestPortaoDeMunicipio:
                 "SELECT mesmo_codibge, decisao, motivo FROM correlacao_observacoes"
             ).fetchone()
         assert observacao == (0, "NAO_VINCULA", "municipios_diferentes")
+
+
+# ----------------------------------------------------------------------
+# Guarda de compatibilidade (#130): só bancos a partir de 2026-08-13
+# ----------------------------------------------------------------------
+
+_DDL_ALERTAS_PRE_A1 = """
+    CREATE TABLE alertas (
+        cod_alerta TEXT PRIMARY KEY, latitude REAL, longitude REAL, detectado_em TEXT
+    )
+"""
+_DDL_ALERTAS_PRE_A2 = """
+    CREATE TABLE alertas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, fonte TEXT NOT NULL, cod_alerta TEXT NOT NULL,
+        latitude REAL NOT NULL, longitude REAL NOT NULL, detectado_em TEXT NOT NULL,
+        UNIQUE (fonte, cod_alerta)
+    )
+"""
+_DDL_EVENTOS_SEM_FK = """
+    CREATE TABLE eventos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, agregado_id INTEGER NOT NULL,
+        agregado_incidente_id INTEGER NULL, payload TEXT NOT NULL, criado_em TEXT NOT NULL
+    )
+"""
+
+
+def _banco_com(db_path: Path, *ddls: str, user_version: int = 0) -> None:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        for ddl in ddls:
+            conexao.execute(ddl)
+        conexao.execute(f"PRAGMA user_version = {user_version}")
+        conexao.commit()
+
+
+def _banco_atual_sem(db_path: Path, monkeypatch, *, coluna_eventos: str) -> None:
+    """Banco com o schema atual, depois rebaixado: `eventos` recriada sem a
+    coluna dada e `user_version` de volta a 0 — a forma de um banco pré-#59."""
+    _patch_db_path(monkeypatch, db_path)
+    db_module.criar_banco()
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        conexao.execute("DROP TABLE eventos")
+        conexao.execute(
+            "CREATE TABLE eventos (id INTEGER PRIMARY KEY, tipo TEXT, agregado_id INTEGER, "
+            "payload TEXT, criado_em TEXT, FOREIGN KEY (agregado_id) REFERENCES alertas(id))"
+        )
+        conexao.execute("PRAGMA user_version = 0")
+        conexao.commit()
+    assert coluna_eventos not in _colunas_de(db_path, "eventos")
+
+
+class TestGuardaDeCompatibilidade:
+    def test_banco_novo_passa(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "novo.db"
+        _patch_db_path(monkeypatch, db_path)
+        db_module.criar_banco()
+        assert db_path.exists()
+
+    def test_banco_pre_a1_e_recusado_listando_as_colunas(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "pre_a1.db"
+        _banco_com(db_path, _DDL_ALERTAS_PRE_A1)
+        _patch_db_path(monkeypatch, db_path)
+        with pytest.raises(SchemaIncompativelError) as exc_info:
+            db_module.criar_banco()
+        msg = str(exc_info.value)
+        for coluna in ("id", "fonte", "cobrade_codigo", "fonte_classificacao", "descricao"):
+            assert coluna in msg
+
+    def test_banco_pre_a2_e_recusado_sem_ser_alterado(self, tmp_path, monkeypatch):
+        """Antes da #130 este banco recebia as colunas A.2 por ALTER TABLE.
+        Agora é recusado — e a recusa acontece antes de qualquer ALTER."""
+        db_path = tmp_path / "pre_a2.db"
+        _banco_com(db_path, _DDL_ALERTAS_PRE_A2)
+        _patch_db_path(monkeypatch, db_path)
+        with pytest.raises(SchemaIncompativelError, match="cobrade_codigo"):
+            db_module.criar_banco()
+        assert "cobrade_codigo" not in _colunas_de(db_path, "alertas")
+
+    def test_eventos_sem_fk_e_recusado(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "eventos_sem_fk.db"
+        _patch_db_path(monkeypatch, db_path)
+        db_module.criar_banco()
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            conexao.execute("DROP TABLE eventos")
+            conexao.execute(_DDL_EVENTOS_SEM_FK)
+            conexao.execute("PRAGMA user_version = 0")
+            conexao.commit()
+        with pytest.raises(SchemaIncompativelError, match="FOREIGN KEY"):
+            db_module.criar_banco()
+
+    def test_eventos_pre_59_e_recusado(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "pre_59.db"
+        _banco_atual_sem(db_path, monkeypatch, coluna_eventos="agregado_incidente_id")
+        with pytest.raises(SchemaIncompativelError, match="agregado_incidente_id"):
+            db_module.criar_banco()
+
+    def test_user_version_1_dispensa_a_inspecao(self, tmp_path, monkeypatch):
+        """Com `user_version >= 1` o banco é pós-#127 por construção."""
+        db_path = tmp_path / "v1.db"
+        _patch_db_path(monkeypatch, db_path)
+        db_module.criar_banco()
+        assert _user_version(db_path) == 1
+        db_module.criar_banco()  # não levanta
+
+
+class TestMigracao89:
+    """O único passo de schema que sobrou: o snapshot de 2026-09-05 ainda
+    tem os dois índices que a #89 removeu."""
+
+    def test_remove_idx_fonte_e_idx_escopo_geografico(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            conexao.execute("CREATE INDEX idx_fonte ON alertas (fonte)")
+            conexao.execute("CREATE INDEX idx_escopo_geografico ON alertas (escopo_geografico)")
+            conexao.commit()
+        assert {"idx_fonte", "idx_escopo_geografico"} <= _indices_de(db_temporario, "alertas")
+
+        db_module.criar_banco()
+
+        assert not {"idx_fonte", "idx_escopo_geografico"} & _indices_de(db_temporario, "alertas")

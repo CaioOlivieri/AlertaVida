@@ -258,18 +258,28 @@ class TestMontarAlertaPayloadReal:
 
 
 class TestColetarNormalize:
-    def test_payload_lista_no_topo_funciona(self, monkeypatch):
-        """Payload como lista JSON no topo é aceito por CemadenSource."""
-        itens = [
-            _ITEM_VALIDO,
-            {"cod_alerta": "99999", "evento": "Risco Hidrológico", "nivel": "ALTO",
-             "datahoracriacao": "2026-04-29T10:00:00", "latitude": -10.0, "longitude": -40.0},
-        ]
-        payload_bytes = json.dumps(itens).encode("utf-8")
+    def test_envelope_real_e_aceito(self, monkeypatch):
+        """Envelope real do painel: `alertas` + `atualizado` (966 capturas)."""
+        payload_bytes = json.dumps(
+            {"alertas": [_ITEM_VALIDO], "atualizado": "16-11-2026 20:55:01 UTC"}
+        ).encode("utf-8")
         opener = _opener_de_payload(payload_bytes)
         monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
         resultado = CemadenSource(opener=opener).coletar()
-        assert len(resultado.alertas) == 2
+        assert len(resultado.alertas) == 1
+
+    @pytest.mark.parametrize(
+        "payload",
+        [[{"cod_alerta": "1"}], {"data": []}, {"items": []}, {"results": []}],
+        ids=["lista-no-topo", "data", "items", "results"],
+    )
+    def test_envelopes_especulativos_viram_falha_de_coleta(self, monkeypatch, payload):
+        """#130: as variantes nunca vistas no payload real deixaram de ser
+        aceitas — formato diferente é FalhaDeColeta, não lista vazia."""
+        opener = _opener_de_payload(json.dumps(payload).encode("utf-8"))
+        monkeypatch.setattr("alertavida.sources._http.time.sleep", lambda _: None)
+        with pytest.raises(FalhaDeColeta, match="formato de payload"):
+            CemadenSource(opener=opener).coletar()
 
     def test_item_invalido_conta_descartado(self, monkeypatch):
         """Item que levanta ValueError em _montar_alerta conta como descartado."""

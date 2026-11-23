@@ -92,157 +92,82 @@ def conectar() -> Iterator[sqlite3.Connection]:
 
 
 class SchemaIncompativelError(Exception):
-    """Banco existente tem schema incompatível com a versão atual do código.
+    """Banco existente é anterior ao schema que o código atual sabe migrar.
 
-    Dois gatilhos, ambos sem caminho de migration automática (SQLite não
-    suporta a mudança via ALTER TABLE):
-    - tabela `alertas` pré-A.1 (sem coluna `id` ou `fonte`) — a Camada 4 Parte
-      A.1 (09/05/2026) trocou PK composta por surrogate key;
-    - tabela `eventos` sem a FOREIGN KEY para `alertas.id` — banco criado antes
-      da issue #22 (2026-07-28), que passou a exigir integridade referencial.
+    Desde a #130 (2026-11-22), `_migrar_banco` só cobre o que o banco de
+    produção (criado em 2026-08-13) e o snapshot pré-cutover de 2026-09-05
+    precisam. Qualquer banco anterior a isso — sem as colunas da Camada 4
+    A.2 / #11 em `alertas`, sem a FK da #22 ou sem `agregado_incidente_id`
+    (#59) em `eventos` — é recusado aqui em vez de virar uma quimera.
     """
+
+
+# Colunas que todo banco migrável já tem (produção nasceu em 2026-08-13,
+# depois da #59 de 2026-08-12). Verificadas só com `user_version = 0`: a
+# partir da #127 a versão de schema já garante o resto.
+_COLUNAS_MINIMAS_ALERTAS: Final[frozenset[str]] = frozenset(
+    {"id", "fonte", "cobrade_codigo", "fonte_classificacao", "descricao"}
+)
+_COLUNAS_MINIMAS_EVENTOS: Final[frozenset[str]] = frozenset({"agregado_incidente_id"})
 
 
 def _verificar_compatibilidade_schema(conexao: sqlite3.Connection) -> None:
-    """Verifica se o schema existente é compatível com a versão atual.
+    """Recusa bancos anteriores ao que `_migrar_banco` sabe levar ao atual.
 
-    Casos:
-    - Tabela `alertas` não existe -> OK, criar_banco() vai criá-la
-    - Tabela `alertas` existe com `id` + `fonte` -> OK, _migrar_banco() aditiva
-    - Tabela `alertas` existe sem `id` ou sem `fonte` -> SchemaIncompativelError
-    - Tabela `eventos` não existe -> OK, criar_banco() vai criá-la (com FK)
-    - Tabela `eventos` existe SEM FOREIGN KEY -> SchemaIncompativelError (#22)
+    - Banco novo (sem `alertas`) -> OK, `criar_banco()` cria tudo.
+    - `user_version >= 1` -> OK: só existe a partir da #127.
+    - `user_version = 0` com as colunas mínimas e a FK de `eventos` -> OK
+      (banco de produção antes da #127, ou o snapshot de 2026-09-05).
+    - Qualquer outra coisa -> SchemaIncompativelError, listando o que falta.
 
-    Pré-condição: chamada como primeira operação dentro de criar_banco(),
-    antes de qualquer CREATE TABLE ou ALTER TABLE.
+    Pré-condição: primeira operação dentro de `criar_banco()`, antes de
+    qualquer CREATE ou ALTER.
     """
     colunas_alertas = {row[1] for row in conexao.execute("PRAGMA table_info(alertas)")}
-    if colunas_alertas:
-        faltantes = {"id", "fonte"} - colunas_alertas
-        if faltantes:
-            raise SchemaIncompativelError(
-                f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
-                f"\n"
-                f"Detectado: tabela `alertas` sem coluna(s): {sorted(faltantes)}.\n"
-                f"Provável origem: banco criado antes da Camada 4 Parte A.1 (09/05/2026).\n"
-                f"\n"
-                f"A Camada 4 Parte A.1 introduziu ruptura estrutural (surrogate key + "
-                f"UNIQUE composto) sem caminho de migration automática — bancos pré-A.1 "
-                f"precisam ser recriados.\n"
-                f"\n"
-                f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
-                f"Se houver dados a preservar, exporte para JSON antes de apagar."
-            )
+    if not colunas_alertas:
+        return
+    if conexao.execute("PRAGMA user_version").fetchone()[0] >= 1:
+        return
 
-    # Item B da issue #22: `eventos` tem de declarar a FK para `alertas.id`.
-    # SQLite não adiciona FK via ALTER TABLE, e recriar a tabela está fora da
-    # política aditiva de _migrar_banco — logo, banco pré-#22 é barrado aqui.
+    problemas: list[str] = []
+    faltam_alertas = _COLUNAS_MINIMAS_ALERTAS - colunas_alertas
+    if faltam_alertas:
+        problemas.append(f"tabela `alertas` sem coluna(s): {sorted(faltam_alertas)}")
     colunas_eventos = {row[1] for row in conexao.execute("PRAGMA table_info(eventos)")}
     if colunas_eventos:
-        tem_fk = bool(conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall())
-        if not tem_fk:
-            raise SchemaIncompativelError(
-                f"Schema do banco em '{db_path()}' é incompatível com a versão atual.\n"
-                f"\n"
-                f"Detectado: tabela `eventos` sem FOREIGN KEY para `alertas.id`.\n"
-                f"Provável origem: banco criado antes da issue #22 (2026-07-28).\n"
-                f"\n"
-                f"A issue #22 passou a exigir integridade referencial em `eventos`. "
-                f"SQLite não adiciona FOREIGN KEY via ALTER TABLE, e recriar a tabela "
-                f"está fora da política aditiva de _migrar_banco() — bancos pré-#22 "
-                f"precisam ser recriados.\n"
-                f"\n"
-                f"Ação: apague o arquivo do banco e rode criar_banco() novamente.\n"
-                f"Se houver dados a preservar, exporte para JSON antes de apagar."
-            )
+        faltam_eventos = _COLUNAS_MINIMAS_EVENTOS - colunas_eventos
+        if faltam_eventos:
+            problemas.append(f"tabela `eventos` sem coluna(s): {sorted(faltam_eventos)}")
+        if not conexao.execute("PRAGMA foreign_key_list(eventos)").fetchall():
+            problemas.append("tabela `eventos` sem FOREIGN KEY para `alertas.id`")
+    if problemas:
+        raise SchemaIncompativelError(
+            f"Schema do banco em '{db_path()}' é anterior ao que esta versão sabe "
+            "migrar.\n\nDetectado:\n- "
+            + "\n- ".join(problemas)
+            + "\n\nDesde a #130, só bancos criados a partir de 2026-08-13 (Camada 5) "
+            "são migrados. Ação: restaure um backup recente, ou apague o arquivo e "
+            "rode criar_banco() de novo."
+        )
 
 
 def _migrar_banco(conexao: sqlite3.Connection) -> None:
-    """Aplica migrations aditivas/de limpeza idempotentes ao schema existente.
+    """Leva um banco migrável ao schema atual. Idempotente.
 
-    Cobre as colunas COBRADE da Camada 4 Parte A.2 (`cobrade_codigo`,
-    `fonte_classificacao`), adicionadas via `ALTER TABLE` apenas quando
-    ausentes; a remoção de `assinatura` (issue #8 B1 — coluna nunca lida
-    nem escrita com valor real, resquício da abordagem de hash pré-
-    `ult_atualizacao`); a remoção dos índices especulativos `idx_uf`,
-    `idx_evento`, `idx_nivel` (issue #11 D3 — sem query real hoje, custo
-    de escrita sem benefício até a Camada 6 definir os filtros reais); e
-    a coluna aditiva `descricao` (issue #11 D4 — write-only no domínio
-    até aqui, `NasaEonetSource` já populava com o título do evento mas o
-    dado morria na ingestão). A migration de PK composta
-    para surrogate (A.1.4) nunca passou por aqui — o banco estava vazio no
-    refator e rupturas estruturais são barradas antes por
-    `_verificar_compatibilidade_schema`. É o ponto de extensão obrigatório
-    para qualquer mudança de schema aditiva ou de limpeza futura.
+    Ponto de extensão obrigatório para mudança de schema futura — de
+    preferência um passo numerado sob `PRAGMA user_version` (como
+    `_corrigir_fuso_cemaden`), não mais inspeção de colunas.
+
+    Os passos para schemas anteriores a 2026-08-13 saíram na #130: cobriam
+    bancos que não existem mais em lugar nenhum (ver
+    wiki/decisions/retire-pre-production-migrations.md).
     """
-    # Camada 4 / A.2 — colunas COBRADE
-    cursor = conexao.execute("PRAGMA table_info(alertas)")
-    colunas_existentes = {row[1] for row in cursor.fetchall()}
-
-    if "cobrade_codigo" not in colunas_existentes:
-        conexao.execute("ALTER TABLE alertas ADD COLUMN cobrade_codigo TEXT NULL")
-
-    if "fonte_classificacao" not in colunas_existentes:
-        conexao.execute(
-            "ALTER TABLE alertas ADD COLUMN fonte_classificacao "
-            "TEXT NOT NULL DEFAULT 'INDETERMINADA'"
-        )
-
-    # Manutenibilidade #8 B1 — assinatura nunca teve valor real (sempre
-    # inserida como NULL literal); DROP seguro, sem dado a preservar.
-    if "assinatura" in colunas_existentes:
-        conexao.execute("ALTER TABLE alertas DROP COLUMN assinatura")
-
-    # Manutenibilidade #11 D3 — idx_uf/idx_evento/idx_nivel eram especulativos
-    # (nenhuma query atual filtra por essas colunas; Camada 6 ainda não
-    # existe). DROP INDEX não afeta dados, apenas remove custo de escrita.
-    conexao.execute("DROP INDEX IF EXISTS idx_uf")
-    conexao.execute("DROP INDEX IF EXISTS idx_evento")
-    conexao.execute("DROP INDEX IF EXISTS idx_nivel")
-
-    # Manutenibilidade #89 — idx_escopo_geografico era especulativo pelo
-    # mesmo critério da #11 D3 (nenhuma query filtra por escopo_geografico).
-    # idx_fonte é redundante: UNIQUE (fonte, cod_alerta) já cria
-    # sqlite_autoindex_alertas_1 com `fonte` como coluna líder, que serve o
-    # WHERE de buscar_snapshots igualmente bem — confirmado por EXPLAIN QUERY
-    # PLAN em banco populado (609 linhas), planner cai em
-    # sqlite_autoindex_alertas_1 sem table scan. DROP INDEX não afeta dados.
+    # Manutenibilidade #89 — idx_escopo_geografico era especulativo (nenhuma
+    # query filtra por escopo_geografico) e idx_fonte é redundante com
+    # sqlite_autoindex_alertas_1 (`fonte` é coluna líder do UNIQUE). Mantido
+    # porque o snapshot pré-cutover de 2026-09-05 ainda tem os dois.
     conexao.execute("DROP INDEX IF EXISTS idx_fonte")
     conexao.execute("DROP INDEX IF EXISTS idx_escopo_geografico")
-
-    # Manutenibilidade #11 D4 — descricao era write-only no domínio (NasaEonetSource
-    # já a populava com o título do evento, mas o dado morria na ingestão).
-    if "descricao" not in colunas_existentes:
-        conexao.execute("ALTER TABLE alertas ADD COLUMN descricao TEXT NULL")
-
-    # Issue #59 — eventos de ciclo de vida de Incidente não podem reusar
-    # agregado_id (FK fixa para alertas(id) desde a #22). Coluna aditiva
-    # NULL com sua própria FK; SQLite aceita REFERENCES em ADD COLUMN
-    # (verificado empiricamente — só não aceita para colunas NOT NULL sem
-    # default constante). `incidentes` já existe neste ponto: é criada em
-    # criar_banco() antes desta chamada. Ver [[decisions/agregado-incidente-id]].
-    cursor_eventos = conexao.execute("PRAGMA table_info(eventos)")
-    colunas_eventos = {row[1] for row in cursor_eventos.fetchall()}
-    if "agregado_incidente_id" not in colunas_eventos:
-        conexao.execute(
-            "ALTER TABLE eventos ADD COLUMN agregado_incidente_id "
-            "INTEGER NULL REFERENCES incidentes(id)"
-        )
-
-    # Issue #60 — backfill do índice espacial (R-Tree) para bancos que já
-    # tinham alertas antes desta migration. Sem isso, alertas antigos
-    # nunca apareceriam como candidatos de correlação (o INSERT normal do
-    # índice só cobre alertas CRIADOs a partir de agora, em
-    # aplicar_resultado_deteccao). Idempotente via NOT IN; `idx_alertas_espacial`
-    # já existe neste ponto (criada em criar_banco() antes desta chamada).
-    conexao.execute(
-        """
-        INSERT INTO idx_alertas_espacial (id, min_lat, max_lat, min_lon, max_lon)
-        SELECT id, latitude, latitude, longitude, longitude
-        FROM alertas
-        WHERE id NOT IN (SELECT id FROM idx_alertas_espacial)
-        """
-    )
 
     # Issue #127 — por último: é a única migration de VALOR (não de schema).
     _corrigir_fuso_cemaden(conexao)
@@ -308,7 +233,7 @@ def _corrigir_fuso_cemaden(conexao: sqlite3.Connection) -> None:
 def criar_banco() -> None:
     with conectar() as conexao:
         conexao.execute("PRAGMA journal_mode=WAL")
-        _verificar_compatibilidade_schema(conexao)  # detecta bancos pré-A.1
+        _verificar_compatibilidade_schema(conexao)  # recusa bancos pré-2026-08-13
         conexao.execute(
             """
             CREATE TABLE IF NOT EXISTS alertas (
@@ -416,7 +341,8 @@ def criar_banco() -> None:
         # windows-latest (ver TestCapacidadeEspacialSQLite em
         # tests/test_database.py e o PR #60) — sem fallback necessário.
         # Populada em aplicar_resultado_deteccao no INSERT de cada alerta
-        # CRIADO; backfill de alertas pré-existentes fica em _migrar_banco.
+        # CRIADO. (O backfill para alertas anteriores à #60 saiu na #130: o
+        # banco de produção nasceu depois dela, sem nenhum alerta órfão.)
         conexao.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS idx_alertas_espacial
@@ -459,9 +385,9 @@ def criar_banco() -> None:
             """
         )
         _migrar_banco(conexao)
-        # A coluna agregado_incidente_id só existe garantidamente depois de
-        # _migrar_banco (bancos legados a recebem via ALTER TABLE ali) —
-        # criar o índice antes disso falharia com "no such column".
+        # Child-key index de agregado_incidente_id (#59). A coluna está no
+        # CREATE TABLE de `eventos` e é exigida de bancos existentes por
+        # _verificar_compatibilidade_schema.
         conexao.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_eventos_agregado_incidente_id
