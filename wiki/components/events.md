@@ -27,3 +27,9 @@ With `log_handler` this is immaterial — no I/O, microseconds per event. It bec
 `processar_pendentes` sets `processado_em` and increments `tentativas` in the **same** statement, even when a handler raises (documented no-redelivery policy — a failing handler logs the error but the event is never reprocessed). In practice the column can only ever hold `0` or `1`; it does not track actual retry attempts.
 
 This is intentional for now, not a bug: redelivery isn't implemented. The column only becomes meaningful if/when a future layer (likely Camada 8, notification) introduces real retry + dead-letter semantics — at that point `tentativas` would increment across multiple genuine attempts before giving up. Until then, treat it as equivalent to `processado_em IS NOT NULL` (maintainability review #18 B).
+
+## Handlers outside the write transaction (#132)
+
+`processar_pendentes` reads the batch, publishes with no transaction open, then marks the
+whole batch in one short transaction. At-least-once delivery, unchanged. See
+[[decisions/database-and-dispatcher-132]].

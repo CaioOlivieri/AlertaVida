@@ -1488,6 +1488,10 @@ class TestAplicarResultadoDeteccaoRetornaIds:
 # ----------------------------------------------------------------------
 
 
+# Versão final do schema depois de criar_banco() — sobe a cada passo numerado.
+VERSAO_ATUAL = db_module._VERSAO_SCHEMA_INDICE_PENDENTES
+
+
 def _user_version(db_path: Path) -> int:
     with contextlib.closing(sqlite3.connect(db_path)) as conexao:
         return conexao.execute("PRAGMA user_version").fetchone()[0]
@@ -1529,8 +1533,8 @@ def _como_o_codigo_antigo_gravava(bruto: str) -> str:
 
 
 class TestMigracaoFusoCemaden:
-    def test_banco_novo_ja_nasce_na_versao_1(self, db_temporario):
-        assert _user_version(db_temporario) == 1
+    def test_banco_novo_ja_nasce_na_versao_atual(self, db_temporario):
+        assert _user_version(db_temporario) == VERSAO_ATUAL
 
     def test_desloca_3h_so_as_linhas_do_cemaden(self, db_temporario):
         _banco_pre_127(
@@ -1561,7 +1565,7 @@ class TestMigracaoFusoCemaden:
             "2026-11-13T17:31:22+00:00",
             "2026-11-13T22:05:00+00:00",
         )
-        assert _user_version(db_temporario) == 1
+        assert _user_version(db_temporario) == VERSAO_ATUAL
 
     def test_roda_uma_unica_vez(self, db_temporario):
         _banco_pre_127(
@@ -1656,7 +1660,7 @@ class TestMigracaoFusoCemaden:
         monkeypatch.setattr(db_module, "_deslocar_iso", original)
         db_module.criar_banco()
 
-        assert _user_version(db_temporario) == 1
+        assert _user_version(db_temporario) == VERSAO_ATUAL
         assert _tempos_de(db_temporario, "1")[0] == "2026-11-13T20:00:00+00:00"
         assert _tempos_de(db_temporario, "2")[0] == "2026-11-13T21:00:00+00:00"
 
@@ -1795,12 +1799,12 @@ class TestGuardaDeCompatibilidade:
         with pytest.raises(SchemaIncompativelError, match="agregado_incidente_id"):
             db_module.criar_banco()
 
-    def test_user_version_1_dispensa_a_inspecao(self, tmp_path, monkeypatch):
+    def test_user_version_maior_que_0_dispensa_a_inspecao(self, tmp_path, monkeypatch):
         """Com `user_version >= 1` o banco é pós-#127 por construção."""
         db_path = tmp_path / "v1.db"
         _patch_db_path(monkeypatch, db_path)
         db_module.criar_banco()
-        assert _user_version(db_path) == 1
+        assert _user_version(db_path) == VERSAO_ATUAL
         db_module.criar_banco()  # não levanta
 
 
@@ -1875,3 +1879,101 @@ def test_evento_de_alerta_grava_a_mesma_linha_de_antes(db_temporario):
         None,
         0,
     )
+
+
+# ----------------------------------------------------------------------
+# Issue #132 — índice parcial de pendentes e carimbo em lote
+# ----------------------------------------------------------------------
+
+
+def _sql_do_indice(db_path: Path) -> str:
+    with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+        return conexao.execute(
+            "SELECT sql FROM sqlite_master WHERE name = 'idx_eventos_pendentes'"
+        ).fetchone()[0]
+
+
+_CONSULTA_DISPATCHER = (
+    "SELECT id FROM eventos WHERE processado_em IS NULL ORDER BY criado_em ASC LIMIT 100"
+)
+
+
+class TestIndicePendentesParcial:
+    def test_banco_novo_nasce_com_indice_parcial(self, db_temporario):
+        assert "WHERE processado_em IS NULL" in _sql_do_indice(db_temporario)
+
+    def test_banco_na_versao_1_troca_o_indice_completo(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            conexao.execute("DROP INDEX idx_eventos_pendentes")
+            conexao.execute(
+                "CREATE INDEX idx_eventos_pendentes ON eventos (processado_em, criado_em)"
+            )
+            conexao.execute("PRAGMA user_version = 1")
+            conexao.commit()
+        assert "WHERE" not in _sql_do_indice(db_temporario)
+
+        db_module.criar_banco()
+
+        assert "WHERE processado_em IS NULL" in _sql_do_indice(db_temporario)
+        assert _user_version(db_temporario) == VERSAO_ATUAL
+
+    def test_consulta_do_dispatcher_usa_o_indice(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            plano = [r[3] for r in conexao.execute("EXPLAIN QUERY PLAN " + _CONSULTA_DISPATCHER)]
+        assert any("idx_eventos_pendentes" in passo for passo in plano), plano
+
+
+class TestCarimboEmLote:
+    def _alertas(self, db_path: Path, linhas: list[tuple[str, str, int]]) -> None:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            conexao.executemany(
+                "INSERT INTO alertas (fonte, cod_alerta, latitude, longitude, detectado_em, "
+                "visto_ultima_vez, rodadas_ausente) VALUES (?, ?, 0, 0, 'x', 'antes', ?)",
+                linhas,
+            )
+            conexao.commit()
+
+    def _estado(self, db_path: Path) -> dict[tuple[str, str], tuple[str, int]]:
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            return {
+                (f, c): (v, r)
+                for f, c, v, r in conexao.execute(
+                    "SELECT fonte, cod_alerta, visto_ultima_vez, rodadas_ausente FROM alertas"
+                )
+            }
+
+    def test_mesmas_linhas_que_um_update_por_alerta(self, db_temporario, monkeypatch):
+        """Lotes de 2 para exercitar o fatiamento; o mesmo `cod_alerta` em duas
+        fontes prova que o filtro por fonte é respeitado."""
+        from alertavida.domain.detector import ResultadoDeteccao
+
+        monkeypatch.setattr(db_module, "_TAMANHO_LOTE", 2)
+        self._alertas(
+            db_temporario,
+            [
+                ("CEMADEN", "1", 0), ("CEMADEN", "2", 0), ("CEMADEN", "3", 0),
+                ("CEMADEN", "4", 1), ("CEMADEN", "5", 0),
+                ("EONET", "1", 0), ("EONET", "9", 2),
+            ],
+        )
+        resultado = ResultadoDeteccao(
+            eventos=[],
+            codigos_vistos={"1", "2", "3"},
+            codigos_ausentes={"4", "9"},
+            fonte_por_codigo={
+                "1": FonteDado.CEMADEN, "2": FonteDado.CEMADEN, "3": FonteDado.CEMADEN,
+                "4": FonteDado.CEMADEN, "9": FonteDado.EONET,
+            },
+        )
+
+        db_module.aplicar_resultado_deteccao(resultado, {}, "agora")
+
+        assert self._estado(db_temporario) == {
+            ("CEMADEN", "1"): ("agora", 0),
+            ("CEMADEN", "2"): ("agora", 0),
+            ("CEMADEN", "3"): ("agora", 0),
+            ("CEMADEN", "4"): ("agora", 2),
+            ("CEMADEN", "5"): ("antes", 0),  # nem visto nem ausente: intocado
+            ("EONET", "1"): ("antes", 0),  # mesmo código, outra fonte: intocado
+            ("EONET", "9"): ("agora", 3),
+        }

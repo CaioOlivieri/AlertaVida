@@ -70,12 +70,18 @@ class OutboxDispatcher:
         Marca processado_em mesmo que handlers falhem — o log registra
         a falha, mas o evento não é reentregue (evita loop infinito
         em caso de handler com bug permanente).
-        """
-        agora = datetime.now(UTC).isoformat(timespec="seconds")
-        processados = 0
 
+        Três passos, e os handlers rodam FORA de qualquer transação de
+        escrita (#132): ler o lote, publicar, marcar o lote numa transação
+        curta. Antes, o primeiro UPDATE abria a transação e ela ficava aberta
+        enquanto os handlers dos eventos seguintes rodavam — inofensivo com
+        `log_handler`, mas um handler de rede (Camada 8) seguraria o lock e a
+        rodada de ingestão bateria no busy_timeout. Entrega continua
+        at-least-once: um crash entre publicar e marcar reentrega o lote —
+        como antes, quando o rollback desfazia as marcas do lote inteiro.
+        """
         with conectar() as conexao:
-            cursor = conexao.execute(
+            rows = conexao.execute(
                 """
                 SELECT id, tipo, agregado_id, payload, schema_versao
                 FROM eventos
@@ -84,35 +90,34 @@ class OutboxDispatcher:
                 LIMIT ?
                 """,
                 (self._batch_size,),
-            )
-            rows = cursor.fetchall()
+            ).fetchall()
+        if not rows:
+            return 0
 
-            for row in rows:
-                id_, tipo, agregado_id, payload_json, schema_versao = row
-                try:
-                    payload = json.loads(payload_json)
-                except json.JSONDecodeError:
-                    payload = {}
-
-                evento = {
+        for id_, tipo, agregado_id, payload_json, schema_versao in rows:
+            try:
+                payload = json.loads(payload_json)
+            except json.JSONDecodeError:
+                payload = {}
+            self._bus.publish(
+                {
                     "id": id_,
                     "tipo": tipo,
                     "agregado_id": agregado_id,
                     "payload": payload,
                     "schema_versao": schema_versao,
                 }
-                self._bus.publish(evento)
+            )
 
-                conexao.execute(
-                    "UPDATE eventos SET processado_em = ?, tentativas = tentativas + 1 "
-                    "WHERE id = ?",
-                    (agora, id_),
-                )
-                processados += 1
-
-            conexao.commit()
-
-        return processados
+        agora = datetime.now(UTC).isoformat(timespec="seconds")
+        ids = [row[0] for row in rows]
+        with conectar() as conexao:
+            conexao.execute(
+                "UPDATE eventos SET processado_em = ?, tentativas = tentativas + 1 "
+                f"WHERE id IN ({', '.join('?' * len(ids))})",
+                (agora, *ids),
+            )
+        return len(rows)
 
 
 def log_handler(evento: dict) -> None:
