@@ -68,7 +68,11 @@ TABELAS = ("alertas", "eventos", "incidentes", "incidente_membros", "correlacao_
 
 
 def contar(caminho):
-    conexao = sqlite3.connect(f"file:{caminho}?mode=ro", uri=True)
+    # immutable=1, not just mode=ro: a read-only connection to a WAL-mode
+    # file still creates -wal/-shm beside it, which left stray files in
+    # the backups directory on the first run. Backups never change, so
+    # immutable is safe here (it would NOT be for the live database).
+    conexao = sqlite3.connect(f"file:{caminho}?mode=ro&immutable=1", uri=True)
     try:
         integridade = conexao.execute("PRAGMA integrity_check").fetchone()[0]
         versao = conexao.execute("PRAGMA user_version").fetchone()[0]
