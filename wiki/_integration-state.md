@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-11-23 (issue #131)
+updated: 2026-11-23 (issue #153)
 
 ## Module wiring table (single source of truth)
 
@@ -9,6 +9,7 @@ updated: 2026-11-23 (issue #131)
 | `domain/alerta.py` | Frozen `Alerta` model with `fonte`, COBRADE fields, `from_dict()` | All ingestion + persistence | integrated |
 | `domain/tempo.py` | `parse_iso_utc(valor, *, fuso_se_naive=UTC)` — parse ISO 8601, read a naive value in the caller's zone (CEMADEN passes UTC−3, #127), always return UTC (issue #20) | `domain/alerta.py`, `sources/nasa_eonet.py` | integrated |
 | `domain/enums.py` | `FonteDado`, `TipoEvento`, `NivelRisco`, `EscopoGeografico`, `FonteClassificacao` | Every domain-aware module | integrated |
+| `domain/aviso.py` | `AvisoMeteorologico`, `SeveridadeAviso` — INMET warnings as context, never alerts (#153) | `sources/inmet.py`, `database.py` | integrated |
 | `domain/municipio.py` | `Municipio` model | Via `Alerta` | integrated |
 | `domain/coordenadas.py` | `Coordenadas` model | Via `Alerta` | integrated |
 | `domain/detector.py` | `ChangeDetector`, `AlertaSnapshot`, `EventoDetectado`, `ResultadoDeteccao`, `TipoEventoDetectado` | `ingestion/orquestrador.py` | integrated |
@@ -28,6 +29,8 @@ updated: 2026-11-23 (issue #131)
 | `sources/base.py` | `DataSource` ABC (transport-agnostic), `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff + size cap → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener`, `opener_padrao` (HTTPS-only redirect policy); `HttpDataSource(DataSource)` template method (shared `__init__` + concrete `coletar()`, issue #20) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(HttpDataSource)`: `URL`/`USER_AGENT` class constants + payload normalization | `ingestion/orquestrador.py` | integrated |
+| `sources/inmet.py` | `InmetSource` (not a `DataSource`): INMET active warnings, `inicio`/`fim` read as UTC−3 (the JSON's `Z` is wrong), IBGE codes per warning (#153) | `bootstrap.fonte_avisos()` → `ingestion/avisos.py` | integrated |
+| `ingestion/avisos.py` | `executar_coleta_avisos()` → `database.registrar_avisos()`; separate `avisos` scheduler job every 30 min; never touches `ChangeDetector` (#153) | `scheduler.py`, `monitor.py` | integrated |
 | `sources/nasa_eonet.py` | `NasaEonetSource(HttpDataSource)`: EONET v3 `status=open&days=60` (60-day recency window, no `limit` — #124), builds `Alerta` directly, category→`TipoEvento` map, `mapear_eonet` for COBRADE (C.2), most-recent-fix selection, `nivel_risco=INDETERMINADO` | `monitor.py`, `scheduler.py` | integrated |
 
 ## Current flow

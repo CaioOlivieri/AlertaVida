@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Final
 
 from alertavida.domain import Alerta
+from alertavida.domain.aviso import AvisoMeteorologico
 from alertavida.domain.correlacao import (
     DISTANCIA_MAXIMA_KM,
     JANELA_TEMPO_SEGUNDOS,
@@ -407,6 +408,46 @@ def criar_banco() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_correlacao_observacoes_incidente_id
             ON correlacao_observacoes (incidente_id)
+            """
+        )
+        # Issue #153 — avisos meteorológicos (INMET) como CONTEXTO, nunca
+        # alerta: tabela própria + municípios cobertos. Aditivas e
+        # idempotentes (IF NOT EXISTS), sem passo de user_version. Um aviso
+        # cobre até ~3.200 municípios, daí a tabela de ligação sem rowid com
+        # `codibge` na frente da PK: é a consulta que importa ("avisos no
+        # município X"). Nada aqui é apagado, então a child key `aviso_id`
+        # não precisa de índice próprio para checagem de FK em DELETE.
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS avisos_meteorologicos (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo_cap      TEXT    NOT NULL UNIQUE,
+                id_aviso        INTEGER NOT NULL,
+                id_sequencia    INTEGER NOT NULL,
+                evento          TEXT    NOT NULL,
+                severidade      TEXT    NOT NULL,
+                inicio          TEXT    NOT NULL,
+                fim             TEXT    NOT NULL,
+                encerrado       INTEGER NOT NULL DEFAULT 0,
+                primeira_coleta TEXT    NOT NULL,
+                ultima_coleta   TEXT    NOT NULL
+            )
+            """
+        )
+        conexao.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_avisos_id_aviso
+            ON avisos_meteorologicos (id_aviso, id_sequencia)
+            """
+        )
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS aviso_municipios (
+                codibge  INTEGER NOT NULL,
+                aviso_id INTEGER NOT NULL,
+                PRIMARY KEY (codibge, aviso_id),
+                FOREIGN KEY (aviso_id) REFERENCES avisos_meteorologicos(id)
+            ) WITHOUT ROWID
             """
         )
         _migrar_banco(conexao)
@@ -1241,3 +1282,105 @@ def avaliar_candidatos_correlacao(alerta_id: int, agora: str) -> list[Observacao
 
         conexao.commit()
     return resultados
+
+
+# ---------------------------------------------------------------------------
+# Avisos meteorológicos (issue #153) — contexto de incidentes, nunca alerta.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResultadoRegistroAvisos:
+    novos: int
+    ja_conhecidos: int
+
+
+def registrar_avisos(avisos: list[AvisoMeteorologico], agora: str) -> ResultadoRegistroAvisos:
+    """Grava os avisos coletados numa transação. Idempotente por `codigo_cap`.
+
+    Uma mensagem CAP é imutável — uma nova sequência do mesmo aviso chega com
+    outro `codigo_cap` e entra como linha nova (a consulta escolhe a sequência
+    mais recente). De uma mensagem já conhecida só mudam `encerrado` e
+    `ultima_coleta`.
+    """
+    novos = 0
+    with conectar() as conexao:
+        for aviso in avisos:
+            existente = conexao.execute(
+                "SELECT id FROM avisos_meteorologicos WHERE codigo_cap = ?",
+                (aviso.codigo_cap,),
+            ).fetchone()
+            if existente is not None:
+                conexao.execute(
+                    "UPDATE avisos_meteorologicos SET encerrado = ?, ultima_coleta = ? "
+                    "WHERE id = ?",
+                    (int(aviso.encerrado), agora, existente[0]),
+                )
+                continue
+            cursor = conexao.execute(
+                """
+                INSERT INTO avisos_meteorologicos (
+                    codigo_cap, id_aviso, id_sequencia, evento, severidade,
+                    inicio, fim, encerrado, primeira_coleta, ultima_coleta
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    aviso.codigo_cap,
+                    aviso.id_aviso,
+                    aviso.id_sequencia,
+                    aviso.evento,
+                    aviso.severidade.value,
+                    aviso.inicio.isoformat(),
+                    aviso.fim.isoformat(),
+                    int(aviso.encerrado),
+                    agora,
+                    agora,
+                ),
+            )
+            conexao.executemany(
+                "INSERT INTO aviso_municipios (codibge, aviso_id) VALUES (?, ?)",
+                [(codigo, cursor.lastrowid) for codigo in sorted(aviso.codigos_ibge)],
+            )
+            novos += 1
+    return ResultadoRegistroAvisos(novos=novos, ja_conhecidos=len(avisos) - novos)
+
+
+@dataclass(frozen=True)
+class AvisoVigente:
+    codigo_cap: str
+    evento: str
+    severidade: str
+    inicio: str
+    fim: str
+
+
+def avisos_vigentes(codibge: int, instante: str) -> list[AvisoVigente]:
+    """Avisos que cobriam o município `codibge` no `instante` (ISO 8601).
+
+    Calculado na leitura, não gravado no alerta: um aviso pode ser estendido
+    ou encerrado depois que o alerta chegou, e a anotação deve refletir o
+    último estado conhecido. Só a sequência mais recente de cada `id_aviso`
+    conta (uma nova sequência substitui a anterior, mesmo que a anterior
+    tivesse janela maior). Comparação por `julianday()`, não por string — os
+    instantes têm frações de segundo diferentes.
+    """
+    with conectar() as conexao:
+        linhas = conexao.execute(
+            """
+            SELECT a.codigo_cap, a.evento, a.severidade, a.inicio, a.fim
+            FROM aviso_municipios m
+            JOIN avisos_meteorologicos a ON a.id = m.aviso_id
+            WHERE m.codibge = ?
+              AND a.encerrado = 0
+              AND julianday(a.inicio) <= julianday(?)
+              AND julianday(a.fim) >= julianday(?)
+              AND a.id_sequencia = (
+                  SELECT MAX(b.id_sequencia) FROM avisos_meteorologicos b
+                  WHERE b.id_aviso = a.id_aviso
+              )
+            ORDER BY a.inicio, a.codigo_cap
+            """,
+            (codibge, instante, instante),
+        ).fetchall()
+    return [AvisoVigente(*linha) for linha in linhas]
+

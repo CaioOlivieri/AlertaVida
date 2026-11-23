@@ -6,13 +6,17 @@ from types import FrameType
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from alertavida.bootstrap import configurar_logging, fontes_producao
+from alertavida.bootstrap import configurar_logging, fonte_avisos, fontes_producao
 from alertavida.database import criar_banco
 from alertavida.events import OutboxDispatcher, criar_bus_producao
+from alertavida.ingestion.avisos import executar_coleta_avisos, formatar_relatorio_avisos
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
 
 INTERVALO_MINUTOS = 5
+# Avisos do INMET mudam poucas vezes ao dia (59 em 12 dias, medido em
+# 2026-11-23) e o payload tem ~280 KB — 30 min basta (#153).
+INTERVALO_AVISOS_MINUTOS = 30
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +31,11 @@ def _rodar_rodada() -> None:
     relatorio = executar_ingestao(fontes_producao())
     logger.info("Rodada concluída:\n%s", formatar_relatorio(relatorio))
     logger.info("Próxima rodada em %s minutos.", INTERVALO_MINUTOS)
+
+
+def _rodar_coleta_avisos() -> None:
+    relatorio = executar_coleta_avisos(fonte_avisos())
+    logger.info("Avisos meteorológicos:\n%s", formatar_relatorio_avisos(relatorio))
 
 
 def agendar_ingestao() -> None:
@@ -45,6 +54,16 @@ def agendar_ingestao() -> None:
         _rodar_rodada,
         "interval",
         **kwargs_ingestao,
+    )
+    scheduler.add_job(
+        _rodar_coleta_avisos,
+        "interval",
+        minutes=INTERVALO_AVISOS_MINUTOS,
+        next_run_time=datetime.now(),
+        id="avisos",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
     )
     dispatcher = OutboxDispatcher(criar_bus_producao())
     scheduler.add_job(

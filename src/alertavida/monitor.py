@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import sys
 
-from alertavida.bootstrap import configurar_logging, fontes_producao
+from alertavida.bootstrap import configurar_logging, fonte_avisos, fontes_producao
 from alertavida.database import criar_banco
+from alertavida.ingestion.avisos import executar_coleta_avisos, formatar_relatorio_avisos
 from alertavida.ingestion.orquestrador import executar_ingestao
 from alertavida.reporting import formatar_relatorio
 
@@ -21,6 +22,7 @@ def main() -> int:
     criar_banco()
     relatorio = executar_ingestao(fontes_producao())
     print(formatar_relatorio(relatorio))
+    print(formatar_relatorio_avisos(executar_coleta_avisos(fonte_avisos())))
     return 0
 
 

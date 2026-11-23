@@ -393,6 +393,21 @@ The unit needs `ReadWritePaths=/var/lib/alertavida`, not `ReadOnlyPaths`:
 even a read-only SQLite connection to a WAL database must create the `-shm`
 file beside it. The script still opens the database with `mode=ro`.
 
+## INMET warnings (issue #153)
+
+The collector runs a second job, `avisos`, every 30 minutes: it fetches
+INMET's active severe-weather warnings and stores them with the IBGE codes
+they cover. Warnings are **context** for alerts, never alerts
+([[decisions/inmet-warnings-as-context]]). Check:
+
+```bash
+journalctl -u alertavida.service | grep "INMET (avisos)" | tail -3
+sudo -u alertavida python3 -c "import sqlite3;c=sqlite3.connect('file:/var/lib/alertavida/alertavida.db?mode=ro',uri=True);print(c.execute('SELECT COUNT(*), MAX(ultima_coleta) FROM avisos_meteorologicos').fetchone())"
+```
+
+A collection failure is logged as `INMET (avisos): FALHA de coleta` and does
+not affect the alert rounds.
+
 ## Journal size
 
 `install.sh` installs `deploy/journald-alertavida.conf` as

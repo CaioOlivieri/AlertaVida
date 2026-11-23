@@ -13,6 +13,7 @@ import os
 
 from alertavida.sources.base import DataSource
 from alertavida.sources.cemaden import CemadenSource
+from alertavida.sources.inmet import InmetSource
 from alertavida.sources.nasa_eonet import NasaEonetSource
 
 FORMATO_LOG = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -24,6 +25,11 @@ def fontes_producao() -> list[DataSource]:
     Nova fonte entra aqui — e só aqui.
     """
     return [CemadenSource(), NasaEonetSource()]
+
+
+def fonte_avisos() -> InmetSource:
+    """Coletor de avisos meteorológicos (#153) — contexto, não alerta."""
+    return InmetSource()
 
 
 def configurar_logging() -> None:
