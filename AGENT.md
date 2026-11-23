@@ -6,7 +6,7 @@ Instructions for AI agents working on this codebase.
 
 ## What this project does
 
-**AlertaVida** — real-time disaster alert system for the Brazilian public. Ingests data from official sources (CEMADEN, NASA EONET, INMET, INPE), detects changes, persists via transactional outbox. Python 3.13, Pydantic v2, APScheduler, SQLite, pytest, uv.
+**AlertaVida** — real-time disaster alert system for the Brazilian public. Ingests alerts from official sources (CEMADEN, NASA EONET; INPE planned) and INMET severe-weather warnings as context, detects changes, persists via transactional outbox. Python 3.13, Pydantic v2, APScheduler, SQLite, pytest, uv.
 
 ```bash
 python -m alertavida.scheduler   # continuous service (Ctrl+C to stop)
@@ -33,7 +33,7 @@ uv run pytest -m integration -v   # CEMADEN contract test (hits real API)
 - `database.py` — SQLite persistence: schema bootstrap, snapshots, transactional outbox
 - `events.py` — in-memory EventBus + `OutboxDispatcher`
 - `reporting.py` — shared report formatting for `monitor.py`
-- `bootstrap.py` — the one list of production sources (`fontes_producao()`) and the entrypoints' logging setup; a new source goes here only
+- `bootstrap.py` — the one list of production sources (`fontes_producao()`), the INMET warnings collector (`fonte_avisos()`) and the entrypoints' logging setup; a new source goes here only
 - `domain/` — `Alerta`, enums (`FonteDado`, `TipoEvento`, etc.), `ChangeDetector`, COBRADE mapper, geographic classifier, `correlacao`/`incidente` (event correlation, Camada 5)
 - `ingestion/orquestrador.py` — `executar_ingestao()`: collects → detects → persists per source
 - `sources/` — `DataSource` ABC, `HttpDataSource` template, `CemadenSource`, `NasaEonetSource`, `ResultadoColeta`, `FalhaDeColeta`

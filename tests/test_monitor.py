@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from alertavida.domain.enums import FonteDado
+from alertavida.ingestion.avisos import RelatorioAvisos
 from alertavida.ingestion.orquestrador import RelatorioFonte, RelatorioIngestao
 from alertavida.monitor import main
 
@@ -40,6 +41,13 @@ def test_main_executa_ingestao_e_imprime_relatorio(
     monkeypatch.setattr("alertavida.monitor.executar_ingestao", mock_executar_ingestao)
     monkeypatch.setattr("builtins.print", mock_print)
     monkeypatch.setattr("alertavida.monitor.fontes_producao", lambda: fontes)
+    mock_coleta_avisos = MagicMock(
+        return_value=RelatorioAvisos(
+            coletados=3, descartados=0, novos=1, falha_coleta=False, duracao_segundos=0.1
+        )
+    )
+    monkeypatch.setattr("alertavida.monitor.fonte_avisos", MagicMock())
+    monkeypatch.setattr("alertavida.monitor.executar_coleta_avisos", mock_coleta_avisos)
 
     # Act
     result = main()
@@ -47,7 +55,10 @@ def test_main_executa_ingestao_e_imprime_relatorio(
     # Assert
     mock_criar_banco.assert_called_once()
     mock_executar_ingestao.assert_called_once_with(fontes)
-    mock_print.assert_called_once()
-    assert "CEMADEN: 5 coletados" in mock_print.call_args[0][0]
-    assert "Total: 5 alertas" in mock_print.call_args[0][0]
+    assert mock_print.call_count == 2
+    relatorio_alertas = mock_print.call_args_list[0][0][0]
+    assert "CEMADEN: 5 coletados" in relatorio_alertas
+    assert "Total: 5 alertas" in relatorio_alertas
+    assert "INMET (avisos): 3 vigentes ou futuros (1 novos" in mock_print.call_args_list[1][0][0]
+    mock_coleta_avisos.assert_called_once()
     assert result == 0

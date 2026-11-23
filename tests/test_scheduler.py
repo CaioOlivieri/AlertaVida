@@ -35,7 +35,8 @@ def test_intervalo_correto():
 
 
 def test_configuracao_dos_jobs():
-    """Ambos os jobs mantêm a config anti-pile-up e o dispatcher roda a cada 30s."""
+    """Todos os jobs mantêm a config anti-pile-up; dispatcher a cada 30s e
+    avisos (#153) a cada 30 min. Busca por id, não por posição."""
     scheduler_mock = Mock()
     with (
         patch("alertavida.scheduler.criar_banco"),
@@ -43,18 +44,15 @@ def test_configuracao_dos_jobs():
     ):
         scheduler.agendar_ingestao()
 
-    ingestao_kwargs = scheduler_mock.add_job.call_args_list[0].kwargs
-    assert ingestao_kwargs["id"] == "ingestao"
-    assert ingestao_kwargs["max_instances"] == 1
-    assert ingestao_kwargs["coalesce"] is True
-    assert ingestao_kwargs["misfire_grace_time"] == 60
-
-    dispatcher_kwargs = scheduler_mock.add_job.call_args_list[1].kwargs
-    assert dispatcher_kwargs["id"] == "dispatcher"
-    assert dispatcher_kwargs["seconds"] == 30
-    assert dispatcher_kwargs["max_instances"] == 1
-    assert dispatcher_kwargs["coalesce"] is True
-    assert dispatcher_kwargs["misfire_grace_time"] == 60
+    jobs = {c.kwargs["id"]: c.kwargs for c in scheduler_mock.add_job.call_args_list}
+    assert set(jobs) == {"ingestao", "avisos", "dispatcher"}
+    for kwargs in jobs.values():
+        assert kwargs["max_instances"] == 1
+        assert kwargs["coalesce"] is True
+        assert kwargs["misfire_grace_time"] == 60
+    assert jobs["ingestao"]["minutes"] == 5
+    assert jobs["dispatcher"]["seconds"] == 30
+    assert jobs["avisos"]["minutes"] == 30
 
 
 def test_listener_continua_apos_erro(caplog):
