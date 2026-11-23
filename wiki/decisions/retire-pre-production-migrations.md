@@ -61,5 +61,8 @@ Dated from git history, not assumed:
 | Production backup 2026-11-06 (`user_version` 0, before #127) | 1,357 alerts, integrity ok | `user_version` 1, same row counts and indexes, second run changes nothing, snapshots load (638 CEMADEN / 719 EONET) |
 | Production backup 2026-11-22 (`user_version` 1) | 1,649 alerts | identical — counts and indexes unchanged |
 
-The 2026-09-05 snapshot is root-only on the old WSL host; its result is
-recorded below when read.
+| **Pre-cutover snapshot 2026-09-05** (`user_version` 0, the oldest database that exists) | had `idx_fonte` + `idx_escopo_geografico` → **dropped by the kept #89 step**; already had `agregado_incidente_id` → the removed #59 `ALTER` was indeed unneeded; guard passed; `user_version` 0 → 1; 574 alerts / 1,312 events / 537 incidents unchanged; second run changes nothing; #127 shift applied (oldest CEMADEN onset 05:37 → 08:37 UTC); snapshots load (7 CEMADEN / 567 EONET) |
+
+The snapshot result is the strongest evidence for the cut: the one step it
+still needed is the one that was kept, and the one it did not need is the one
+that was removed.
