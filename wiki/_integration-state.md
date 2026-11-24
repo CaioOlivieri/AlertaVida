@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-11-23 (issue #153)
+updated: 2026-11-23 (issues #153, #91)
 
 ## Module wiring table (single source of truth)
 
@@ -13,10 +13,10 @@ updated: 2026-11-23 (issue #153)
 | `domain/municipio.py` | `Municipio` model | Via `Alerta` | integrated |
 | `domain/coordenadas.py` | `Coordenadas` model | Via `Alerta` | integrated |
 | `domain/detector.py` | `ChangeDetector`, `AlertaSnapshot`, `EventoDetectado`, `ResultadoDeteccao`, `TipoEventoDetectado` | `ingestion/orquestrador.py` | integrated |
-| `domain/cobrade.py` | COBRADE subgroup mapping tables + validators | `sources/cemaden.py` | integrated |
+| `domain/cobrade.py` | COBRADE subgroup mapping tables + validators; `fonte_classificacao_do_mapeamento()` — the one producer of invariant 11 (#91) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `domain/geographic.py` | `FaixaGeografica`, `classificar_escopo()` | `sources/cemaden.py` | integrated |
 | `domain/correlacao.py` | Pure scoring/decision core for record linkage (issue #58): `decidir_correlacao()` weighs distance (`distancia_haversine_km`), time window, COBRADE-type and IBGE-code compatibility into a `ResultadoDecisao`; different known IBGE codes are a structural `NAO_VINCULA` gate (#129) (`VINCULA`/`NAO_VINCULA`/`REVISAO`); `CandidatoCorrelacao`/`DecisaoCorrelacao` models, `DISTANCIA_MAXIMA_KM`/`JANELA_TEMPO_SEGUNDOS` thresholds. No I/O, no SQL | `database.py` (`avaliar_candidatos_correlacao`) and `ingestion/orquestrador.py` (`_correlacionar_rodada`) | integrated |
-| `domain/incidente.py` | `Incidente`, `MembroIncidente`, `StatusIncidente`, `severidade`, `membros_sem_severidade` | None in `src/` — only `tests/domain/test_incidente.py` and `tests/ingestion/test_orquestrador.py` import it. `database.py` persists Incidente state as raw SQL (`'ATIVO'`/`'RESOLVIDO'` strings) without ever instantiating this model. Intended consumers: Camada 6 (serializing `GET /incidentes`) and Camada 8 (`severidade`) — wiring is issue #91 (issue #88) | orphan-in-practice |
+| `domain/incidente.py` | `Incidente`, `MembroIncidente`, `StatusIncidente`, `severidade`, `membros_sem_severidade` | `StatusIncidente` only: `database.py` binds it on every `incidentes` write and in the candidate blocking query, `status_incidente()` returns it, the orchestrator compares by identity (#91). `alertas.status_interno` keeps its own strings — same words, different lifecycle. The `Incidente` model itself is still never instantiated in `src/` — only `tests/domain/test_incidente.py` and `tests/ingestion/test_orquestrador.py` build it. Intended consumers: Camada 6 (serializing `GET /incidentes`) and Camada 8 (`severidade`) — wiring is issue #91 (issue #88) | orphan-in-practice |
 | `bootstrap.py` | `fontes_producao()` (the one list of production sources) and `configurar_logging()` (`LOG_LEVEL`, shared format) — issue #131 | `monitor.py`, `scheduler.py` | integrated |
 | `monitor.py` | Entrypoint: `main()` → `criar_banco()`, `executar_ingestao(fontes_producao())`, prints formatted report via `formatar_relatorio()` | CLI entrypoint | integrated |
 | `scheduler.py` | `agendar_ingestao()`: APScheduler `BlockingScheduler` with `ingestao` (5min) + `dispatcher` (30s) jobs; blocks on `start()`, clean `Ctrl+C` shutdown (issue #21); logs per-run report via `formatar_relatorio()`; builds the EventBus via `criar_bus_producao()` once and injects it into `OutboxDispatcher` (issue #24). Since #78, also installs a `SIGTERM` handler and calls `scheduler.shutdown(wait=True)` on both `SIGINT`/`SIGTERM` — the deploy unit routes `systemctl stop`/`restart` through `SIGINT` (`KillSignal=SIGINT`), so either path drains an in-flight round instead of orphaning an alert (see [[decisions/systemd-vps-deployment]]) | `deploy/alertavida.service` (production) | integrated |
