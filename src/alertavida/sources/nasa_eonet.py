@@ -48,10 +48,9 @@ from urllib.parse import urlencode
 from pydantic import ValidationError
 
 from alertavida.domain import Alerta
-from alertavida.domain.cobrade import mapear_eonet
+from alertavida.domain.cobrade import fonte_classificacao_do_mapeamento, mapear_eonet
 from alertavida.domain.coordenadas import Coordenadas
 from alertavida.domain.enums import (
-    FonteClassificacao,
     FonteDado,
     NivelRisco,
     TipoEvento,
@@ -148,11 +147,7 @@ class NasaEonetSource(HttpDataSource):
         categoria = self._categoria_principal(evento)
         tipo_evento = CATEGORIA_EONET_PARA_TIPO.get(categoria, TipoEvento.INDETERMINADO)
         cobrade = mapear_eonet(categoria)
-        fonte_classificacao = (
-            FonteClassificacao.MAPEADA_POR_NOME
-            if cobrade is not None
-            else FonteClassificacao.INDETERMINADA
-        )
+        fonte_classificacao = fonte_classificacao_do_mapeamento(cobrade)
 
         fixes = self._fixes_validos(evento.get("geometry"))
         # A série é colapsada em dois instantes distintos (#57). `min`/`max` com

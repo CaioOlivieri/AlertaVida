@@ -25,8 +25,8 @@ from datetime import timedelta, timezone
 from typing import Final
 
 from alertavida.domain import Alerta
-from alertavida.domain.cobrade import mapear_cemaden
-from alertavida.domain.enums import FonteClassificacao, FonteDado, TipoEvento
+from alertavida.domain.cobrade import fonte_classificacao_do_mapeamento, mapear_cemaden
+from alertavida.domain.enums import FonteDado, TipoEvento
 from alertavida.domain.geographic import classificar_escopo
 from alertavida.sources._http import HttpDataSource
 from alertavida.sources.base import FalhaDeColeta
@@ -110,10 +110,7 @@ class CemadenSource(HttpDataSource):
         categoria = self._categoria_do_evento(item)
         tipo_evento = TipoEvento.from_string(categoria)
         cobrade = mapear_cemaden(categoria)
-        if cobrade is not None:
-            fonte_classificacao = FonteClassificacao.MAPEADA_POR_NOME
-        else:
-            fonte_classificacao = FonteClassificacao.INDETERMINADA
+        fonte_classificacao = fonte_classificacao_do_mapeamento(cobrade)
 
         return alerta.model_copy(
             update={

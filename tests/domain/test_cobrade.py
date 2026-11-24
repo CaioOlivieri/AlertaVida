@@ -1,9 +1,12 @@
 from alertavida.domain.cobrade import (
+    EVENTO_CEMADEN_PARA_COBRADE,
     EVENTO_EONET_PARA_COBRADE,
+    fonte_classificacao_do_mapeamento,
     mapear_cemaden,
     mapear_eonet,
     validar_formato,
 )
+from alertavida.domain.enums import FonteClassificacao
 
 # ============================================================
 # mapear_cemaden
@@ -91,3 +94,29 @@ def test_validar_formato_nao_numerico_invalido() -> None:
 
 def test_validar_formato_string_vazia_invalido() -> None:
     assert validar_formato("") is False
+
+
+# ============================================================
+# fonte_classificacao_do_mapeamento (#91)
+# ============================================================
+
+
+def test_fonte_classificacao_sem_codigo_e_indeterminada() -> None:
+    assert fonte_classificacao_do_mapeamento(None) is FonteClassificacao.INDETERMINADA
+
+
+def test_fonte_classificacao_de_todo_codigo_mapeado_e_por_nome() -> None:
+    codigos = {*EVENTO_CEMADEN_PARA_COBRADE.values(), *EVENTO_EONET_PARA_COBRADE.values()}
+    for codigo in codigos:
+        assert fonte_classificacao_do_mapeamento(codigo) is FonteClassificacao.MAPEADA_POR_NOME
+
+
+def test_fonte_classificacao_de_categoria_desconhecida_e_indeterminada() -> None:
+    assert (
+        fonte_classificacao_do_mapeamento(mapear_cemaden("Categoria Nova"))
+        is FonteClassificacao.INDETERMINADA
+    )
+    assert (
+        fonte_classificacao_do_mapeamento(mapear_eonet("dustHaze"))
+        is FonteClassificacao.INDETERMINADA
+    )
