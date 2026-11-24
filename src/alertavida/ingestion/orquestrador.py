@@ -30,6 +30,7 @@ from alertavida.database import (
 from alertavida.domain.correlacao import ResultadoDecisao
 from alertavida.domain.detector import TipoEventoDetectado, detectar_mudancas
 from alertavida.domain.enums import FonteDado
+from alertavida.domain.incidente import StatusIncidente
 from alertavida.sources.base import DataSource, FalhaDeColeta
 
 if TYPE_CHECKING:
@@ -267,7 +268,7 @@ def _correlacionar_rodada(
                 criados, juntados, fundidos, revisao = _acumular_contadores(
                     criados, juntados, fundidos, revisao, acao, teve_revisao
                 )
-            elif status_incidente(incidente_id) == "RESOLVIDO":
+            elif status_incidente(incidente_id) is StatusIncidente.RESOLVIDO:
                 reativar_incidente(incidente_id, alerta_id, agora)
 
         elif evento.tipo is TipoEventoDetectado.RESOLVIDO:
@@ -275,7 +276,7 @@ def _correlacionar_rodada(
             incidente_id = buscar_incidente_atual(alerta_id)
             if (
                 incidente_id is not None
-                and status_incidente(incidente_id) == "ATIVO"
+                and status_incidente(incidente_id) is StatusIncidente.ATIVO
                 and todos_membros_resolvidos(incidente_id)
             ):
                 resolver_incidente(incidente_id, alerta_id, agora)
