@@ -6,15 +6,15 @@
 |----------------------------------------- | -------: | -------: | ------: | --------: |
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
 | src/alertavida/bootstrap.py              |       14 |        1 |     93% |        32 |
-| src/alertavida/database.py               |      287 |        4 |     99% |62, 1118, 1176, 1240 |
+| src/alertavida/database.py               |      288 |        4 |     99% |63, 1119, 1178, 1242 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       131 |
 | src/alertavida/domain/aviso.py           |       44 |        0 |    100% |           |
-| src/alertavida/domain/cobrade.py         |       11 |        0 |    100% |           |
+| src/alertavida/domain/cobrade.py         |       16 |        0 |    100% |           |
 | src/alertavida/domain/coordenadas.py     |        5 |        0 |    100% |           |
 | src/alertavida/domain/correlacao.py      |      110 |        0 |    100% |           |
 | src/alertavida/domain/detector.py        |       64 |        0 |    100% |           |
-| src/alertavida/domain/enums.py           |       69 |        0 |    100% |           |
+| src/alertavida/domain/enums.py           |       73 |        0 |    100% |           |
 | src/alertavida/domain/geographic.py      |       38 |        0 |    100% |           |
 | src/alertavida/domain/incidente.py       |       44 |        0 |    100% |           |
 | src/alertavida/domain/municipio.py       |       19 |        0 |    100% |           |
@@ -22,17 +22,17 @@
 | src/alertavida/events.py                 |       51 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
 | src/alertavida/ingestion/avisos.py       |       29 |        0 |    100% |           |
-| src/alertavida/ingestion/orquestrador.py |      134 |        2 |     99% |   266-267 |
+| src/alertavida/ingestion/orquestrador.py |      135 |        2 |     99% |   267-268 |
 | src/alertavida/monitor.py                |       13 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
 | src/alertavida/scheduler.py              |       47 |        2 |     96% |     37-38 |
 | src/alertavida/sources/\_\_init\_\_.py   |        5 |        0 |    100% |           |
 | src/alertavida/sources/\_http.py         |       85 |        0 |    100% |           |
 | src/alertavida/sources/base.py           |       23 |        0 |    100% |           |
-| src/alertavida/sources/cemaden.py        |       42 |        1 |     98% |       141 |
+| src/alertavida/sources/cemaden.py        |       40 |        1 |     98% |       138 |
 | src/alertavida/sources/inmet.py          |       55 |        4 |     93% |55, 62, 69, 85 |
 | src/alertavida/sources/nasa\_eonet.py    |       89 |        0 |    100% |           |
-| **TOTAL**                                | **1404** |   **15** | **99%** |           |
+| **TOTAL**                                | **1413** |   **15** | **99%** |           |
 
 
 ## Setup coverage badge
