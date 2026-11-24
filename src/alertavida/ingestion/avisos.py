@@ -13,11 +13,14 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from alertavida.database import registrar_avisos
+from alertavida.database import registrar_avisos, registrar_rodada
+from alertavida.domain.enums import FonteDado
 from alertavida.sources.base import FalhaDeColeta
 from alertavida.sources.inmet import InmetSource
 
 logger = logging.getLogger(__name__)
+
+_FONTE = FonteDado.INMET.value
 
 
 @dataclass(frozen=True)
@@ -30,13 +33,17 @@ class RelatorioAvisos:
 
 
 def executar_coleta_avisos(source: InmetSource) -> RelatorioAvisos:
+    """Coleta e grava os avisos; registra a rodada (#158) com ou sem falha."""
+    iniciada_em = datetime.now(UTC).isoformat()
     inicio = time.monotonic()
     try:
         avisos, descartados = source.coletar()
     except FalhaDeColeta as exc:
         logger.error("Falha ao coletar avisos INMET: %s", exc.causa)
+        registrar_rodada(iniciada_em, datetime.now(UTC).isoformat(), [(_FONTE, None)])
         return RelatorioAvisos(0, 0, 0, True, time.monotonic() - inicio)
     resultado = registrar_avisos(avisos, datetime.now(UTC).isoformat())
+    registrar_rodada(iniciada_em, datetime.now(UTC).isoformat(), [(_FONTE, len(avisos))])
     return RelatorioAvisos(
         coletados=len(avisos),
         descartados=descartados,

@@ -23,6 +23,7 @@ from alertavida.database import (
     criar_incidente,
     fundir_incidentes,
     reativar_incidente,
+    registrar_rodada,
     resolver_incidente,
     status_incidente,
     todos_membros_resolvidos,
@@ -385,6 +386,11 @@ def executar_ingestao(
             )
         )
 
+    registrar_rodada(
+        agora_da_rodada.isoformat(),
+        datetime.now(UTC).isoformat(),
+        [(rf.fonte.value, None if rf.falha_coleta else rf.coletados) for rf in relatorios],
+    )
     return RelatorioIngestao(
         por_fonte=tuple(relatorios),
         agora=agora_da_rodada,

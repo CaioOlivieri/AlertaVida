@@ -1992,3 +1992,41 @@ class TestCarimboEmLote:
             ("EONET", "1"): ("antes", 0),  # mesmo código, outra fonte: intocado
             ("EONET", "9"): ("agora", 3),
         }
+
+
+class TestRegistrarRodada:
+    """#158 — uma linha por (rodada, fonte); `None` = coleta falhou."""
+
+    def _linhas(self, db_path):
+        with contextlib.closing(sqlite3.connect(db_path)) as conexao:
+            return conexao.execute(
+                "SELECT iniciada_em, fonte, concluida_em, coletados, falha "
+                "FROM rodadas ORDER BY fonte"
+            ).fetchall()
+
+    def test_grava_uma_linha_por_fonte(self, db_temporario):
+        db_module.registrar_rodada("t0", "t1", [("CEMADEN", 30), ("EONET", None)])
+        assert self._linhas(db_temporario) == [
+            ("t0", "CEMADEN", "t1", 30, 0),
+            ("t0", "EONET", "t1", None, 1),
+        ]
+
+    def test_mesmo_instante_e_fonte_a_ultima_vale(self, db_temporario):
+        db_module.registrar_rodada("t0", "t1", [("CEMADEN", 30)])
+        db_module.registrar_rodada("t0", "t2", [("CEMADEN", None)])
+        assert self._linhas(db_temporario) == [("t0", "CEMADEN", "t2", None, 1)]
+
+    def test_sem_fontes_nao_grava_nada(self, db_temporario):
+        db_module.registrar_rodada("t0", "t1", [])
+        assert self._linhas(db_temporario) == []
+
+    def test_check_impede_falha_com_contagem(self, db_temporario):
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            with pytest.raises(sqlite3.IntegrityError):
+                conexao.execute(
+                    "INSERT INTO rodadas VALUES ('t0', 'CEMADEN', 't1', 5, 1)"
+                )
+            with pytest.raises(sqlite3.IntegrityError):
+                conexao.execute(
+                    "INSERT INTO rodadas VALUES ('t0', 'EONET', 't1', NULL, 0)"
+                )

@@ -327,7 +327,7 @@ def test_coletado_em_propagado_de_resultado_coleta(db_temporario: object) -> Non
     assert relatorio.por_fonte[0].coletado_em == momento_coleta
 
 
-def test_falha_coleta_zera_coletado_em() -> None:
+def test_falha_coleta_zera_coletado_em(db_temporario: object) -> None:
     source = FakeDataSource(fonte=FonteDado.CEMADEN, falhar=True)
 
     relatorio = executar_ingestao([source])
@@ -1065,3 +1065,25 @@ def test_correlacao_recupera_alerta_orfao_de_transacao_partida(
     assert relatorio_3.por_fonte[0].incidentes_orfaos_recuperados == 0
     assert relatorio_3.por_fonte[0].incidentes_criados == 0
     assert relatorio_3.por_fonte[0].incidentes_juntados == 0
+
+
+def test_rodada_concluida_fica_registrada_por_fonte(db_temporario: Path) -> None:
+    """#158: o instante é o `agora` da rodada; fonte que falhou grava NULL."""
+    momento = datetime(2026, 11, 24, 1, 0, tzinfo=UTC)
+    ok = FakeDataSource(
+        fonte=FonteDado.CEMADEN,
+        alertas=[_alerta("C1", FonteDado.CEMADEN), _alerta("C2", FonteDado.CEMADEN)],
+    )
+    falha = FakeDataSource(fonte=FonteDado.EONET, falhar=True)
+
+    executar_ingestao([ok, falha], agora=momento)
+
+    with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+        linhas = conexao.execute(
+            "SELECT iniciada_em, fonte, coletados, falha, concluida_em >= iniciada_em "
+            "FROM rodadas ORDER BY fonte"
+        ).fetchall()
+    assert linhas == [
+        (momento.isoformat(), "CEMADEN", 2, 0, 1),
+        (momento.isoformat(), "EONET", None, 1, 1),
+    ]
