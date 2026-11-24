@@ -1384,23 +1384,31 @@ def avisos_vigentes(codibge: int, instante: str) -> list[AvisoVigente]:
     instantes têm frações de segundo diferentes.
     """
     with conectar() as conexao:
-        linhas = conexao.execute(
-            """
-            SELECT a.codigo_cap, a.evento, a.severidade, a.inicio, a.fim
-            FROM aviso_municipios m
-            JOIN avisos_meteorologicos a ON a.id = m.aviso_id
-            WHERE m.codibge = ?
-              AND a.encerrado = 0
-              AND julianday(a.inicio) <= julianday(?)
-              AND julianday(a.fim) >= julianday(?)
-              AND a.id_sequencia = (
-                  SELECT MAX(b.id_sequencia) FROM avisos_meteorologicos b
-                  WHERE b.id_aviso = a.id_aviso
-              )
-            ORDER BY a.inicio, a.codigo_cap
-            """,
-            (codibge, instante, instante),
-        ).fetchall()
+        return consultar_avisos_vigentes(conexao, codibge, instante)
+
+
+def consultar_avisos_vigentes(
+    conexao: sqlite3.Connection, codibge: int, instante: str
+) -> list[AvisoVigente]:
+    """A regra de `avisos_vigentes` sobre uma conexão dada — o acervo (#158)
+    a aplica a uma cópia de backup aberta só para leitura."""
+    linhas = conexao.execute(
+        """
+        SELECT a.codigo_cap, a.evento, a.severidade, a.inicio, a.fim
+        FROM aviso_municipios m
+        JOIN avisos_meteorologicos a ON a.id = m.aviso_id
+        WHERE m.codibge = ?
+          AND a.encerrado = 0
+          AND julianday(a.inicio) <= julianday(?)
+          AND julianday(a.fim) >= julianday(?)
+          AND a.id_sequencia = (
+              SELECT MAX(b.id_sequencia) FROM avisos_meteorologicos b
+              WHERE b.id_aviso = a.id_aviso
+          )
+        ORDER BY a.inicio, a.codigo_cap
+        """,
+        (codibge, instante, instante),
+    ).fetchall()
     return [AvisoVigente(*linha) for linha in linhas]
 
 
