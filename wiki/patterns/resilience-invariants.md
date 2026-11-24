@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/claude-md-2026-06-11.pt.md]], issue #87
-updated: 2026-09-05
+updated: 2026-11-24
 
 # Resilience Invariants
 
@@ -30,3 +30,4 @@ updated: 2026-09-05
 24. **`fetch_com_retry` reads at most `max_resposta_bytes + 1` bytes and fails immediately (no retry) if the body exceeds `max_resposta_bytes`** — an oversized response is not a transient failure; same treatment as a 4xx `HTTPError`. Default `MAX_RESPOSTA_BYTES = 20 MB`, injectable per call like `timeout_segundos`.
 25. **`opener_padrao` refuses any redirect to a non-https URL** via `_RedirectHTTPSObrigatorioHandler.redirect_request`, surfacing as `FalhaDeColeta` with the original `HTTPError` chained. Both production sources default their `opener` param to `opener_padrao` — never construct a source with a bare `urlopen`.
 26. **`eventos.agregado_id` FK to `alertas.id` is enforced only through `conectar()`** — `conectar()` sets `PRAGMA foreign_keys=ON` before the transaction block (it is a no-op inside a transaction, and enforcement is per-connection). Raw `sqlite3.connect(...)` connections do **not** enforce it — some test fixtures rely on that to insert orphan events. `criar_banco()` declares the FK (`ON DELETE NO ACTION`); a pre-#22 `eventos` table without the FK is rejected by `_verificar_compatibilidade_schema`, never migrated. The FK catches a *dangling* id, not a *wrong* one. See [[decisions/foreign-key-eventos-agregado-id]].
+27. **A row in `rodadas` means the round completed** — `registrar_rodada` is called once, after the per-source loop of `executar_ingestao` (and at the end of `executar_coleta_avisos`), never inside it. A process killed mid-round leaves no row, so coverage is never overstated. A source whose `coletar()` raised `FalhaDeColeta` is recorded with `coletados = NULL`; the table's `CHECK` keeps `falha` and `coletados IS NULL` in lockstep (#158).

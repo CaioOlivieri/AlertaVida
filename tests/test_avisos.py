@@ -1,5 +1,7 @@
 """Persistência, consulta e coleta de avisos meteorológicos (issue #153)."""
 
+import contextlib
+import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
@@ -97,3 +99,17 @@ class TestColetaAvisos:
         relatorio = executar_coleta_avisos(source)
         assert relatorio.falha_coleta
         assert "FALHA de coleta" in formatar_relatorio_avisos(relatorio)
+
+    def test_coleta_registra_a_rodada(self, db_temporario):
+        """#158: a cobertura do INMET fica no banco, com ou sem falha."""
+        ok = Mock()
+        ok.coletar.return_value = ([_aviso(), _aviso(2)], 0)
+        executar_coleta_avisos(ok)
+        falha = Mock()
+        falha.coletar.side_effect = FalhaDeColeta(fonte=FonteDado.INMET, causa="rede")
+        executar_coleta_avisos(falha)
+        with contextlib.closing(sqlite3.connect(db_temporario)) as conexao:
+            linhas = conexao.execute(
+                "SELECT fonte, coletados, falha FROM rodadas ORDER BY iniciada_em"
+            ).fetchall()
+        assert linhas == [("INMET", 2, 0), ("INMET", None, 1)]

@@ -17,7 +17,7 @@ import contextlib
 import json
 import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -448,6 +448,23 @@ def criar_banco() -> None:
                 aviso_id INTEGER NOT NULL,
                 PRIMARY KEY (codibge, aviso_id),
                 FOREIGN KEY (aviso_id) REFERENCES avisos_meteorologicos(id)
+            ) WITHOUT ROWID
+            """
+        )
+        # Issue #158 — rodadas concluídas, uma linha por (rodada, fonte): o
+        # banco passa a saber quando o coletor estava ligado, e o acervo
+        # distingue "nenhum alerta" de "coletor desligado". `coletados` NULL
+        # ⇔ a coleta daquela fonte falhou (CHECK). Aditiva, sem user_version.
+        conexao.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rodadas (
+                iniciada_em  TEXT    NOT NULL,
+                fonte        TEXT    NOT NULL,
+                concluida_em TEXT    NOT NULL,
+                coletados    INTEGER,
+                falha        INTEGER NOT NULL CHECK (falha IN (0, 1)),
+                PRIMARY KEY (iniciada_em, fonte),
+                CHECK ((falha = 1) = (coletados IS NULL))
             ) WITHOUT ROWID
             """
         )
@@ -1386,3 +1403,36 @@ def avisos_vigentes(codibge: int, instante: str) -> list[AvisoVigente]:
         ).fetchall()
     return [AvisoVigente(*linha) for linha in linhas]
 
+
+# ---------------------------------------------------------------------------
+# Rodadas concluídas (issue #158) — cobertura da coleta como dado.
+# ---------------------------------------------------------------------------
+
+
+def registrar_rodada(
+    iniciada_em: str,
+    concluida_em: str,
+    por_fonte: Sequence[tuple[str, int | None]],
+) -> None:
+    """Grava uma rodada concluída: uma linha por fonte, `None` = coleta falhou.
+
+    Chamada só no fim da rodada — um processo morto no meio não deixa linha,
+    que é a verdade ("rodada não concluída"). `INSERT OR REPLACE`: duas
+    rodadas com o mesmo instante só acontecem com `agora` injetado (testes,
+    replays); a última vale. Sem fonte nenhuma não há coleta a registrar.
+    """
+    if not por_fonte:
+        return
+    with conectar() as conexao:
+        conexao.executemany(
+            """
+            INSERT OR REPLACE INTO rodadas (
+                iniciada_em, fonte, concluida_em, coletados, falha
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (iniciada_em, fonte, concluida_em, coletados, int(coletados is None))
+                for fonte, coletados in por_fonte
+            ],
+        )
+        conexao.commit()

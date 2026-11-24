@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]], `src/alertavida/`
-updated: 2026-11-23 (issues #153, #91)
+updated: 2026-11-24 (issue #158)
 
 ## Module wiring table (single source of truth)
 
@@ -24,13 +24,14 @@ updated: 2026-11-23 (issues #153, #91)
 | `database.py` | `criar_banco()` (schema version in `PRAGMA user_version` since #127), `buscar_snapshots()`, `aplicar_resultado_deteccao()`, outbox INSERT | `orquestrador.py`, `scheduler.py` startup | integrated |
 | `database.py` — Incidente persistence (#59) | `incidentes`/`incidente_membros` tables, `agregado_incidente_id` FK on `eventos`; `criar_incidente`/`adicionar_membro_incidente`/`resolver_incidente`/`reativar_incidente`/`fundir_incidentes`, each its own outbox transaction; read helpers `buscar_incidente_atual`/`status_incidente`/`todos_membros_resolvidos` (#61), `buscar_alertas_orfaos` (#87, reconciliation sweep — see [[decisions/incident-boundary-reconciliation-sweep]]) | `ingestion/orquestrador.py` (`_correlacionar_rodada`, #61/#87) | integrated |
 | `database.py` — Correlation blocking (#60) | `idx_alertas_espacial` R-Tree index (populated on alert `CRIADO`), `correlacao_observacoes` table, `avaliar_candidatos_correlacao()` (blocking → `domain.correlacao.decidir_correlacao` → instrumentation row per pair) | `ingestion/orquestrador.py` (`_abrir_ou_juntar_incidente`, #61) | integrated |
+| `database.py` — Collection rounds (#158) | `rodadas` table (`WITHOUT ROWID`, PK `(iniciada_em, fonte)`, `CHECK` coletados NULL ⇔ falha), `registrar_rodada()` — one row per (round, source) at the end of each completed round; a killed round leaves no row. Coverage before the table lives in `wiki/raw/rodadas-journal-*.csv` (same columns) | `ingestion/orquestrador.py` (end of `executar_ingestao`), `ingestion/avisos.py` | integrated |
 | `events.py` | In-memory `EventBus` (subscribe/publish), `OutboxDispatcher`, `log_handler`, `criar_bus_producao()` factory — no module-level singleton (issue #24); subscribes every `TipoEventoDetectado` value plus `database.TIPOS_EVENTO_INCIDENTE`, no string literals (#131) | `scheduler.py` (sole composition root) | integrated |
 | `ingestion/orquestrador.py` | `executar_ingestao()`: orchestrates collect → detect → persist → correlate per source; `RelatorioFonte`, `RelatorioIngestao`. Since #61, wires Camada 5 Incidente lifecycle (`_abrir_ou_juntar_incidente`, `_correlacionar_rodada`) right after `aplicar_resultado_deteccao` — see [[components/ingestion-orquestrador]] | `monitor.py`, `scheduler.py` | integrated |
 | `sources/base.py` | `DataSource` ABC (transport-agnostic), `ResultadoColeta` frozen, `FalhaDeColeta` exception | `ingestion/orquestrador.py` | integrated |
 | `sources/_http.py` | Shared transport: `fetch_com_retry` (retry/backoff + size cap → `FalhaDeColeta`), `parse_json`, `RespostaHTTP` Protocol, `Opener`, `opener_padrao` (HTTPS-only redirect policy); `HttpDataSource(DataSource)` template method (shared `__init__` + concrete `coletar()`, issue #20) | `sources/cemaden.py`, `sources/nasa_eonet.py` | integrated |
 | `sources/cemaden.py` | `CemadenSource(HttpDataSource)`: `URL`/`USER_AGENT` class constants + payload normalization | `ingestion/orquestrador.py` | integrated |
 | `sources/inmet.py` | `InmetSource` (not a `DataSource`): INMET active warnings, `inicio`/`fim` read as UTC−3 (the JSON's `Z` is wrong), IBGE codes per warning (#153) | `bootstrap.fonte_avisos()` → `ingestion/avisos.py` | integrated |
-| `ingestion/avisos.py` | `executar_coleta_avisos()` → `database.registrar_avisos()`; separate `avisos` scheduler job every 30 min; never touches `ChangeDetector` (#153) | `scheduler.py`, `monitor.py` | integrated |
+| `ingestion/avisos.py` | `executar_coleta_avisos()` → `database.registrar_avisos()`; separate `avisos` scheduler job every 30 min; never touches `ChangeDetector` (#153); records every run in `rodadas` as `INMET`, failures included (#158) | `scheduler.py`, `monitor.py` | integrated |
 | `sources/nasa_eonet.py` | `NasaEonetSource(HttpDataSource)`: EONET v3 `status=open&days=60` (60-day recency window, no `limit` — #124), builds `Alerta` directly, category→`TipoEvento` map, `mapear_eonet` for COBRADE (C.2), most-recent-fix selection, `nivel_risco=INDETERMINADO` | `monitor.py`, `scheduler.py` | integrated |
 
 ## Current flow
@@ -53,4 +54,5 @@ scheduler.agendar_ingestao()
           → criar_incidente() / adicionar_membro_incidente() / fundir_incidentes()
         → REATIVADO-com-membership: reativar_incidente() se o Incidente estava RESOLVIDO
         → RESOLVIDO: resolver_incidente() se todos_membros_resolvidos()
+      → registrar_rodada() (#158 — uma linha por fonte, NULL = falha de coleta)
 ```
