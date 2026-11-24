@@ -5,8 +5,10 @@
 | Name                                     |    Stmts |     Miss |   Cover |   Missing |
 |----------------------------------------- | -------: | -------: | ------: | --------: |
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
+| src/alertavida/acervo/\_\_init\_\_.py    |        0 |        0 |    100% |           |
+| src/alertavida/acervo/exportar.py        |      170 |       11 |     94% |194, 409, 430, 469-488 |
 | src/alertavida/bootstrap.py              |       14 |        1 |     93% |        32 |
-| src/alertavida/database.py               |      295 |        4 |     99% |63, 1136, 1195, 1259 |
+| src/alertavida/database.py               |      297 |        4 |     99% |63, 1136, 1195, 1259 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       131 |
 | src/alertavida/domain/aviso.py           |       44 |        0 |    100% |           |
@@ -32,7 +34,7 @@
 | src/alertavida/sources/cemaden.py        |       40 |        1 |     98% |       138 |
 | src/alertavida/sources/inmet.py          |       55 |        4 |     93% |55, 62, 69, 85 |
 | src/alertavida/sources/nasa\_eonet.py    |       89 |        0 |    100% |           |
-| **TOTAL**                                | **1426** |   **15** | **99%** |           |
+| **TOTAL**                                | **1598** |   **26** | **98%** |           |
 
 
 ## Setup coverage badge
