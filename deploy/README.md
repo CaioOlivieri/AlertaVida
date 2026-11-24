@@ -378,41 +378,55 @@ journalctl -u alertavida-acervo.service -n 10 --no-pager
 cat /var/lib/alertavida/acervo/export/metadados.json   # which backup it came from
 ```
 
-## Failure alerting: heartbeat (issue #141)
+## Failure alerting: heartbeat (issues #141, #166)
 
 `alertavida-heartbeat.timer` runs `deploy/heartbeat.py` every 5 minutes. It
-reads `MAX(visto_ultima_vez)` — the clock of the last completed round — and
-pings a [healthchecks.io](https://healthchecks.io) check: the plain URL when
-the last round is at most 15 minutes old, `<url>/fail` with the reason
-otherwise. The external check alerts on a `/fail` ping **and on silence**,
-which covers what the script cannot report itself: host down, network down,
-timer not running.
+reads the `rodadas` table (one row per round and source, #161) and reports
+**two signals to two [healthchecks.io](https://healthchecks.io) checks**,
+because they need opposite responses:
+
+| Check | Env var | Healthy when | Failing means |
+|---|---|---|---|
+| coletor | `HEARTBEAT_URL` (required) | any round completed in the last 15 min | something of ours is down (collector, host, network, database) — act now |
+| CEMADEN | `HEARTBEAT_URL_CEMADEN` (optional) | a **successful** CEMADEN collection in the last 60 min | CEMADEN itself is down — nothing to fix, but the open archive has a gap |
+
+Each check gets its plain URL when healthy and `<url>/fail` with the reason
+otherwise; one ping failing never stops the other. healthchecks.io alerts on
+a `/fail` ping **and on silence**, which covers what the script cannot report
+itself: host down, network down, timer not running. Without
+`HEARTBEAT_URL_CEMADEN` the CEMADEN check is skipped with a log line.
 
 Only meaningful on an always-on host — on the old WSL host every deliberate
 PC shutdown would have paged.
 
 One-time setup:
 
-1. On healthchecks.io (free, no card): Add Check → Schedule **Simple**,
-   Period **5 minutes**, Grace Time **30 minutes**; e-mail integration on.
-2. Write the Ping URL on the server — never in git (anyone holding it can
+1. On healthchecks.io (free, no card), for each check: Add Check → Schedule
+   **Simple**, Period **5 minutes**, Grace Time **30 minutes**; e-mail
+   integration on. The grace only covers *silence*; a `/fail` ping alerts at
+   once, and the 15/60-minute thresholds live in the script.
+2. Write the Ping URLs on the server — never in git (anyone holding one can
    send fake pings):
 
    ```bash
    sudo install -d -m 0750 -o root -g alertavida /etc/alertavida
    echo 'HEARTBEAT_URL=https://hc-ping.com/<uuid>' | sudo tee /etc/alertavida/heartbeat.env >/dev/null
+   echo 'HEARTBEAT_URL_CEMADEN=https://hc-ping.com/<uuid>' | sudo tee -a /etc/alertavida/heartbeat.env >/dev/null
    sudo chown root:alertavida /etc/alertavida/heartbeat.env
    sudo chmod 0640 /etc/alertavida/heartbeat.env
    ```
 
-   The line must start with `HEARTBEAT_URL=` — a bare URL makes the script
-   exit with `HEARTBEAT_URL ausente`.
+   Each line must start with its variable name — a bare URL makes the script
+   exit with `HEARTBEAT_URL ausente`. Note `tee -a` on the second line: plain
+   `tee` would overwrite the first.
 3. `sudo systemctl enable --now alertavida-heartbeat.timer`
 
 Check:
 
 ```bash
-journalctl -u alertavida-heartbeat.service -n 3   # === HEARTBEAT OK: ... ===
+journalctl -u alertavida-heartbeat.service -n 4 -o cat | grep HEARTBEAT
+# === HEARTBEAT coletor OK: ultima rodada ha 2.1 min ===
+# === HEARTBEAT CEMADEN OK: ultima coleta CEMADEN ha 2.1 min ===
 ```
 
 The unit needs `ReadWritePaths=/var/lib/alertavida`, not `ReadOnlyPaths`:
