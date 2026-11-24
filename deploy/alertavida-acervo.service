@@ -1,0 +1,56 @@
+[Unit]
+Description=AlertaVida open archive: CSV export and static site from the newest backup (#158)
+After=alertavida-backup.service
+
+[Service]
+Type=oneshot
+User=alertavida
+Group=alertavida
+WorkingDirectory=/opt/alertavida
+# Reads the newest file in backups/ with mode=ro&immutable=1 — never the live
+# database. Each step writes <dir>.tmp and swaps it in, so a failed run leaves
+# the previous export/site in place.
+ExecStart=/opt/alertavida/.venv/bin/python -m alertavida.acervo.exportar --backup /var/lib/alertavida/backups --saida /var/lib/alertavida/acervo/export
+ExecStart=/opt/alertavida/.venv/bin/python -m alertavida.acervo.site --export /var/lib/alertavida/acervo/export --saida /var/lib/alertavida/acervo/site
+UMask=0027
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# Only /var/lib/alertavida/acervo is writable (StateDirectory creates it,
+# owned by alertavida, and adds it to the writable paths). The database and
+# the backups stay read-only to this unit.
+StateDirectory=alertavida/acervo
+StateDirectoryMode=0750
+
+# Sandboxing (#133). None of these processes needs devices, kernel
+# tunables/modules/logs, other users' processes, namespaces, realtime
+# scheduling, SUID binaries or any capability — denying them limits what
+# code running under this unit could do if a dependency were ever
+# exploited. Verified on the Azure VM with `systemd-analyze security`
+# before/after and a real run of each unit (wiki/decisions/systemd-sandboxing.md).
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# No network at all: the export reads a local backup and writes local files.
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX

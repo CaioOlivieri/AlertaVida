@@ -1,6 +1,6 @@
 status: integrated
 sources: [[raw/context-md-2026-06-11.pt.md]], [[raw/claude-md-2026-06-11.pt.md]]
-updated: 2026-11-22
+updated: 2026-11-24
 
 # AlertaVida Wiki Index
 
@@ -93,3 +93,4 @@ updated: 2026-11-22
 - [[decisions/retire-pre-production-migrations]] — issue #130: migrations for schemas older than the 2026-08-13 production database removed (dated from git history), one compatibility guard instead, `schemas_legados.py` deleted; CEMADEN parser accepts only the real envelope; `handler_count` kept on purpose
 - [[decisions/database-and-dispatcher-132]] — issue #132: partial pending-events index (schema step 2, 516 KB → 4 KB), batched visto_ultima_vez stamping, dispatcher handlers outside the write lock (proved by a test that fails on the old code); at-least-once unchanged
 - [[decisions/inmet-warnings-as-context]] — issue #153: INMET severe-weather warnings stored with their IBGE codes and annotate alerts in their municipality (a warning covers up to ~3,200 municipalities, so it is never an alert or incident); JSON `Z` timestamps are Brasília time; daily contract test vs CAP
+- [[decisions/open-archive-from-backup]] — issue #158: the first consumer is an open archive, not public alerts — CSV export + static site generated daily from the backup (never the live database), coverage recorded as data (`rodadas` table + journal extracts; windows, not round counts), dictionary generated from the CSV column definitions; publication waits for the data licence
