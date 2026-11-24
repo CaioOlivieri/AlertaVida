@@ -69,6 +69,14 @@ class TipoEvento(str, Enum):
 
         normalized = _normalizar(valor)
 
+        # O próprio valor do membro vem primeiro: `database` lê
+        # `alertas.evento` de volta por aqui, e CLIMATOLOGICO/BIOLOGICO não
+        # constavam dos conjuntos abaixo — voltavam INDETERMINADO (#91).
+        try:
+            return cls(normalized.upper())
+        except ValueError:
+            pass
+
         hidrologico = {
             "risco hidrologico",
             "hidrologico",

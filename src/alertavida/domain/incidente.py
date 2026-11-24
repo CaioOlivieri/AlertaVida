@@ -34,7 +34,12 @@ _ORDEM_SEVERIDADE: Final[dict[NivelRisco, int]] = {
 
 
 class StatusIncidente(StrEnum):
-    """Espelha `alertas.status_interno` (Round 1, Q5)."""
+    """Ciclo de vida de `incidentes.status` (Round 1, Q5).
+
+    Usa as mesmas strings de `alertas.status_interno`, mas é outro ciclo de
+    vida: um Incidente só resolve quando todos os membros resolveram. Por isso
+    `detector.py` e as consultas de `alertas` não usam este enum (#91).
+    """
 
     ATIVO = "ATIVO"
     RESOLVIDO = "RESOLVIDO"

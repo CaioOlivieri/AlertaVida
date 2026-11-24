@@ -26,6 +26,14 @@ def test_nivel_risco_vazio_invalido() -> None:
         NivelRisco.from_string("")
 
 
+@pytest.mark.parametrize("tipo", list(TipoEvento))
+def test_tipo_evento_from_string_reconhece_o_proprio_valor(tipo: TipoEvento) -> None:
+    """`database` lê `alertas.evento` de volta por `from_string`; todo valor
+    gravado precisa voltar como o mesmo membro. CLIMATOLOGICO e BIOLOGICO
+    voltavam INDETERMINADO (#91)."""
+    assert TipoEvento.from_string(tipo.value) is tipo
+
+
 def test_tipo_evento_hidrologico_com_acento() -> None:
     assert TipoEvento.from_string("Risco Hidrológico") == TipoEvento.HIDROLOGICO
 

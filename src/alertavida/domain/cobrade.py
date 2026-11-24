@@ -15,6 +15,8 @@ wiki/decisions/tipoevento-cobrade-classification.md.
 import re
 from typing import Final
 
+from alertavida.domain.enums import FonteClassificacao
+
 # Mapeamento de tipoevento bruto do CEMADEN para código COBRADE de subgrupo.
 # Inspeção empírica de 240 alertas em 4 amostras de 01-02/05/2026 revelou
 # apenas 2 tipos físicos entregues pela API:
@@ -68,3 +70,16 @@ def mapear_eonet(categoria: str) -> str | None:
     """Mapeia uma categoria EONET v3 (id em inglês) para código COBRADE.
     Retorna None se a categoria não está no mapeamento conhecido."""
     return EVENTO_EONET_PARA_COBRADE.get(categoria)
+
+
+def fonte_classificacao_do_mapeamento(cobrade: str | None) -> FonteClassificacao:
+    """Proveniência de um código obtido por `mapear_cemaden`/`mapear_eonet`.
+
+    Metade produtora do invariante que `Alerta._validar_invariante_classificacao`
+    valida (`cobrade_codigo IS NULL ⇔ fonte_classificacao == INDETERMINADA`,
+    invariante 11): mapeou → `MAPEADA_POR_NOME`; não mapeou → `INDETERMINADA`.
+    Uma regra só, para todas as fontes (#91).
+    """
+    if cobrade is None:
+        return FonteClassificacao.INDETERMINADA
+    return FonteClassificacao.MAPEADA_POR_NOME

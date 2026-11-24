@@ -18,6 +18,7 @@ import pytest
 from alertavida import database as db_module
 from alertavida.database import SchemaIncompativelError, conectar
 from alertavida.domain.enums import FonteDado, TipoEvento
+from alertavida.domain.incidente import StatusIncidente
 from alertavida.sources.cemaden import CemadenSource
 
 # ----------------------------------------------------------------------
@@ -1375,6 +1376,20 @@ class TestStatusIncidente:
     def test_incidente_inexistente_levanta(self, db_temporario):
         with pytest.raises(ValueError):
             db_module.status_incidente(99999)
+
+    def test_devolve_o_enum_do_ciclo_de_vida(self, db_temporario):
+        """#91: o orquestrador compara por identidade (`is`), não por string."""
+        alerta_id = _inserir_alerta(db_temporario, "A1")
+        incidente_id = db_module.criar_incidente(
+            alerta_id, 1.0, "fundador", "2026-08-12T00:00:00"
+        )
+        assert db_module.status_incidente(incidente_id) is StatusIncidente.ATIVO
+
+        db_module.resolver_incidente(incidente_id, alerta_id, "2026-08-12T01:00:00")
+        assert db_module.status_incidente(incidente_id) is StatusIncidente.RESOLVIDO
+
+        db_module.reativar_incidente(incidente_id, alerta_id, "2026-08-12T02:00:00")
+        assert db_module.status_incidente(incidente_id) is StatusIncidente.ATIVO
 
 
 class TestTodosMembrosResolvidos:

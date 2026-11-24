@@ -39,6 +39,7 @@ from alertavida.domain.detector import (
     TipoEventoDetectado,
 )
 from alertavida.domain.enums import FonteDado, TipoEvento
+from alertavida.domain.incidente import StatusIncidente
 from alertavida.domain.tempo import parse_iso_utc
 
 DB_PATH_DEFAULT: Path = Path(__file__).resolve().parent.parent.parent / "data" / "alertavida.db"
@@ -773,8 +774,8 @@ def criar_incidente(alerta_id: int, score: float, motivo: str, agora: str) -> in
     """
     with conectar() as conexao:
         cursor = conexao.execute(
-            "INSERT INTO incidentes (status, criado_em, atualizado_em) VALUES ('ATIVO', ?, ?)",
-            (agora, agora),
+            "INSERT INTO incidentes (status, criado_em, atualizado_em) VALUES (?, ?, ?)",
+            (StatusIncidente.ATIVO.value, agora, agora),
         )
         incidente_id = cursor.lastrowid
         assert incidente_id is not None  # AUTOINCREMENT sempre popula lastrowid
@@ -855,10 +856,10 @@ def resolver_incidente(incidente_id: int, alerta_id_disparador: int, agora: str)
         conexao.execute(
             """
             UPDATE incidentes
-            SET status = 'RESOLVIDO', resolvido_em = ?, atualizado_em = ?
+            SET status = ?, resolvido_em = ?, atualizado_em = ?
             WHERE id = ?
             """,
-            (agora, agora, incidente_id),
+            (StatusIncidente.RESOLVIDO.value, agora, agora, incidente_id),
         )
         _inserir_evento_outbox(
             conexao,
@@ -883,10 +884,10 @@ def reativar_incidente(incidente_id: int, alerta_id_disparador: int, agora: str)
         conexao.execute(
             """
             UPDATE incidentes
-            SET status = 'ATIVO', resolvido_em = NULL, atualizado_em = ?
+            SET status = ?, resolvido_em = NULL, atualizado_em = ?
             WHERE id = ?
             """,
-            (agora, incidente_id),
+            (StatusIncidente.ATIVO.value, agora, incidente_id),
         )
         _inserir_evento_outbox(
             conexao,
@@ -992,8 +993,8 @@ def buscar_incidente_atual(alerta_id: int) -> int | None:
             incidente_id = redirecionamento[0]
 
 
-def status_incidente(incidente_id: int) -> str:
-    """Status atual (`ATIVO`/`RESOLVIDO`) do Incidente.
+def status_incidente(incidente_id: int) -> StatusIncidente:
+    """Status atual do Incidente.
 
     Não segue o redirect de fusão — quem chama já resolveu o id atual via
     `buscar_incidente_atual`.
@@ -1004,7 +1005,7 @@ def status_incidente(incidente_id: int) -> str:
         ).fetchone()
         if row is None:
             raise ValueError(f"Incidente id={incidente_id} não encontrado")
-        return row[0]
+        return StatusIncidente(row[0])
 
 
 def todos_membros_resolvidos(incidente_id: int) -> bool:
@@ -1158,11 +1159,12 @@ def _buscar_incidentes_candidatos(
         JOIN incidente_membros im ON im.alerta_id = r.id
         JOIN incidentes i ON i.id = im.incidente_id
         JOIN alertas a ON a.id = r.id
-        WHERE i.status = 'ATIVO' AND i.fundido_em IS NULL
+        WHERE i.status = ? AND i.fundido_em IS NULL
           AND r.min_lat <= ? AND r.max_lat >= ?
           AND r.min_lon <= ? AND r.max_lon >= ?
         """,
         (
+            StatusIncidente.ATIVO.value,
             candidato_alerta.latitude + BUFFER_BLOQUEIO_GRAUS,
             candidato_alerta.latitude - BUFFER_BLOQUEIO_GRAUS,
             candidato_alerta.longitude + BUFFER_BLOQUEIO_GRAUS,
