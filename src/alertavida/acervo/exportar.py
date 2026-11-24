@@ -422,13 +422,27 @@ def _sha256(caminho: Path) -> str:
     return digest.hexdigest()
 
 
-def exportar(backup: Path, saida: Path, rodadas_historicas: Sequence[Path]) -> dict[str, object]:
-    """Escreve o acervo em `saida` (substituído por inteiro) e devolve os metadados."""
-    ate = instante_do_backup(backup)
+def preparar_temporario(saida: Path) -> Path:
+    """Diretório irmão `<saida>.tmp`, vazio — escreve-se nele e troca-se no fim."""
     temporario = saida.with_name(saida.name + ".tmp")
     if temporario.exists():
         shutil.rmtree(temporario)
     temporario.mkdir(parents=True)
+    return temporario
+
+
+def trocar_diretorio(temporario: Path, saida: Path) -> None:
+    """Substitui `saida` por `temporario`: uma execução que falha no meio nunca
+    deixa uma saída pela metade."""
+    if saida.exists():
+        shutil.rmtree(saida)
+    temporario.rename(saida)
+
+
+def exportar(backup: Path, saida: Path, rodadas_historicas: Sequence[Path]) -> dict[str, object]:
+    """Escreve o acervo em `saida` (substituído por inteiro) e devolve os metadados."""
+    ate = instante_do_backup(backup)
+    temporario = preparar_temporario(saida)
 
     with contextlib.closing(abrir_somente_leitura(backup)) as conexao:
         contagens = {
@@ -459,9 +473,7 @@ def exportar(backup: Path, saida: Path, rodadas_historicas: Sequence[Path]) -> d
         json.dumps(metadados, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
 
-    if saida.exists():
-        shutil.rmtree(saida)
-    temporario.rename(saida)
+    trocar_diretorio(temporario, saida)
     return metadados
 
 
