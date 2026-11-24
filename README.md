@@ -6,7 +6,7 @@
 |----------------------------------------- | -------: | -------: | ------: | --------: |
 | src/alertavida/\_\_init\_\_.py           |        0 |        0 |    100% |           |
 | src/alertavida/bootstrap.py              |       14 |        1 |     93% |        32 |
-| src/alertavida/database.py               |      288 |        4 |     99% |63, 1119, 1178, 1242 |
+| src/alertavida/database.py               |      295 |        4 |     99% |63, 1136, 1195, 1259 |
 | src/alertavida/domain/\_\_init\_\_.py    |        5 |        0 |    100% |           |
 | src/alertavida/domain/alerta.py          |      102 |        1 |     99% |       131 |
 | src/alertavida/domain/aviso.py           |       44 |        0 |    100% |           |
@@ -21,8 +21,8 @@
 | src/alertavida/domain/tempo.py           |        7 |        0 |    100% |           |
 | src/alertavida/events.py                 |       51 |        0 |    100% |           |
 | src/alertavida/ingestion/\_\_init\_\_.py |        2 |        0 |    100% |           |
-| src/alertavida/ingestion/avisos.py       |       29 |        0 |    100% |           |
-| src/alertavida/ingestion/orquestrador.py |      135 |        2 |     99% |   267-268 |
+| src/alertavida/ingestion/avisos.py       |       34 |        0 |    100% |           |
+| src/alertavida/ingestion/orquestrador.py |      136 |        2 |     99% |   268-269 |
 | src/alertavida/monitor.py                |       13 |        0 |    100% |           |
 | src/alertavida/reporting.py              |       10 |        0 |    100% |           |
 | src/alertavida/scheduler.py              |       47 |        2 |     96% |     37-38 |
@@ -32,7 +32,7 @@
 | src/alertavida/sources/cemaden.py        |       40 |        1 |     98% |       138 |
 | src/alertavida/sources/inmet.py          |       55 |        4 |     93% |55, 62, 69, 85 |
 | src/alertavida/sources/nasa\_eonet.py    |       89 |        0 |    100% |           |
-| **TOTAL**                                | **1413** |   **15** | **99%** |           |
+| **TOTAL**                                | **1426** |   **15** | **99%** |           |
 
 
 ## Setup coverage badge
