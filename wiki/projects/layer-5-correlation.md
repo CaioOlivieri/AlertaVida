@@ -1,6 +1,6 @@
 status: done
 sources: [[raw/context-md-2026-06-11.pt.md]] (§3)
-updated: 2026-11-16
+updated: 2026-11-24
 
 # Layer 5: Event Correlation (complete)
 
@@ -474,8 +474,8 @@ every incident event too, so nothing about the #22 FK weakens. See
 | #59 | Tables, provenance, merge redirect, outbox events | #58 | **no** — touches `database.py` | `database.py` + tests |
 | #60 | Blocking: spatial index, open-incident windows, instrumentation | #59 | **no** — touches `database.py` | `database.py` + tests |
 | #61 | Correlate during ingestion, forward-only lifecycle | #60 | **no** — touches the pipeline | `ingestion/orquestrador.py`, `reporting.py` + tests |
-| #62 | Point-in-polygon against the IBGE mesh | #61 | **yes** (enhancement, off the v1 path) | `scripts/`, spatial predicate + tests |
-| #63 | Calibrate windows and thresholds | #61 **deployed** through an alert surge | n/a — **dormant, no action now** | constants only |
+| #62 | Point-in-polygon against the IBGE mesh | #61 + an alert in Brazil without an IBGE code | n/a — **dormant since 2026-11-24** | `scripts/`, spatial predicate + tests |
+| #63 | Calibrate windows and thresholds | #61 deployed + cross-source pairs in `correlacao_observacoes` | n/a — **dormant, no action now** | constants only |
 
 Notes on the ordering:
 
@@ -491,6 +491,16 @@ Notes on the ordering:
   Camada 8: the calibration debt has to stay visible. Its hard precondition is
   real rows in `correlacao_observacoes` plus several same-municipality CEMADEN
   alerts. Without both, proven by real query output, the correct action is none.
+- **Frozen on 2026-11-24 — #62, #63 and #100 (maintainer decision).** Measured
+  on that day's backup: 4,251 observations, **0 cross-source**, 0 multi-source
+  incidents, 0 merges; all 931 alerts in Brazil are CEMADEN with an IBGE code.
+  Since #129 every CEMADEN decision is a structural gate (325
+  `municipios_diferentes`; the 108 same-municipality pairs ever seen are
+  `tipos_incompativeis`), so no window or weight is exercised. Triggers, with
+  the query, are on each issue: #63/#100 resume when a second source has
+  alerts in Brazil and cross-source pairs appear; #62 when an alert in Brazil
+  lacks an IBGE code. The end of the rainy season alone is no longer a trigger.
+  Work moved to the open archive (#158).
 - Per-issue gates, every commit: `uv run pytest` · `uv run ruff check .` ·
   `uv run mypy src/`. Chained-commit style per [[patterns/git-workflow]] — CI
   green between links, never big-bang.
