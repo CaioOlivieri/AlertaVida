@@ -1,6 +1,6 @@
 status: in-progress
-sources: `deploy/azure/create-vm.sh`, `deploy/heartbeat.py`, `deploy/alertavida-heartbeat.{service,timer}`, `deploy/cutover.sh`, `deploy/README.md`, issues #134 and #141
-updated: 2026-11-22
+sources: `deploy/azure/create-vm.sh`, `deploy/heartbeat.py`, `deploy/alertavida-heartbeat.{service,timer}`, `deploy/cutover.sh`, `deploy/README.md`, issues #134, #141 and #166
+updated: 2026-11-24
 
 # Phase 2: the collector moves to an Azure for Students VM
 
@@ -115,6 +115,30 @@ database directory, and the read failed with `unable to open database file`
 — a read-only SQLite connection to a WAL database still creates the `-shm`
 file. Reproduced on the VM before the timer was armed; the unit uses
 `ReadWritePaths` and the script opens the database with `mode=ro`.
+
+### Two signals, not one (#166, 2026-11-24)
+
+The first version measured `MAX(visto_ultima_vez)` over **all** alerts. Every
+successful EONET collection stamps its 80 alerts, so a CEMADEN outage was
+invisible while EONET answered. It had happened: in the journal extracts,
+19 rounds with CEMADEN failing and EONET succeeding, including 17 in a row
+(~85 min) from 2026-11-21T21:49Z. CEMADEN is the only source with alerts in
+Brazil and the whole content of the open archive.
+
+Folding it into the same check would have been the convenient fix, and the
+wrong one: an alert is only worth having if the receiver knows what to do,
+and these two need opposite responses. A collector failure is ours, urgent,
+and loses data for good; a CEMADEN outage is upstream, cannot be fixed from
+here, and short blips are normal. Mixing them in one "DOWN" e-mail trains the
+maintainer to ignore it — and then the one that mattered gets ignored too.
+
+So the script now reads `rodadas` (#161) and reports to two checks:
+**coletor** — any round completed in 15 min (a round whose sources all failed
+still proves the collector alive); **CEMADEN** — a successful CEMADEN
+collection in 60 min (tolerates blips, still catches the measured 85-min
+outage), each with its own URL and notification settings. The quality of the
+archive is measured by daily coverage (`cobertura.csv`); the alerts only make
+sure a gap is noticed in time.
 
 ## Security, checked on the VM
 
