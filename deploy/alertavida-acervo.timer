@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily AlertaVida open-archive export, after the backup (#158)
+
+[Timer]
+# The backup timer fires at 00:00 + up to 10 min; 00:30 leaves it time to finish.
+OnCalendar=*-*-* 00:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -62,8 +62,8 @@ What it does:
    under this unit's `ProtectSystem=strict`).
 4. Clones the given ref into `/opt/alertavida` and runs `uv sync --frozen`
    as the `alertavida` user, creating `/opt/alertavida/.venv`.
-5. Copies the five unit files (service, backup service + timer, upload
-   service + timer) into `/etc/systemd/system/` and runs
+5. Copies the unit files (service, and the backup, upload, heartbeat and
+   open-archive services + timers) into `/etc/systemd/system/` and runs
    `systemctl daemon-reload`.
 
 Then start it:
@@ -351,6 +351,32 @@ ls data/weathernext_cemaden_captures/   # populated only once watch_mode is true
 `data/` here is the git checkout's own `data/` (gitignored) — not
 `/var/lib/alertavida` — because these jobs run as the maintainer, not
 `alertavida` (see the decision page for why).
+
+## Open archive: export + static site (issue #158)
+
+`alertavida-acervo.timer` runs `alertavida-acervo.service` daily at 00:30 (plus
+up to 5 min), after the backup. It never opens the live database: the export
+reads the newest file in `/var/lib/alertavida/backups` with
+`mode=ro&immutable=1`, and the site is generated from the export only.
+
+```
+/var/lib/alertavida/acervo/export/   # CSVs, DICIONARIO.md, metadados.json
+/var/lib/alertavida/acervo/site/     # index.html, municipio/, dados/
+```
+
+Each step writes `<dir>.tmp` and swaps it in, so a failed run leaves the
+previous export and site in place. The unit has no network, and only
+`/var/lib/alertavida/acervo` is writable (`StateDirectory=`); database and
+backups stay read-only to it. `systemd-analyze security`: 0.5, the same as the
+backup unit. **Nothing is published** — that waits for the data licence
+(see [[decisions/open-archive-from-backup]]).
+
+```bash
+sudo systemctl enable --now alertavida-acervo.timer
+sudo systemctl start alertavida-acervo.service   # one run now
+journalctl -u alertavida-acervo.service -n 10 --no-pager
+cat /var/lib/alertavida/acervo/export/metadados.json   # which backup it came from
+```
 
 ## Failure alerting: heartbeat (issue #141)
 

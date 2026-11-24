@@ -21,7 +21,7 @@ SNAPSHOT_DIR=/var/backups/alertavida
 CONFIRMATION_TEXT="DELETE ALERTAVIDA DATA"
 
 echo "== stopping and disabling units =="
-systemctl disable --now alertavida.service alertavida-backup.timer alertavida-upload.timer alertavida-heartbeat.timer 2>/dev/null || true
+systemctl disable --now alertavida.service alertavida-backup.timer alertavida-upload.timer alertavida-heartbeat.timer alertavida-acervo.timer 2>/dev/null || true
 
 echo "== removing unit files =="
 rm -f /etc/systemd/system/alertavida.service \
@@ -30,7 +30,9 @@ rm -f /etc/systemd/system/alertavida.service \
       /etc/systemd/system/alertavida-upload.service \
       /etc/systemd/system/alertavida-upload.timer \
       /etc/systemd/system/alertavida-heartbeat.service \
-      /etc/systemd/system/alertavida-heartbeat.timer
+      /etc/systemd/system/alertavida-heartbeat.timer \
+      /etc/systemd/system/alertavida-acervo.service \
+      /etc/systemd/system/alertavida-acervo.timer
 rm -rf /etc/alertavida
 rm -f /etc/systemd/journald.conf.d/alertavida.conf
 # Pre-#120 leftovers from when the upload was installed by hand: a drop-in
