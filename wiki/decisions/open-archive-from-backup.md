@@ -1,6 +1,6 @@
 status: implemented
 sources: `src/alertavida/acervo/{exportar,site}.py`, `src/alertavida/database.py` (`rodadas`, `registrar_rodada`, `consultar_avisos_vigentes`), `scripts/extrair_rodadas_journal.py`, `deploy/alertavida-acervo.{service,timer}`, [[raw/cobertura-journal-wsl-2026-11-24]], [[raw/cobertura-journal-vm-2026-11-24]], issue #158, PRs #160–#164
-updated: 2026-11-24
+updated: 2026-11-28
 
 # The first consumer is an open archive, built from the daily backup
 
@@ -64,6 +64,22 @@ panel and monthly counts.
 - Site: 436 pages, 2.6 MB; 2,211 links, 0 broken, 0 absolute; 0 pages with
   unbalanced tags; two generations identical.
 - Unit run on the VM: `Result=success`, `/var/lib/alertavida` still `2770`.
+
+## The site, redesigned for phones (2026-11-28)
+
+The first site was functional and ugly, and on a phone its alert table
+scrolled sideways — which axe flagged as a **serious** violation
+(`scrollable-region-focusable`: the scrolling region could not be reached by
+keyboard). Redesigned mobile-first: alerts as semantic lists, one memorable
+element (the 30-day strip of alerts per day over collection coverage, so a
+reader sees at a glance when "no alert" may mean "collector off"), plain
+language for people who do not know the project, provenance moved to the
+Dados page. Verified in an isolated Chromium (no network, read-only, no
+capabilities) with axe-core, hash-pinned, versioned in
+`scripts/verificacao_site/`: 0 violations and no sideways scroll on three
+pages, at 360 and 1280 px, light and dark. The audit also caught two
+regressions of the redesign itself before review (label-widened strip
+columns; the last date label pushing the page 8 px past the screen).
 
 ## Limits recorded
 
